@@ -8,7 +8,7 @@ Alsoul is a persistent personal companion designed around durable personhood, ev
 
 **F2 — Architecture Convergence**
 
-The architecture has reached sufficient convergence to close the exact ownership, lifecycle, recovery, memory/evidence, epistemic, and world-interface contracts before implementation begins.
+Decision 01 (`CompanionPerson`) is closed. Eleven bounded F2 decisions remain before the Foundation Contract + Test Harness stage.
 
 ## Architecture
 
