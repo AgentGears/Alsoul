@@ -12,10 +12,11 @@ The architecture has reached sufficient convergence to close the exact ownership
 
 ## Architecture
 
-- [`F2 Architecture Convergence Specification v0.1`](docs/architecture/F2_ARCHITECTURE_CONVERGENCE_SPEC_v0.1.md)
+- [`F2 Architecture Convergence Specification v0.2`](docs/architecture/F2_ARCHITECTURE_CONVERGENCE_SPEC_v0.2.md)
+- [`F2 Decision 01 — CompanionPerson Contract`](docs/architecture/F2_DECISION_01_COMPANION_PERSON.md)
 - [`Future Work Register v0.1`](docs/architecture/FUTURE_WORK.md)
 
-The convergence specification defines what must become exact now. The Future Work Register preserves deliberately postponed architecture as explicit reservations, activation triggers, and future acceptance conditions without turning it into current scope.
+The v0.2 convergence specification is the current F2 control document. Decision 01 closes the `CompanionPerson` identity, ownership, lifecycle, replacement, and reconstruction contract. The Future Work Register preserves deliberately postponed architecture as explicit reservations, activation triggers, and future acceptance conditions without turning it into current scope.
 
 ## Repository documentation policy
 
