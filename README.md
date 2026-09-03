@@ -13,6 +13,9 @@ The architecture has reached sufficient convergence to close the exact ownership
 ## Architecture
 
 - [`F2 Architecture Convergence Specification v0.1`](docs/architecture/F2_ARCHITECTURE_CONVERGENCE_SPEC_v0.1.md)
+- [`Future Work Register v0.1`](docs/architecture/FUTURE_WORK.md)
+
+The convergence specification defines what must become exact now. The Future Work Register preserves deliberately postponed architecture as explicit reservations, activation triggers, and future acceptance conditions without turning it into current scope.
 
 ## Repository documentation policy
 
@@ -35,3 +38,5 @@ Interpretation
 ```
 
 The first implementation remains deliberately narrow: persistent Person + evidence-aware memory + minimal PersonModel + read-only fresh-world investigation. Broad delegation, personal connectors, write authority, voice/embodiment, commitments, and procedural learning remain later gates.
+
+Postponed work is not an implicit backlog. It is activated only when its recorded product forcing function exists.
