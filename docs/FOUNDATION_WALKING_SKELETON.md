@@ -142,15 +142,17 @@ Investigation Q1
 
 ```text
 Observation O1
+    investigation = Q1
     actual external acquisition succeeds
 ```
 
-If search discovery is followed by opening an authoritative source, these are separate Observations.
+Every Observation belongs to exactly one Investigation. If search discovery is followed by opening an authoritative source, these are separate Observations, and each is explicitly bound to Q1.
 
 ### Source capture
 
 ```text
 WorldSourceCapture S1
+    observation = O1
     exact acquired source material
     capture time
     source identity
@@ -180,6 +182,18 @@ with:
 ```text
 E2 SUPPORTS W1
 ```
+
+For W1 to qualify as a current checked result, its supporting evidence must trace:
+
+```text
+W1
+→ E2
+→ S1
+→ O1
+→ Q1
+```
+
+and `O1.investigation_id` must equal `W1.investigation_id`. Evidence captured by an older or different Investigation cannot be reused to make Q1 appear to have checked the world now.
 
 Q1 is successful only once a sufficient evidence-backed result exists.
 
@@ -241,6 +255,9 @@ MemoryClaim exists but evidence/source is unrecoverable
 Investigation started but no Observation succeeded
 → do not say "I checked"
 
+Observation evidence traces to a different Investigation than the WorldResult
+→ do not classify the result as a current checked result
+
 Observation succeeded but no supported WorldResult exists
 → do not claim a checked conclusion
 
@@ -283,6 +300,8 @@ canonical history survives context loss
 durable memory survives process death with recoverable evidence
 PersonModel can be rebuilt rather than restored as opaque profile text
 fresh world information is actually acquired
+every Observation is bound to its Investigation
+WorldResult support traces to Observations from that same Investigation
 what was checked is durably captured
 WorldResult is evidence-backed
 epistemic provenance survives into ContextProjection
