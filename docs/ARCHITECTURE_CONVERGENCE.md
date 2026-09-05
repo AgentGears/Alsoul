@@ -254,6 +254,19 @@ A bounded inquiry intended to resolve a world-facing question through actual inf
 
 An immutable record that a real acquisition occurred and produced inspectable material.
 
+Every Observation is bound to exactly one Investigation:
+
+```text
+Observation {
+    observation_id
+    investigation_id
+    acquisition_kind
+    request_descriptor
+    observed_at
+    status
+}
+```
+
 Search intent, query formulation, tool invocation, or model prior knowledge are not observations.
 
 ### WorldSourceCapture
@@ -306,6 +319,8 @@ WorldResultEvidence {
     relation = SUPPORTS | CONTRADICTS
 }
 ```
+
+For the foundation slice, evidence that qualifies a WorldResult as a current checked result must trace through its `EvidenceItem` and `WorldSourceCapture` to an `Observation` with the same `investigation_id` as the WorldResult. Evidence acquired by an older or different Investigation cannot be relabeled as acquisition performed for the current Investigation.
 
 A WorldResult is not a global world model and does not automatically become durable memory.
 
