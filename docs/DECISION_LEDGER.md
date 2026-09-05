@@ -170,7 +170,7 @@ No global MemoryHead or memory revision is required.
 
 `Investigation` is the inquiry container.
 
-`Observation` records that actual world-facing acquisition occurred.
+`Observation` records that actual world-facing acquisition occurred. Every Observation is bound to exactly one Investigation through `investigation_id`.
 
 `WorldResult` is an immutable evidence-backed conclusion derived within the Investigation.
 
@@ -189,6 +189,8 @@ External captures retain a content digest for integrity while capture identity r
 ## Decision 06.C — WorldResult derivation and freshness
 
 A WorldResult becomes admitted only after evidence materially supports both the proposition and the Investigation objective.
+
+For the foundation slice, evidence supporting a WorldResult as a current checked result must trace through `EvidenceItem → WorldSourceCapture → Observation` to the same `investigation_id` carried by the WorldResult. Historical evidence from another Investigation cannot be relabeled as a current acquisition.
 
 Freshness is use-relative rather than a universal stored score.
 
