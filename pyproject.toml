@@ -12,6 +12,9 @@ dependencies = [
   "SQLAlchemy>=2.0,<3",
 ]
 
+[project.scripts]
+alsoul-host = "alsoul.host.__main__:main"
+
 [project.optional-dependencies]
 dev = [
   "alembic>=1.13,<2",

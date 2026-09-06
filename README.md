@@ -171,6 +171,7 @@ src/alsoul/
     storage/
     services/
     adapters/
+    host/
 ```
 
 Database migrations live under `migrations/`, and executable architecture tests live under `tests/`.
@@ -187,9 +188,11 @@ The adapter package contains provider-independent contracts, deterministic accep
 
 `ConfiguredFoundationRuntime` closes the fixture-to-runtime boundary for the reactive slice. It requires configured HTTPS world/model routes, applies a source-origin-pinned JSON world interpreter before WorldResult admission, keeps runtime credentials separate from public configuration, exposes a synthetic model-contract probe, and provides content-free recovery diagnostics derived from canonical rows.
 
-The repository continuously verifies source/test compilation, the executable acceptance suite, and migration upgrade/downgrade.
+The process-facing runtime is exposed through `alsoul-host` and `python -m alsoul.host`. The host loads strict non-secret JSON configuration, reads model authorization only from the process environment, validates the existing F4 database/schema before opening runtime state, and exposes only `ready`, `diagnose`, `probe-model-contract`, and `respond`. It never creates schema or identity roots; bootstrap remains a separate administration boundary.
 
-See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md), [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md), and [F4 Configured Reactive Runtime](docs/F4_CONFIGURED_RUNTIME.md) for the executable foundation checkpoints.
+The repository continuously verifies source/test compilation, the executable acceptance suite, process-level HTTPS runtime execution, and migration upgrade/downgrade.
+
+See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md), [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md), [F4 Configured Reactive Runtime](docs/F4_CONFIGURED_RUNTIME.md), and [F4 Runtime Host](docs/F4_RUNTIME_HOST.md) for the executable foundation checkpoints.
 
 ## Documentation
 
@@ -205,6 +208,7 @@ Core documents:
 - [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md)
 - [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md)
 - [F4 Configured Reactive Runtime](docs/F4_CONFIGURED_RUNTIME.md)
+- [F4 Runtime Host](docs/F4_RUNTIME_HOST.md)
 - [Architecture Checkpoint — Decisions 11.A through 15.B](docs/ARCHITECTURE_CHECKPOINT_11_15.md)
 
 Architecture decision records:
@@ -218,4 +222,4 @@ Architecture decision records:
 
 ## Status
 
-Configured F4 reactive runtime. The executable slice now composes restart-safe response coordination with configured HTTPS world/model routes, source-specific world interpretation, synthetic model-contract verification, and content-free operator recovery diagnostics while preserving the existing evidence, cognition, adoption, and presentation boundaries. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
+Process-hosted configured F4 reactive runtime. The executable slice can now be launched through a strict runtime host that validates existing persistence, keeps secrets out of configuration and canonical state, performs controlled HTTPS world/model I/O, exposes content-free recovery diagnostics and provider-contract verification, and resumes an already-admitted reactive response through presentation. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
