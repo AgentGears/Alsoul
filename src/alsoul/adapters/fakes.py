@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from hashlib import sha256
 from uuid import UUID
 
 from alsoul.domain.models import (
@@ -38,6 +39,17 @@ class FakeWorldAdapter:
 @dataclass(slots=True)
 class FakeModelAdapter:
     """Deterministic final-expression adapter for the F4 acceptance slice."""
+
+    provider_binding_ref: str = "fixture-model-provider"
+    model_ref: str = "fixture-model-v1"
+
+    def provider_request_digest(self, provider_context: dict) -> str:
+        payload = json.dumps(
+            provider_context,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return sha256(payload).hexdigest()
 
     def generate(self, provider_context: dict) -> FoundationResponseDraft:
         personal = provider_context["personal_context"]
