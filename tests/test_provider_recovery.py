@@ -158,8 +158,8 @@ def test_process_loss_reconciles_orphaned_model_attempt_before_retry(
         current_input_event_id=current.event_id,
     )
     assert assessment.stage == "MODEL_ATTEMPT_UNRESOLVED"
-    assert assessment.latest_model_invocation_id == orphaned.model_invocation_id
-    assert assessment.latest_model_invocation_outcome == "IN_PROGRESS"
+    assert assessment.unresolved_model_invocation_id == orphaned.model_invocation_id
+    assert assessment.unresolved_model_invocation_outcome == "IN_PROGRESS"
 
     with pytest.raises(DomainError) as excinfo:
         ModelGenerationRunner(
@@ -187,8 +187,8 @@ def test_process_loss_reconciles_orphaned_model_attempt_before_retry(
     )
     assert reconciled.stage == "PROJECTION_READY"
     assert reconciled.reusable_projection_id == projection.projection_id
-    assert reconciled.latest_model_invocation_id == orphaned.model_invocation_id
-    assert reconciled.latest_model_invocation_outcome == "UNKNOWN"
+    assert reconciled.unresolved_model_invocation_id is None
+    assert reconciled.unresolved_model_invocation_outcome is None
 
     replacement = ModelGenerationRunner(
         restarted,
@@ -260,9 +260,16 @@ def test_failed_or_unknown_attempt_retries_as_new_invocation_with_replacement_pr
     )
     assert assessment.stage == "PROJECTION_READY"
     assert assessment.reusable_projection_id == projection.projection_id
-    assert assessment.latest_model_invocation_outcome == expected_outcome
-    first_invocation_id = assessment.latest_model_invocation_id
-    assert first_invocation_id is not None
+
+    with services.engine.connect() as conn:
+        first_row = conn.execute(
+            select(schema.model_invocation).where(
+                schema.model_invocation.c.context_projection_id
+                == projection.projection_id
+            )
+        ).mappings().one()
+    assert first_row["outcome"] == expected_outcome
+    first_invocation_id = first_row["model_invocation_id"]
 
     replacement = runner.run(
         context_projection_id=projection.projection_id,
@@ -274,11 +281,6 @@ def test_failed_or_unknown_attempt_retries_as_new_invocation_with_replacement_pr
     assert replacement.model_invocation_id != first_invocation_id
 
     with services.engine.connect() as conn:
-        first_row = conn.execute(
-            select(schema.model_invocation).where(
-                schema.model_invocation.c.model_invocation_id == first_invocation_id
-            )
-        ).mappings().one()
         replacement_row = conn.execute(
             select(schema.model_invocation).where(
                 schema.model_invocation.c.model_invocation_id
@@ -290,7 +292,6 @@ def test_failed_or_unknown_attempt_retries_as_new_invocation_with_replacement_pr
                 schema.relationship_identity.c.relationship_id == ids.relationship_id
             )
         ).mappings().one()
-    assert first_row["outcome"] == expected_outcome
     assert replacement_row["outcome"] == "SUCCEEDED"
     assert replacement_row["provider_binding_ref"] == "second-route"
     assert replacement_row["model_ref"] == "second-model"
