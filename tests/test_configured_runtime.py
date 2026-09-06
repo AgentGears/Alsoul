@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -19,6 +19,7 @@ from alsoul.services import (
     ConfiguredFoundationRuntime,
     FoundationRuntimeConfig,
     ModelRuntimeConfig,
+    PresentationRuntimeConfig,
     RuntimeSecrets,
     WorldRuntimeConfig,
 )
@@ -91,6 +92,51 @@ class ContractModelTransport:
         )
 
 
+@dataclass(slots=True)
+class ContractPresentationTransport:
+    last_endpoint: str | None = None
+    last_body: dict[str, Any] | None = None
+    attempts: int = 0
+    accepted: dict[str, str] = field(default_factory=dict)
+
+    def post_json(
+        self,
+        endpoint: str,
+        *,
+        body: dict[str, Any],
+        timeout_seconds: float,
+        headers: Mapping[str, str],
+    ) -> JsonHttpResponse:
+        del timeout_seconds, headers
+        self.attempts += 1
+        self.last_endpoint = endpoint
+        self.last_body = body
+        key = body["presentation_key"]
+        digest = body["content_digest"]
+        previous = self.accepted.get(key)
+        if previous is not None and previous != digest:
+            return JsonHttpResponse(
+                status_code=409,
+                resolved_endpoint=endpoint,
+                content="{}",
+                headers={"content-type": "application/json"},
+            )
+        self.accepted[key] = digest
+        payload = {
+            "schema_version": 1,
+            "status": "ACCEPTED",
+            "presentation_key": key,
+            "receipt_ref": f"presentation-receipt:{key}",
+            "content_digest": digest,
+        }
+        return JsonHttpResponse(
+            status_code=200,
+            resolved_endpoint=endpoint,
+            content=json.dumps(payload),
+            headers={"content-type": "application/json"},
+        )
+
+
 def _config() -> FoundationRuntimeConfig:
     return FoundationRuntimeConfig(
         world=WorldRuntimeConfig(
@@ -102,6 +148,10 @@ def _config() -> FoundationRuntimeConfig:
             provider_binding_ref="configured-provider",
             model_ref="configured-model-v1",
             timeout_seconds=8.0,
+        ),
+        presentation=PresentationRuntimeConfig(
+            endpoint="https://surface.invalid/present",
+            timeout_seconds=5.0,
         ),
     )
 
@@ -165,6 +215,7 @@ def test_configured_runtime_executes_controlled_reactive_vertical_slice(
         )
     )
     model_transport = ContractModelTransport()
+    presentation_transport = ContractPresentationTransport()
     secret = "runtime-secret-token"
     runtime = ConfiguredFoundationRuntime(
         services,
@@ -174,6 +225,7 @@ def test_configured_runtime_executes_controlled_reactive_vertical_slice(
         ids=UUIDGenerator(),
         world_transport=world_transport,
         model_transport=model_transport,
+        presentation_transport=presentation_transport,
     )
 
     before = runtime.diagnose(
@@ -206,6 +258,13 @@ def test_configured_runtime_executes_controlled_reactive_vertical_slice(
     assert model_transport.last_endpoint == "https://model.invalid/generate"
     assert model_transport.last_headers is not None
     assert model_transport.last_headers["Authorization"] == f"Bearer {secret}"
+    assert presentation_transport.last_endpoint == "https://surface.invalid/present"
+    assert presentation_transport.attempts == 1
+    assert presentation_transport.last_body is not None
+    assert presentation_transport.last_body["companion_output_id"] == str(
+        result.companion_output_id
+    )
+    assert "You told me" in presentation_transport.last_body["content_text"]
     assert secret not in repr(runtime.secrets)
     assert secret not in json.dumps(runtime.config.public_snapshot(), sort_keys=True)
 
@@ -231,6 +290,7 @@ def test_configured_runtime_rejects_cross_origin_world_material_before_result_ad
     now,
 ):
     ids, current = _prepare_current_input(services, bootstrapper, now)
+    presentation_transport = ContractPresentationTransport()
     runtime = ConfiguredFoundationRuntime(
         services,
         config=_config(),
@@ -244,6 +304,7 @@ def test_configured_runtime_rejects_cross_origin_world_material_before_result_ad
             )
         ),
         model_transport=ContractModelTransport(),
+        presentation_transport=presentation_transport,
     )
 
     with pytest.raises(DomainError) as excinfo:
@@ -254,6 +315,7 @@ def test_configured_runtime_rejects_cross_origin_world_material_before_result_ad
             channel_binding_id=ids.channel_binding_id,
         )
     assert excinfo.value.code == "WORLD_EXTRACTION_REJECTED"
+    assert presentation_transport.attempts == 0
 
     with services.engine.connect() as conn:
         captures = conn.execute(
@@ -271,6 +333,7 @@ def test_model_contract_probe_uses_synthetic_context_and_creates_no_canonical_co
     now,
 ):
     model_transport = ContractModelTransport()
+    presentation_transport = ContractPresentationTransport()
     runtime = ConfiguredFoundationRuntime(
         services,
         config=_config(),
@@ -285,6 +348,7 @@ def test_model_contract_probe_uses_synthetic_context_and_creates_no_canonical_co
             )
         ),
         model_transport=model_transport,
+        presentation_transport=presentation_transport,
     )
 
     probe = runtime.probe_model_contract()
@@ -298,6 +362,7 @@ def test_model_contract_probe_uses_synthetic_context_and_creates_no_canonical_co
     )
     assert model_transport.last_body is not None
     assert "Operational contract probe" in model_transport.last_body["provider_context"]["current_input"]
+    assert presentation_transport.attempts == 0
 
     with services.engine.connect() as conn:
         invocations = conn.execute(
@@ -322,3 +387,8 @@ def test_runtime_configuration_rejects_embedded_model_credentials():
             provider_binding_ref="provider",
             model_ref="model",
         )
+
+
+def test_runtime_configuration_rejects_insecure_presentation_endpoint():
+    with pytest.raises(ValueError, match="HTTPS"):
+        PresentationRuntimeConfig(endpoint="http://surface.invalid/present")
