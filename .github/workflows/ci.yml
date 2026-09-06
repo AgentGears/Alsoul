@@ -1,0 +1,39 @@
+name: Foundation CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install foundation dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Compile source and tests
+        run: python -m compileall -q src tests migrations
+
+      - name: Run acceptance suite
+        run: python -m pytest
+
+      - name: Verify migration round trip
+        run: |
+          rm -f alsoul-dev.db
+          python -m alembic upgrade head
+          python -m alembic downgrade base
