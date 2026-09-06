@@ -177,13 +177,15 @@ Database migrations live under `migrations/`, and executable architecture tests 
 
 Foundation identity creation is an explicit administration boundary through `FoundationBootstrapper`; ordinary `FoundationServices` fail closed rather than recreating missing Person/Relationship roots.
 
-Provider execution is now routed through Alsoul-owned orchestration boundaries. `WorldAcquisitionRunner` persists an Observation before a replaceable acquisition adapter runs and stops at captured evidence; `ModelGenerationRunner` persists ModelInvocation before dispatch and stops at GeneratedOutput. Neither path can bypass WorldResult admission, CompanionOutput adoption, or presentation.
+Provider execution is routed through Alsoul-owned orchestration boundaries. `WorldAcquisitionRunner` persists an Observation before a replaceable acquisition adapter runs and stops at captured evidence; `ModelGenerationRunner` persists ModelInvocation before dispatch and stops at GeneratedOutput. Neither path can bypass WorldResult admission, CompanionOutput adoption, or presentation.
+
+Provider recovery is also explicit. `RecoveryCoordinator` derives `MODEL_ATTEMPT_UNRESOLVED` for orphaned in-progress generation, `ProviderRecoveryCoordinator` can conservatively reconcile a known process-lost attempt to `UNKNOWN`, and the semantic service boundary prevents blind retry, stale ContextProjection reuse, and regeneration when a durable GeneratedOutput already exists.
 
 The adapter package contains provider-independent contracts, deterministic acceptance adapters, a generic HTTP world-acquisition adapter, and an HTTPS JSON model adapter for an explicitly configured endpoint. Model credentials remain transport-only configuration and are not inserted into ContextProjection, provider context, or semantic response payloads.
 
 The repository continuously verifies source/test compilation, the executable acceptance suite, and migration upgrade/downgrade.
 
-See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), and [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md) for the executable foundation checkpoints.
+See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), and [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md) for the executable foundation checkpoints.
 
 ## Documentation
 
@@ -196,6 +198,7 @@ Core documents:
 - [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md)
 - [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md)
 - [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md)
+- [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md)
 - [Architecture Checkpoint — Decisions 11.A through 15.B](docs/ARCHITECTURE_CHECKPOINT_11_15.md)
 
 Architecture decision records:
@@ -209,4 +212,4 @@ Architecture decision records:
 
 ## Status
 
-Controlled F4 provider integration. The code now proves that network acquisition and model generation can be connected to the foundation without making provider runtime, transport credentials, returned bytes, or generated text authoritative by themselves. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
+F4 provider recovery hardening. The code now distinguishes unresolved provider attempts from retryable terminal attempts, fences ContextProjection reuse against canonical-state advancement, permits provider replacement through new invocation identity, and preserves acquisition retry as a new Observation. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
