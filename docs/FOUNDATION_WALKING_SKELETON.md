@@ -3,7 +3,7 @@
 **Status:** F4 target contract  
 **Publication:** GitHub-safe
 
-The first vertical slice is intentionally narrow. It exists to prove the architecture boundaries that make Alsoul one persistent companion with honest memory and fresh world access.
+The first vertical slice is intentionally narrow. It exists to prove the architecture boundaries that make Alsoul one persistent companion with honest memory, fresh world access, and attributable cognition/output.
 
 ## 1. Scenario
 
@@ -120,7 +120,21 @@ PersonModelView(P1 → U1)
 
 The model/provider that serves the recovered turn may differ from the one that served the original interaction.
 
-## 5. Fresh-world path
+## 5. Current input
+
+The new counterpart question enters canonical history before cognition.
+
+```text
+InteractionEvent I3
+    relationship = R1
+    actor = U1
+    kind = COUNTERPART_INPUT
+    content = current compatibility question
+```
+
+The model must not receive the current input solely through an untracked provider request path.
+
+## 6. Fresh-world path
 
 The new question has a current/freshness requirement.
 
@@ -197,31 +211,123 @@ and `O1.investigation_id` must equal `W1.investigation_id`. Evidence captured by
 
 Q1 is successful only once a sufficient evidence-backed result exists.
 
-## 6. Context projection
+## 7. ContextProjection
 
-The recovered personal claim and current world result remain distinct inside the turn projection.
+The recovered personal claim, current input, and current world result remain distinct inside one immutable invocation-scoped projection.
 
 Conceptually:
 
 ```text
-ContextProjection
+ContextProjection CP1 {
+    companion_person_id = P1
+    relationship_id = R1
+    current_input_event_id = I3
 
-PERSONAL_MEMORY
-    claim_ref = C1
-    epistemic basis = counterpart statement
+    source_self_revision = current Self revision
+    source_relationship_revision = current R1 revision
+    source_timeline_frontier = current R1 timeline frontier
 
-CURRENT_CHECKED_WORLD
-    world_result_ref = W1
-    investigation_ref = Q1
-    evidence_ref = E2
+    selected_event_refs = [I3]
 
-INTERPRETATION
-    produced by current cognition
+    personal_context_items = [
+        C1 {
+            epistemic_basis = COUNTERPART_STATED_MEMORY
+            support = E1
+        }
+    ]
+
+    world_context_items = [
+        W1 {
+            epistemic_mode = CURRENT_CHECKED
+            investigation = Q1
+            support = E2
+        }
+    ]
+}
 ```
 
-The provider-facing representation may be prose, but the runtime must retain the canonical source references that produced it.
+The Timeline frontier records what canonical history existed when the projection was built. `selected_event_refs` records what historical interaction cognition actually saw.
 
-## 7. Required user-facing epistemic distinction
+```text
+not projected
+≠ forgotten
+≠ deleted
+≠ false
+```
+
+The provider-facing representation may be prose or another provider-specific encoding, but the runtime must retain the canonical source references and pinned revisions that produced it.
+
+Provider rendering must not silently re-read newer Self/Relationship heads or replace exact claim/world refs after CP1 is created.
+
+## 8. Model invocation and output lineage
+
+One model invocation binds exactly one ContextProjection:
+
+```text
+ModelInvocation MI1
+    context_projection_id = CP1
+```
+
+The model returns candidate content:
+
+```text
+GeneratedOutput G1
+    model_invocation_id = MI1
+```
+
+At this point:
+
+```text
+model generated G1
+```
+
+is true, but:
+
+```text
+Alsoul presented G1 to U1
+```
+
+is not yet established.
+
+After output validation/adoption:
+
+```text
+CompanionOutput CO1
+    source_generated_output_id = G1
+    output_origin = RESPONSE_TO_EVENT / I3
+    output_target = I3 / FINAL_RESPONSE
+```
+
+CO1 is Alsoul's intended response, but shared history still begins only at presentation.
+
+For the first-party non-streaming text slice, presentation commits:
+
+```text
+InteractionEvent I4
+    relationship = R1
+    actor = P1
+    kind = COMPANION_PRESENTED_OUTPUT
+    companion_output_id = CO1
+    reply_to_event_id = I3
+```
+
+The complete output lineage is:
+
+```text
+I4
+↓
+CO1
+↓
+G1
+↓
+MI1
+↓
+CP1
+├── C1 → E1 → I1
+└── W1 → E2 → S1 → O1 → Q1
+```
+
+## 9. Required user-facing epistemic distinction
 
 The architecture must be capable of supporting an answer with three distinct meanings:
 
@@ -233,12 +339,48 @@ The architecture must be capable of supporting an answer with three distinct mea
     ← current Investigation + actual Observation + recoverable world evidence
 
 "My take is that this configuration is not a good fit for your current machine."
-    ← current interpretation over personal and world state
+    ← current cognition over personal and world state
 ```
 
 The exact wording is not the contract. The underlying distinctions are.
 
-## 8. Required failure behavior
+The final response must also be attributable as:
+
+```text
+generated by a specific ModelInvocation
+adopted as one CompanionOutput
+presented as one canonical Timeline event
+```
+
+## 10. Retry and crash behavior
+
+The foundation response path must not duplicate social history.
+
+```text
+provider/model retry
+→ new ModelInvocation as needed
+
+same semantic final response target
+→ at most one adopted CompanionOutput
+
+presentation retry of CO1
+→ same presented Timeline event
+```
+
+If the process dies:
+
+```text
+after G1 but before CO1
+→ G1 remains generated-but-unadopted
+
+after CO1 but before I4
+→ recover CO1 and present it idempotently
+
+after I4
+→ do not present CO1 again
+```
+
+## 11. Required failure behavior
 
 The slice must fail honestly.
 
@@ -266,9 +408,18 @@ historical WorldResult recovered without a fresh acquisition
 
 unresolved material contradiction
 → do not present the claim/result as settled truth
+
+ContextProjection cannot resolve mandatory pinned state
+→ do not silently substitute provider transcript/summary prose
+
+GeneratedOutput exists but adoption fails
+→ do not append a presented companion event
+
+CompanionOutput exists but presentation has not committed
+→ do not claim Alsoul already presented it
 ```
 
-## 9. Deliberate exclusions
+## 12. Deliberate exclusions
 
 The foundation walking skeleton does not require:
 
@@ -278,17 +429,20 @@ personality or psychological graph
 RelationshipExperience engine
 global WorldModel
 multi-agent orchestration
+effectful external Actions
 background delegated work
+proactive WorldSignal/Trigger processing
 rich embodiment
 voice interruption reconciliation
 generalized source ranking
 numeric confidence/freshness scoring
 full forgetting subsystem
+multi-channel delivery
 ```
 
-Those may be introduced only when a concrete product requirement forces them.
+The architecture defines several of these boundaries for future work, but they are not implementation requirements for F4.
 
-## 10. Acceptance summary
+## 13. Acceptance summary
 
 The slice succeeds when the system proves all of the following in one coherent path:
 
@@ -299,14 +453,21 @@ same RelationshipState after restart
 canonical history survives context loss
 durable memory survives process death with recoverable evidence
 PersonModel can be rebuilt rather than restored as opaque profile text
+current counterpart input enters canonical history before cognition
 fresh world information is actually acquired
 every Observation is bound to its Investigation
 WorldResult support traces to Observations from that same Investigation
 what was checked is durably captured
 WorldResult is evidence-backed
+ContextProjection pins exact Self/Relationship revisions and source refs
+Timeline frontier and actually selected events remain distinct
 epistemic provenance survives into ContextProjection
+one ModelInvocation binds the exact projection it saw
+GeneratedOutput is not automatically CompanionOutput
+CompanionOutput is not automatically presented history
+presentation creates one idempotent COMPANION_PRESENTED_OUTPUT event
 model/provider replacement does not redefine personhood
-memory, checked world information, and interpretation remain distinct
+memory, checked world information, interpretation, generation, adoption, and presentation remain distinct
 ```
 
 That is the minimum foundation for a companion with a world rather than a chatbot whose apparent continuity depends on one prompt or thread.

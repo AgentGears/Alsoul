@@ -1,31 +1,47 @@
 # Alsoul Architecture Convergence
 
-**Status:** Pre-implementation foundation  
+**Status:** Pre-implementation foundation checkpoint through Decision 10.B  
 **Publication:** GitHub-safe
 
 This document records the current normalized architecture boundaries that implementation must preserve. It is intentionally narrower than a complete product architecture.
 
 ## 1. Authority direction
 
-Canonical state flows toward cognition through rebuildable projections.
+Canonical state flows toward cognition, work, and presentation through governed derived boundaries.
 
 ```text
 canonical identity/history/evidence
         ↓
 admitted durable claims/results
         ↓
-derived current models
+derived current models / eligibility
         ↓
 ContextProjection
         ↓
 model/provider context
         ↓
-generated output
+GeneratedOutput
         ↓
-presentation/effect boundaries
+adoption
+        ↓
+CompanionOutput
+        ↓
+presentation
 ```
 
-Authority must not flow backward merely because a model generated plausible text.
+Externally consequential work has a separate authority/effect path:
+
+```text
+Capability / CredentialBinding / Permission / Approval
+        ↓
+immutable Action
+        ↓
+ExecutionAttempt
+        ↓
+Effect determination
+```
+
+Authority must not flow backward merely because a model generated plausible text, a tool returned successfully, or an old provider transcript contains a claim.
 
 ## 2. Identity stack
 
@@ -100,6 +116,8 @@ InteractionEvent {
     occurred_at
     recorded_at
     conversation_id?
+    companion_output_id?
+    reply_to_event_id?
 }
 ```
 
@@ -140,14 +158,14 @@ EvidenceItem {
 
 Evidence records grounds. It does not itself become the proposition derived from those grounds.
 
-For the first vertical slice, the required origin classes are:
+Foundation origin classes include:
 
 ```text
 COUNTERPART_STATEMENT
 SEARCH_RESULT
 ```
 
-Evidence attachment never substitutes for semantic support.
+Later domains may also use typed tool/system/presentation evidence. Evidence attachment never substitutes for semantic support.
 
 ## 5. Memory and PersonClaims
 
@@ -320,7 +338,7 @@ WorldResultEvidence {
 }
 ```
 
-For the foundation slice, evidence that qualifies a WorldResult as a current checked result must trace through its `EvidenceItem` and `WorldSourceCapture` to an `Observation` with the same `investigation_id` as the WorldResult. Evidence acquired by an older or different Investigation cannot be relabeled as acquisition performed for the current Investigation.
+For a current checked result, supporting evidence must trace through its `EvidenceItem` and `WorldSourceCapture` to an `Observation` with the same `investigation_id` as the WorldResult. Evidence acquired by an older or different Investigation cannot be relabeled as acquisition performed for the current Investigation.
 
 A WorldResult is not a global world model and does not automatically become durable memory.
 
@@ -339,27 +357,267 @@ newest source ≠ winning source
 latest claim ≠ current claim by timestamp alone
 ```
 
-## 9. ContextProjection boundary
+## 9. ContextProjection and cognition
 
-Canonical state must enter model cognition through an explicit rebuildable projection.
-
-The projection must preserve enough source lineage to distinguish at least:
+`ContextProjection` is an immutable invocation-scoped provider-independent semantic snapshot of the exact Alsoul-owned state selected for one cognition invocation.
 
 ```text
-remembered counterpart statement
-current checked world result
-historical checked result
-direct observation
-unverified inference
+ContextProjection {
+    projection_id
+    purpose
+    created_at
+    projection_schema_version
+
+    companion_person_id
+    relationship_id?
+    current_input_event_id?
+
+    source_self_revision
+    source_relationship_revision?
+    source_timeline_frontier?
+
+    selected_event_refs[]
+    personal_context_items[]
+    world_context_items[]
+}
 ```
 
-Model-facing prose is a rendering of this projection, not a source of canonical truth.
+For the foundation reactive response, `purpose = RESPOND_TO_INTERACTION`, the relationship/current-input bindings, relationship revision, and Timeline frontier are mandatory.
 
-The exact `ContextProjection` contract is the next convergence boundary.
+The Timeline frontier records what canonical history existed; selected event refs record what cognition actually saw.
 
-## 10. Foundation persistence patterns
+A projection preserves exact source references and projection-time epistemic classifications such as:
 
-Different domains use different persistence semantics deliberately.
+```text
+COUNTERPART_STATED_MEMORY
+CURRENT_CHECKED
+HISTORICAL_CHECKED
+```
+
+Eligibility precedes relevance. Retrieval cannot promote an out-of-scope, forgotten, unsupported, contradicted, superseded, or stale item.
+
+Provider messages/prompts are serialization of `ContextProjection` plus applicable control policy. They are not canonical state.
+
+One `ModelInvocation` binds exactly one immutable projection. If canonical state changes materially for a later cognition step, build a new projection and invocation rather than mutating the old one.
+
+## 10. Generated, adopted, and presented output
+
+The output authority chain is:
+
+```text
+ContextProjection
+↓
+ModelInvocation
+↓
+GeneratedOutput
+↓
+adoption
+↓
+CompanionOutput
+↓
+presentation
+↓
+COMPANION_PRESENTED_OUTPUT InteractionEvent
+```
+
+A model-generated candidate is not automatically Alsoul's social output.
+
+`CompanionOutput` is the adoption boundary. It binds a durable output origin and semantic output target so retries do not create duplicate final responses or proactive notifications.
+
+The Timeline actor for presented output is the durable `CompanionPerson`, while model/provider execution remains attributable behind it.
+
+```text
+Generated
+≠ Adopted
+≠ Presented
+≠ Heard
+```
+
+Presented conversational assertions do not independently establish the external truth of their own content.
+
+## 11. Capability, authority, Action, and Effect
+
+Externally consequential work uses separate authority layers:
+
+```text
+Capability
+CredentialBinding
+Permission
+Approval
+Action
+ExecutionAttempt
+Effect
+```
+
+### Capability
+
+Provider-independent semantic operation contract describing what the host can potentially perform.
+
+### CredentialBinding
+
+Authentication/technical access state. Provider technical scopes are not Alsoul Permission, and credential secrets do not enter cognition.
+
+### Permission
+
+Durable scoped standing authority. It cannot be inferred from memory, relationship trust, model prediction, a Task, or a Commitment.
+
+### Approval
+
+Bounded operation-specific consent when required. Approval binds immutable Action intent and cannot widen Permission or higher policy.
+
+### Action
+
+Immutable provider-independent semantic external intent. Model tool calls are proposals until normalized and authorized by the host.
+
+### ExecutionAttempt
+
+One concrete dispatch attempt for one Action. Retries create new attempts while preserving `action_id`.
+
+Where external idempotency is supported, retries of the same Action preserve one external operation identity. Intentionally separate identical Actions retain separate identities.
+
+### Effect
+
+Immutable evidence-grounded externally observable consequence.
+
+Execution must distinguish:
+
+```text
+CONFIRMED_EFFECT
+CONFIRMED_NO_EFFECT
+UNKNOWN_EFFECT
+```
+
+A timeout after possible dispatch is not automatically failure. Unknown effects are reconciled using evidence/Observation where possible before unsafe retry.
+
+```text
+Action intended
+≠ Action attempted
+≠ Effect established
+```
+
+## 12. Durable delegated work
+
+Durable work separates:
+
+```text
+DelegatedTask
+Commitment
+Skill / Procedure
+Trigger
+TriggerActivation
+WorkRun
+WorkArtifact
+WorkProduct
+WorkProductDelivery
+TaskCompletion
+CommitmentDischarge
+```
+
+### DelegatedTask
+
+Accepted durable work. A conversational request becomes a task only through explicit task admission.
+
+### Commitment
+
+Durable obligation undertaken by the CompanionPerson. Commitment never grants Permission or Approval.
+
+### Procedure
+
+Reusable versioned know-how. It describes how work may be performed, not whether or when it may run.
+
+### Trigger / TriggerActivation
+
+Trigger is activation policy. TriggerActivation is one immutable logical activation opportunity. Reprocessing the same occurrence must not duplicate normal WorkRuns.
+
+### WorkRun
+
+One bounded task-execution instance. Model retries, Action retries, and process restarts do not automatically create new WorkRuns.
+
+### Task lifecycle
+
+Lifecycle is append-oriented. Cancellation, blocking, completion, and resumption are durable transitions rather than silent overwrites.
+
+Task completion requires declared completion criteria to be satisfied by durable evidence/state. WorkRun success alone is insufficient.
+
+### WorkArtifact / WorkProduct
+
+`WorkArtifact` is immutable durable produced/acquired/transformed material. `WorkProduct` is the task-level deliverable Alsoul has adopted from one or more artifacts.
+
+```text
+Generated content
+≠ WorkArtifact
+≠ WorkProduct
+≠ external save
+≠ Delivery
+```
+
+External saving uses the Action/Effect plane. Delivery is recipient/channel-specific and binds an exact WorkProduct version.
+
+## 13. WorldSignal, Trigger evaluation, and proactive initiation
+
+`WorldSignal` is an immutable durable record that the host received an external/system stimulus relevant to possible world-state evaluation or future work.
+
+```text
+WorldSignal
+≠ Observation
+≠ WorldResult
+≠ Permission
+```
+
+Signal payload is external data, not instruction authority.
+
+When a source provides stable event identity, signal deduplication follows the source binding plus the source's documented event-identity namespace. Payload similarity is not semantic event identity.
+
+### TriggerEvaluation
+
+World-condition evaluation uses:
+
+```text
+SATISFIED
+NOT_SATISFIED
+UNRESOLVED
+```
+
+`UNRESOLVED` is not falsehood.
+
+Signals may directly satisfy signal-occurrence Triggers. World-condition Triggers may require an Investigation and fresh WorldResult first.
+
+### Recurring edge semantics
+
+Default recurring world-condition behavior is:
+
+```text
+NOT_SATISFIED → SATISFIED
+    activate
+
+SATISFIED → SATISFIED
+    no activation
+
+SATISFIED → UNRESOLVED → SATISFIED
+    no activation
+
+SATISFIED → NOT_SATISFIED
+    rearm
+```
+
+Temporary uncertainty does not rearm a satisfied Trigger.
+
+### Proactive work versus contact
+
+A TriggerActivation makes Task continuation eligible. It does not automatically authorize external Actions or social interruption.
+
+```text
+background work
+≠ proactive contact
+```
+
+A proactive `CompanionOutput` requires durable work origin, an exclusive semantic output target, valid relationship/contact policy, and the same adoption/presentation boundary as reactive conversation.
+
+Layered idempotency prevents duplicate webhooks, activations, WorkRuns, model retries, and presentation retries from becoming duplicate notifications.
+
+## 14. Foundation persistence patterns
+
+Different domains deliberately use different persistence semantics.
 
 ```text
 SelfModel
@@ -369,7 +627,7 @@ RelationshipState
     immutable complete revisions + current head
 
 Timeline
-    append-only immutable events + relationship-local sequence
+    append-oriented immutable events + relationship-local sequence
 
 EvidenceItem
     immutable evidence anchors
@@ -378,13 +636,48 @@ MemoryClaim / PersonClaim
     immutable admitted propositions + relations
 
 Observation / WorldSourceCapture / WorldResult
-    immutable historical acquisition/result records
-
-PersonModel
-    rebuildable derived view
+    immutable acquisition/result records
 
 ContextProjection
-    rebuildable turn-specific view
+    immutable invocation-scoped derived manifest
+
+ModelInvocation / GeneratedOutput / CompanionOutput
+    immutable execution/adoption lineage
+
+Action / ExecutionAttempt / Effect
+    immutable semantic intent, attempt history, evidence-backed effect
+
+DelegatedTask / Commitment
+    durable identity + append-oriented lifecycle/discharge state
+
+Trigger / TriggerEvaluation / TriggerActivation
+    declarative activation + immutable evaluation/occurrence records
+
+WorkArtifact / WorkProduct
+    immutable material + adopted deliverable relationships
+
+PersonModel and other current views
+    rebuildable derived projections
 ```
 
 No single universal event-sourcing or mutable-document pattern is imposed across domains where the semantics differ.
+
+## 15. Current boundary and next convergence area
+
+Architecture is converged through Decision 10.B for the semantic backbone covering identity, memory, world investigation, cognition/output, authority/effects, durable work, and proactive initiation.
+
+The next major unresolved boundary is the one-Person/many-presences layer:
+
+```text
+SurfaceBinding
+ChannelBinding
+EmbodimentBinding
+```
+
+That work must preserve:
+
+```text
+Person ≠ Surface ≠ Channel ≠ Embodiment
+```
+
+while allowing the same durable CompanionPerson and RelationshipState to participate across text, push, voice, desktop, wearable, and future presences.
