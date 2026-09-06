@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Mapping, Protocol
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from alsoul.domain.models import WorldAcquisitionSuccess
@@ -39,7 +40,7 @@ class UrllibHttpTransport:
         headers: Mapping[str, str],
     ) -> HttpResponse:
         request = Request(locator, headers=dict(headers), method="GET")
-        with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310 - locator is explicit host configuration
+        with urlopen(request, timeout=timeout_seconds) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             content = response.read().decode(charset)
             response_headers = {key.lower(): value for key, value in response.headers.items()}
@@ -63,6 +64,13 @@ class HttpWorldAdapter:
     timeout_seconds: float = 10.0
     transport: HttpTransport = field(default_factory=UrllibHttpTransport)
     user_agent: str = "Alsoul-F4/0.0.1"
+
+    def __post_init__(self) -> None:
+        scheme = urlsplit(self.locator).scheme.lower()
+        if scheme not in {"http", "https"}:
+            raise ValueError("HttpWorldAdapter locator must use http or https")
+        if self.timeout_seconds <= 0:
+            raise ValueError("HttpWorldAdapter timeout_seconds must be positive")
 
     def acquire(self, *, captured_at: datetime) -> WorldAcquisitionSuccess:
         response = self.transport.fetch(
