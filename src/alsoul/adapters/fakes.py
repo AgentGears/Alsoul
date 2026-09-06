@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import sha256
 from uuid import UUID
 
+from alsoul.adapters.contracts import (
+    AdapterRejected,
+    FirstPartyPresentationAcceptance,
+)
 from alsoul.domain.models import (
     FoundationResponseDraft,
     FoundationResponseSegment,
@@ -81,3 +85,38 @@ class FakeModelAdapter:
                 ),
             )
         )
+
+
+@dataclass(slots=True)
+class FakePresentationAdapter:
+    """Deterministic idempotent first-party presentation sink for acceptance tests."""
+
+    accepted: dict[str, FirstPartyPresentationAcceptance] = field(default_factory=dict)
+    attempts: int = 0
+
+    def present(
+        self,
+        *,
+        presentation_key: str,
+        companion_output_id: UUID,
+        surface_binding_id: UUID,
+        channel_binding_id: UUID,
+        content_text: str,
+        content_digest: str,
+    ) -> FirstPartyPresentationAcceptance:
+        del companion_output_id, surface_binding_id, channel_binding_id, content_text
+        self.attempts += 1
+        existing = self.accepted.get(presentation_key)
+        if existing is not None:
+            if existing.content_digest != content_digest:
+                raise AdapterRejected(
+                    "presentation key was replayed with different content"
+                )
+            return existing
+        acceptance = FirstPartyPresentationAcceptance(
+            presentation_key=presentation_key,
+            receipt_ref=f"fixture-presentation:{presentation_key}",
+            content_digest=content_digest,
+        )
+        self.accepted[presentation_key] = acceptance
+        return acceptance

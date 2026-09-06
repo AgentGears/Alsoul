@@ -9,11 +9,12 @@ from typing import Any, Mapping
 from alsoul.services import (
     FoundationRuntimeConfig,
     ModelRuntimeConfig,
+    PresentationRuntimeConfig,
     RuntimeSecrets,
     WorldRuntimeConfig,
 )
 
-HOST_CONFIG_VERSION = 1
+HOST_CONFIG_VERSION = 2
 MODEL_AUTHORIZATION_ENV = "ALSOUL_MODEL_AUTHORIZATION_TOKEN"
 
 
@@ -43,7 +44,11 @@ def load_host_config(path: str | Path) -> FoundationHostConfig:
         raise HostConfigurationError("host configuration must be valid JSON") from exc
 
     root = _require_object(payload, "root")
-    _reject_unknown(root, {"host_config_version", "database", "world", "model"}, "root")
+    _reject_unknown(
+        root,
+        {"host_config_version", "database", "world", "model", "presentation"},
+        "root",
+    )
 
     version = root.get("host_config_version")
     if isinstance(version, bool) or not isinstance(version, int):
@@ -92,10 +97,29 @@ def load_host_config(path: str | Path) -> FoundationHostConfig:
     except ValueError as exc:
         raise HostConfigurationError(str(exc)) from exc
 
+    presentation = _require_object(root.get("presentation"), "presentation")
+    _reject_unknown(presentation, {"endpoint", "timeout_seconds"}, "presentation")
+    try:
+        presentation_config = PresentationRuntimeConfig(
+            endpoint=_require_nonempty_string(
+                presentation.get("endpoint"), "presentation.endpoint"
+            ),
+            timeout_seconds=_positive_number(
+                presentation.get("timeout_seconds", 10.0),
+                "presentation.timeout_seconds",
+            ),
+        )
+    except ValueError as exc:
+        raise HostConfigurationError(str(exc)) from exc
+
     return FoundationHostConfig(
         host_config_version=version,
         database_path=database_path,
-        runtime=FoundationRuntimeConfig(world=world_config, model=model_config),
+        runtime=FoundationRuntimeConfig(
+            world=world_config,
+            model=model_config,
+            presentation=presentation_config,
+        ),
     )
 
 

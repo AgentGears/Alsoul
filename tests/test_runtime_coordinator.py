@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from alsoul.adapters import FakeModelAdapter, FakeWorldAdapter
+from alsoul.adapters import FakeModelAdapter, FakePresentationAdapter, FakeWorldAdapter
 from alsoul.domain.commands import (
     AdmitPersonMemoryClaimCommand,
     AppendCounterpartInputCommand,
@@ -44,6 +44,7 @@ CHECKPOINTS = (
     "GENERATED_OUTPUT_COMMITTED",
     "OUTPUT_TARGET_RESOLVED",
     "COMPANION_OUTPUT_ADOPTED",
+    "PRESENTATION_ACCEPTED",
     "PRESENTED",
 )
 
@@ -104,6 +105,7 @@ def test_runtime_coordinator_resumes_after_process_loss_at_every_durable_boundar
     crash_stage,
 ):
     ids, current = _prepare_current_input(services, bootstrapper, now)
+    presentation = FakePresentationAdapter()
     first_runtime = FoundationResponseCoordinator(
         services,
         clock=FixedClock(now),
@@ -118,6 +120,7 @@ def test_runtime_coordinator_resumes_after_process_loss_at_every_durable_boundar
             channel_binding_id=ids.channel_binding_id,
             world_adapter=FakeWorldAdapter(minimum_memory_gb=24),
             model_adapter=FakeModelAdapter(),
+            presentation_adapter=presentation,
             checkpoint=CrashAt(crash_stage),
         )
 
@@ -140,6 +143,7 @@ def test_runtime_coordinator_resumes_after_process_loss_at_every_durable_boundar
         channel_binding_id=ids.channel_binding_id,
         world_adapter=FakeWorldAdapter(minimum_memory_gb=24),
         model_adapter=FakeModelAdapter(),
+        presentation_adapter=presentation,
         after_process_loss=True,
     )
 
@@ -206,6 +210,8 @@ def test_runtime_coordinator_resumes_after_process_loss_at_every_durable_boundar
     assert counts["targets"] == 1
     assert counts["outputs"] == 1
     assert counts["presentations"] == 1
+    assert len(presentation.accepted) == 1
+    assert presentation.attempts == (2 if crash_stage == "PRESENTATION_ACCEPTED" else 1)
 
     if crash_stage == "OBSERVATION_STARTED":
         assert counts["observations"] == 2
@@ -235,6 +241,7 @@ def test_runtime_coordinator_does_not_blindly_retry_unresolved_model_attempt(
         clock=FixedClock(now),
         ids=UUIDGenerator(),
     )
+    presentation = FakePresentationAdapter()
 
     with pytest.raises(InjectedProcessLoss):
         runtime.respond(
@@ -244,6 +251,7 @@ def test_runtime_coordinator_does_not_blindly_retry_unresolved_model_attempt(
             channel_binding_id=ids.channel_binding_id,
             world_adapter=FakeWorldAdapter(minimum_memory_gb=24),
             model_adapter=FakeModelAdapter(),
+            presentation_adapter=presentation,
             checkpoint=CrashAt("MODEL_INVOCATION_STARTED"),
         )
 
@@ -255,6 +263,7 @@ def test_runtime_coordinator_does_not_blindly_retry_unresolved_model_attempt(
             channel_binding_id=ids.channel_binding_id,
             world_adapter=FakeWorldAdapter(minimum_memory_gb=24),
             model_adapter=FakeModelAdapter(),
+            presentation_adapter=presentation,
             after_process_loss=False,
         )
     assert excinfo.value.code == "MODEL_ATTEMPT_UNRESOLVED"
@@ -265,3 +274,4 @@ def test_runtime_coordinator_does_not_blindly_retry_unresolved_model_attempt(
         ).mappings().all()
     assert len(invocation_rows) == 1
     assert invocation_rows[0]["outcome"] == "IN_PROGRESS"
+    assert presentation.attempts == 0

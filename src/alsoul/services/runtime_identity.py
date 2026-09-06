@@ -18,4 +18,26 @@ def response_operation_id(current_input_event_id: UUID, stage: str) -> UUID:
     )
 
 
-__all__ = ["response_operation_id"]
+def presentation_idempotency_key(
+    companion_output_id: UUID,
+    surface_binding_id: UUID,
+    channel_binding_id: UUID,
+) -> str:
+    """Return the stable semantic key for one output on one first-party route.
+
+    The key survives process restart and is safe to replay only against a sink that
+    implements the first-party presentation idempotency contract.
+    """
+
+    return str(
+        uuid5(
+            _RUNTIME_NAMESPACE,
+            (
+                f"{companion_output_id}:{surface_binding_id}:{channel_binding_id}:"
+                "first-party-presentation:f4-runtime-v1"
+            ),
+        )
+    )
+
+
+__all__ = ["presentation_idempotency_key", "response_operation_id"]

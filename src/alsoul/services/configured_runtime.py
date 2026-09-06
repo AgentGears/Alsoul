@@ -10,6 +10,7 @@ from alsoul.adapters import (
     F4JsonMemoryRequirementExtractor,
     HttpTransport,
     HttpWorldAdapter,
+    JsonFirstPartyPresentationAdapter,
     JsonHttpTransport,
     JsonModelProviderAdapter,
     UrllibHttpTransport,
@@ -68,19 +69,7 @@ class ModelRuntimeConfig:
     timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
-        parsed = urlsplit(self.endpoint)
-        if (
-            parsed.scheme.lower() != "https"
-            or not parsed.netloc
-            or parsed.hostname is None
-            or parsed.username is not None
-            or parsed.password is not None
-        ):
-            raise ValueError(
-                "model endpoint must be an absolute HTTPS URL without embedded credentials"
-            )
-        if parsed.fragment:
-            raise ValueError("model endpoint must not contain a URL fragment")
+        _validate_https_endpoint(self.endpoint, label="model")
         if self.timeout_seconds <= 0:
             raise ValueError("model timeout_seconds must be positive")
         if not self.provider_binding_ref.strip():
@@ -90,9 +79,23 @@ class ModelRuntimeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PresentationRuntimeConfig:
+    """Non-secret route to the idempotent first-party presentation sink."""
+
+    endpoint: str
+    timeout_seconds: float = 10.0
+
+    def __post_init__(self) -> None:
+        _validate_https_endpoint(self.endpoint, label="presentation")
+        if self.timeout_seconds <= 0:
+            raise ValueError("presentation timeout_seconds must be positive")
+
+
+@dataclass(frozen=True, slots=True)
 class FoundationRuntimeConfig:
     world: WorldRuntimeConfig
     model: ModelRuntimeConfig
+    presentation: PresentationRuntimeConfig
 
     def public_snapshot(self) -> dict[str, Any]:
         """Return only non-secret runtime configuration suitable for diagnostics."""
@@ -108,6 +111,10 @@ class FoundationRuntimeConfig:
                 "provider_binding_ref": self.model.provider_binding_ref,
                 "model_ref": self.model.model_ref,
                 "timeout_seconds": self.model.timeout_seconds,
+            },
+            "presentation": {
+                "endpoint": self.presentation.endpoint,
+                "timeout_seconds": self.presentation.timeout_seconds,
             },
         }
 
@@ -128,12 +135,12 @@ class ModelContractProbeResult:
 
 
 class ConfiguredFoundationRuntime:
-    """Configured F4 reactive runtime using the controlled network adapters.
+    """Configured F4 reactive runtime using controlled network adapters.
 
     Configuration and credentials remain outside canonical companion state. The
     runtime composes a strict HTTPS world-source contract, bounded JSON extraction,
-    the configured model endpoint, restart-safe response coordination, and derived
-    operator diagnostics.
+    the configured model endpoint, a restart-idempotent first-party presentation
+    endpoint, recovery-safe response coordination, and derived operator diagnostics.
     """
 
     def __init__(
@@ -146,6 +153,7 @@ class ConfiguredFoundationRuntime:
         ids: IdGenerator | None = None,
         world_transport: HttpTransport | None = None,
         model_transport: JsonHttpTransport | None = None,
+        presentation_transport: JsonHttpTransport | None = None,
     ) -> None:
         self.services = services
         self.config = config
@@ -169,6 +177,11 @@ class ConfiguredFoundationRuntime:
             authorization_token=self.secrets.model_authorization_token,
             timeout_seconds=config.model.timeout_seconds,
             transport=model_transport or UrllibJsonTransport(),
+        )
+        self.presentation_adapter = JsonFirstPartyPresentationAdapter(
+            endpoint=config.presentation.endpoint,
+            timeout_seconds=config.presentation.timeout_seconds,
+            transport=presentation_transport or UrllibJsonTransport(),
         )
         self.coordinator = FoundationResponseCoordinator(
             services,
@@ -195,6 +208,7 @@ class ConfiguredFoundationRuntime:
             world_adapter=self.world_adapter,
             world_extractor=self.world_extractor,
             model_adapter=self.model_adapter,
+            presentation_adapter=self.presentation_adapter,
             after_process_loss=after_process_loss,
             checkpoint=checkpoint,
         )
@@ -227,6 +241,22 @@ class ConfiguredFoundationRuntime:
                 segment.epistemic_kind for segment in draft.segments
             ),
         )
+
+
+def _validate_https_endpoint(value: str, *, label: str) -> None:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.netloc
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError(
+            f"{label} endpoint must be an absolute HTTPS URL without embedded credentials"
+        )
+    if parsed.fragment:
+        raise ValueError(f"{label} endpoint must not contain a URL fragment")
 
 
 def _synthetic_provider_context() -> dict[str, Any]:
@@ -275,6 +305,7 @@ __all__ = [
     "FoundationRuntimeConfig",
     "ModelContractProbeResult",
     "ModelRuntimeConfig",
+    "PresentationRuntimeConfig",
     "RuntimeSecrets",
     "WorldRuntimeConfig",
 ]
