@@ -1,3 +1,4 @@
+from .bootstrap import FoundationBootstrapper
 from .foundation import FoundationServices
 
-__all__ = ["FoundationServices"]
+__all__ = ["FoundationBootstrapper", "FoundationServices"]
