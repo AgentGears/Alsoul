@@ -175,11 +175,15 @@ src/alsoul/
 
 Database migrations live under `migrations/`, and executable architecture tests live under `tests/`.
 
-Foundation identity creation is an explicit administration boundary through `FoundationBootstrapper`; ordinary `FoundationServices` fail closed rather than recreating missing Person/Relationship roots. Provider-independent adapter contracts now sit above deterministic acceptance adapters and a generic HTTP world-acquisition adapter, while semantic Observation/Evidence/WorldResult admission remains inside the application-service boundary.
+Foundation identity creation is an explicit administration boundary through `FoundationBootstrapper`; ordinary `FoundationServices` fail closed rather than recreating missing Person/Relationship roots.
+
+Provider execution is now routed through Alsoul-owned orchestration boundaries. `WorldAcquisitionRunner` persists an Observation before a replaceable acquisition adapter runs and stops at captured evidence; `ModelGenerationRunner` persists ModelInvocation before dispatch and stops at GeneratedOutput. Neither path can bypass WorldResult admission, CompanionOutput adoption, or presentation.
+
+The adapter package contains provider-independent contracts, deterministic acceptance adapters, a generic HTTP world-acquisition adapter, and an HTTPS JSON model adapter for an explicitly configured endpoint. Model credentials remain transport-only configuration and are not inserted into ContextProjection, provider context, or semantic response payloads.
 
 The repository continuously verifies source/test compilation, the executable acceptance suite, and migration upgrade/downgrade.
 
-See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md) for the concrete walking-skeleton scope and [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md) for the post-bootstrap trust-boundary hardening.
+See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), and [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md) for the executable foundation checkpoints.
 
 ## Documentation
 
@@ -191,6 +195,7 @@ Core documents:
 - [Decision Ledger](docs/DECISION_LEDGER.md)
 - [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md)
 - [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md)
+- [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md)
 - [Architecture Checkpoint — Decisions 11.A through 15.B](docs/ARCHITECTURE_CHECKPOINT_11_15.md)
 
 Architecture decision records:
@@ -204,4 +209,4 @@ Architecture decision records:
 
 ## Status
 
-Foundation implementation hardening. The current code exercises the F4 persistence/service boundary, derives recovery progress from canonical rows, separates explicit identity bootstrap from runtime services, and continuously verifies the executable foundation contract. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
+Controlled F4 provider integration. The code now proves that network acquisition and model generation can be connected to the foundation without making provider runtime, transport credentials, returned bytes, or generated text authoritative by themselves. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
