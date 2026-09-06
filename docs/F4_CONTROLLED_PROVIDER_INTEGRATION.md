@@ -66,11 +66,14 @@ Its order is:
 
 ```text
 render pinned ContextProjection
+→ compute digest of exact semantic provider request
 → persist ModelInvocation(IN_PROGRESS)
 → dispatch to ModelProviderAdapter
 → persist GeneratedOutput
 → mark ModelInvocation(SUCCEEDED)
 ```
+
+`provider_request_digest` is computed by the configured adapter over the canonical semantic request body that it will dispatch. Authentication headers and credentials are deliberately excluded. The digest therefore identifies the request semantics without persisting secret material.
 
 Provider identity is taken from the configured adapter and recorded on the invocation. It does not become `CompanionPerson` identity.
 
@@ -93,6 +96,8 @@ AdapterRejected
 AdapterOutcomeUnknown
 → ModelInvocation(UNKNOWN)
 ```
+
+A received but unusable response, including malformed structured output or undecodable response bytes, is a definite rejection rather than transport uncertainty.
 
 An unexpected exception after model dispatch begins is conservatively treated as unknown.
 
@@ -126,9 +131,12 @@ ContextProjection
 provider context
 semantic response payload
 ModelInvocation provider identity
+provider_request_digest
 ```
 
-The configured endpoint must use HTTPS. Invalid response shape, non-success HTTP responses, or invalid semantic segment kinds are rejected before they can be treated as a usable generation result.
+The configured endpoint must use HTTPS and must not contain embedded credentials. The default transport does not follow HTTP redirects, so an authorization credential cannot be forwarded to a redirect target. Any resolved successful endpoint must remain on the configured HTTPS origin.
+
+Provider response bodies are size-bounded before decoding. Invalid response encoding, invalid response shape, non-success HTTP responses, or invalid semantic segment/source-attribution structure are rejected before they can be treated as a usable generation result.
 
 The host still validates provenance-bearing response semantics again at `CompanionOutput` adoption.
 
@@ -165,11 +173,15 @@ failed acquisition creates no WorldSourceCapture
 successful acquisition does not automatically create WorldResult
 ModelInvocation exists before model dispatch begins
 provider/model refs come from configured adapter identity
+provider_request_digest matches the exact semantic provider request body
 generation produces no automatic CompanionOutput or Timeline presentation
 uncertain model transport becomes UNKNOWN
 definite provider rejection becomes FAILED
+received but undecodable model output is rejected
 transport credentials are absent from semantic request body
 HTTPS model endpoint is required
+embedded endpoint credentials are rejected
+cross-origin model resolution is rejected
 invalid structured provider output is rejected
 ```
 
