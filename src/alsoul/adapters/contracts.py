@@ -33,6 +33,10 @@ class ModelProviderAdapter(Protocol):
     provider_binding_ref: str
     model_ref: str
 
+    def provider_request_digest(self, provider_context: dict[str, Any]) -> str:
+        """Digest the canonical semantic request body that will be dispatched."""
+        ...
+
     def generate(self, provider_context: dict[str, Any]) -> FoundationResponseDraft:
         ...
 
