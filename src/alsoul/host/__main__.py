@@ -13,6 +13,7 @@ from alsoul.adapters import AdapterError, AdapterOutcomeUnknown, AdapterRejected
 from alsoul.domain.errors import DomainError
 from alsoul.host.application import FoundationHostApplication
 from alsoul.host.config import HostConfigurationError, load_host_config, load_runtime_secrets
+from alsoul.host.ingress_io import IngressEnvelopeError, parse_ingress_envelope
 from alsoul.host.readiness import HostReadinessError, assess_host_readiness
 
 
@@ -31,6 +32,19 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("ready", help="Validate database/schema readiness without provider I/O")
+
+    ingest = commands.add_parser(
+        "ingest",
+        help="Admit one trusted first-party input envelope from standard input",
+    )
+    ingest.set_defaults(reads_ingress=True)
+
+    interact = commands.add_parser(
+        "interact",
+        help="Admit one trusted first-party input envelope and run the F4 response",
+    )
+    interact.add_argument("--after-process-loss", action="store_true")
+    interact.set_defaults(reads_ingress=True)
 
     diagnose = commands.add_parser("diagnose", help="Derive content-free recovery state")
     _add_response_identity_arguments(diagnose, include_route=False)
@@ -64,9 +78,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit_success("ready", readiness)
             return 0
 
+        envelope = None
+        if getattr(args, "reads_ingress", False):
+            envelope = parse_ingress_envelope(sys.stdin.read())
+
         secrets = load_runtime_secrets()
         with FoundationHostApplication(config=config, secrets=secrets) as app:
-            if args.command == "diagnose":
+            if args.command == "ingest":
+                assert envelope is not None
+                result = app.ingress.admit(envelope)
+            elif args.command == "interact":
+                assert envelope is not None
+                admitted = app.ingress.admit(envelope)
+                response = app.runtime.respond(
+                    relationship_id=admitted.relationship_id,
+                    current_input_event_id=admitted.event_id,
+                    surface_binding_id=admitted.surface_binding_id,
+                    channel_binding_id=admitted.channel_binding_id,
+                    after_process_loss=args.after_process_loss,
+                )
+                result = {
+                    "ingress": _jsonable(admitted),
+                    "response": _jsonable(response),
+                }
+            elif args.command == "diagnose":
                 result = app.runtime.diagnose(
                     relationship_id=args.relationship_id,
                     current_input_event_id=args.current_input_event_id,
@@ -91,6 +126,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     except HostConfigurationError as exc:
         _emit_error("HOST_CONFIG_INVALID", str(exc))
+        return 2
+    except IngressEnvelopeError as exc:
+        _emit_error("INGRESS_ENVELOPE_INVALID", str(exc))
         return 2
     except HostReadinessError as exc:
         _emit_error(

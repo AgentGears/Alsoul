@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from alsoul.host.config import FoundationHostConfig
 from alsoul.host.readiness import HostReadiness, require_host_readiness
-from alsoul.services import ConfiguredFoundationRuntime, FoundationServices, RuntimeSecrets
+from alsoul.services import (
+    ConfiguredFoundationRuntime,
+    FirstPartyIngress,
+    FoundationServices,
+    RuntimeSecrets,
+)
 from alsoul.storage import create_sqlite_engine
 
 
@@ -24,6 +29,7 @@ class FoundationHostApplication:
         self.readiness: HostReadiness = require_host_readiness(config)
         self.engine = create_sqlite_engine(config.database_path)
         self.services = FoundationServices(self.engine)
+        self.ingress = FirstPartyIngress(self.services)
         self.runtime = ConfiguredFoundationRuntime(
             self.services,
             config=config.runtime,
