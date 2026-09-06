@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from alsoul.adapters.contracts import (
     AdapterRejected,
+    FirstPartyPresentationAdapter,
     ModelProviderAdapter,
     WorldAcquisitionAdapter,
     WorldResultExtractor,
@@ -36,7 +37,10 @@ from alsoul.services.provider_integration import (
 )
 from alsoul.services.provider_recovery import ProviderRecoveryCoordinator
 from alsoul.services.recovery import RecoveryCoordinator
-from alsoul.services.runtime_identity import response_operation_id
+from alsoul.services.runtime_identity import (
+    presentation_idempotency_key,
+    response_operation_id,
+)
 from alsoul.storage import schema
 
 _WORLD_OBJECTIVE = "Determine the current minimum memory requirement for the software."
@@ -53,6 +57,7 @@ RuntimeCheckpointName = Literal[
     "GENERATED_OUTPUT_COMMITTED",
     "OUTPUT_TARGET_RESOLVED",
     "COMPANION_OUTPUT_ADOPTED",
+    "PRESENTATION_ACCEPTED",
     "PRESENTED",
 ]
 RuntimeCheckpoint = Callable[[RuntimeCheckpointName], None]
@@ -82,9 +87,10 @@ class FoundationResponseCoordinator:
     """Resume one F4 reactive response from the furthest durable semantic stage.
 
     The coordinator persists no mutable turn-status aggregate. It composes the
-    existing semantic services, provider runners, recovery assessment, and a
-    bounded source interpreter. The interpreter proposes a WorldResult; it never
-    bypasses the evidence-backed WorldResult admission boundary.
+    existing semantic services, provider runners, recovery assessment, bounded world
+    interpretation, and a first-party presentation acceptance boundary. A Timeline
+    presentation is committed only after the configured sink positively accepts the
+    exact adopted output under a restart-stable presentation key.
     """
 
     def __init__(
@@ -109,6 +115,7 @@ class FoundationResponseCoordinator:
         channel_binding_id: UUID,
         world_adapter: WorldAcquisitionAdapter,
         model_adapter: ModelProviderAdapter,
+        presentation_adapter: FirstPartyPresentationAdapter,
         world_extractor: WorldResultExtractor | None = None,
         after_process_loss: bool = False,
         checkpoint: RuntimeCheckpoint | None = None,
@@ -141,17 +148,12 @@ class FoundationResponseCoordinator:
 
         if assessment.stage == "ADOPTED":
             assert assessment.adopted_output_id is not None
-            presented = self.services.present_companion_output(
-                PresentCompanionOutputCommand(
-                    operation_id=self.ids.new(),
-                    companion_output_id=assessment.adopted_output_id,
-                    surface_binding_id=surface_binding_id,
-                    channel_binding_id=channel_binding_id,
-                    presented_at=self.clock.now(),
-                )
+            return self._accept_and_commit_presentation(
+                context=context,
+                companion_output_id=assessment.adopted_output_id,
+                presentation_adapter=presentation_adapter,
+                checkpoint=emit,
             )
-            emit("PRESENTED")
-            return self._load_final_result(presented.interaction_event_id)
 
         if assessment.stage == "MODEL_ATTEMPT_UNRESOLVED":
             fail(
@@ -238,16 +240,76 @@ class FoundationResponseCoordinator:
         )
         emit("COMPANION_OUTPUT_ADOPTED")
 
+        return self._accept_and_commit_presentation(
+            context=context,
+            companion_output_id=adopted.companion_output_id,
+            presentation_adapter=presentation_adapter,
+            checkpoint=emit,
+        )
+
+    def _accept_and_commit_presentation(
+        self,
+        *,
+        context: _ResponseContext,
+        companion_output_id: UUID,
+        presentation_adapter: FirstPartyPresentationAdapter,
+        checkpoint: RuntimeCheckpoint,
+    ) -> FoundationResponseRunResult:
+        with self.services.engine.connect() as conn:
+            output = conn.execute(
+                select(schema.companion_output).where(
+                    schema.companion_output.c.companion_output_id
+                    == companion_output_id
+                )
+            ).mappings().one_or_none()
+        if output is None:
+            fail("COMPANION_OUTPUT_NOT_FOUND", "adopted CompanionOutput does not exist")
+        if (
+            output["companion_person_id"] != context.companion_person_id
+            or output["relationship_id"] != context.relationship_id
+        ):
+            fail(
+                "PRESENTATION_ROUTE_INVALID",
+                "CompanionOutput does not belong to the response relationship",
+            )
+
+        key = presentation_idempotency_key(
+            companion_output_id,
+            context.surface_binding_id,
+            context.channel_binding_id,
+        )
+        acceptance = presentation_adapter.present(
+            presentation_key=key,
+            companion_output_id=companion_output_id,
+            surface_binding_id=context.surface_binding_id,
+            channel_binding_id=context.channel_binding_id,
+            content_text=output["content_text"],
+            content_digest=output["content_digest"],
+        )
+        if (
+            acceptance.presentation_key != key
+            or acceptance.content_digest != output["content_digest"]
+            or not acceptance.receipt_ref.strip()
+        ):
+            fail(
+                "PRESENTATION_ACCEPTANCE_INVALID",
+                "first-party sink did not acknowledge the exact adopted output",
+            )
+        checkpoint("PRESENTATION_ACCEPTED")
+
         presented = self.services.present_companion_output(
             PresentCompanionOutputCommand(
-                operation_id=self.ids.new(),
-                companion_output_id=adopted.companion_output_id,
+                operation_id=response_operation_id(
+                    context.current_input_event_id,
+                    "presentation-commit",
+                ),
+                companion_output_id=companion_output_id,
                 surface_binding_id=context.surface_binding_id,
                 channel_binding_id=context.channel_binding_id,
                 presented_at=self.clock.now(),
             )
         )
-        emit("PRESENTED")
+        checkpoint("PRESENTED")
         return self._load_final_result(presented.interaction_event_id)
 
     def _load_response_context(
