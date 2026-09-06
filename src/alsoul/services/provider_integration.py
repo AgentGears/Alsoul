@@ -18,7 +18,7 @@ from alsoul.domain.commands import (
 )
 from alsoul.domain.models import FoundationResponseDraft, WorldAcquisitionSuccess
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
-from alsoul.services.common import canonical_json, sha256_text
+from alsoul.services.common import sha256_text
 from alsoul.services.foundation import FoundationServices
 
 
@@ -146,7 +146,7 @@ class ModelGenerationRunner:
         adapter: ModelProviderAdapter,
     ) -> ModelGenerationRunResult:
         provider_context = self.services.render_provider_context(context_projection_id)
-        request_digest = sha256_text(canonical_json(provider_context))
+        request_digest = adapter.provider_request_digest(provider_context)
         invocation = self.services.start_model_invocation(
             StartModelInvocationCommand(
                 operation_id=self.ids.new(),
