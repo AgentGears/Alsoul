@@ -1,0 +1,280 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+from urllib.parse import urlsplit
+from uuid import UUID
+
+from alsoul.adapters import (
+    AdapterRejected,
+    F4JsonMemoryRequirementExtractor,
+    HttpTransport,
+    HttpWorldAdapter,
+    JsonHttpTransport,
+    JsonModelProviderAdapter,
+    UrllibHttpTransport,
+    UrllibJsonTransport,
+    https_origin,
+)
+from alsoul.domain.models import FoundationResponseDraft
+from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
+from alsoul.services.diagnostics import (
+    FoundationRuntimeDiagnostic,
+    FoundationRuntimeDiagnostics,
+)
+from alsoul.services.foundation import (
+    FoundationServices,
+    WORLD_MEMORY_REQUIREMENT_PREDICATE,
+)
+from alsoul.services.runtime import (
+    FoundationResponseCoordinator,
+    FoundationResponseRunResult,
+    RuntimeCheckpoint,
+)
+
+_PROBE_PERSON_ID = UUID("00000000-0000-0000-0000-000000000101")
+_PROBE_RELATIONSHIP_ID = UUID("00000000-0000-0000-0000-000000000102")
+_PROBE_CLAIM_ID = UUID("00000000-0000-0000-0000-000000000103")
+_PROBE_WORLD_RESULT_ID = UUID("00000000-0000-0000-0000-000000000104")
+
+
+@dataclass(frozen=True, slots=True)
+class WorldRuntimeConfig:
+    """Non-secret configuration for the F4 world acquisition route."""
+
+    locator: str
+    timeout_seconds: float = 10.0
+
+    def __post_init__(self) -> None:
+        parsed = urlsplit(self.locator)
+        https_origin(self.locator)
+        if parsed.fragment:
+            raise ValueError("world locator must not contain a URL fragment")
+        if self.timeout_seconds <= 0:
+            raise ValueError("world timeout_seconds must be positive")
+
+    @property
+    def expected_origin(self) -> str:
+        return https_origin(self.locator)
+
+
+@dataclass(frozen=True, slots=True)
+class ModelRuntimeConfig:
+    """Non-secret configuration for one model-provider route."""
+
+    endpoint: str
+    provider_binding_ref: str
+    model_ref: str
+    timeout_seconds: float = 30.0
+
+    def __post_init__(self) -> None:
+        parsed = urlsplit(self.endpoint)
+        if (
+            parsed.scheme.lower() != "https"
+            or not parsed.netloc
+            or parsed.hostname is None
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError(
+                "model endpoint must be an absolute HTTPS URL without embedded credentials"
+            )
+        if parsed.fragment:
+            raise ValueError("model endpoint must not contain a URL fragment")
+        if self.timeout_seconds <= 0:
+            raise ValueError("model timeout_seconds must be positive")
+        if not self.provider_binding_ref.strip():
+            raise ValueError("provider_binding_ref is required")
+        if not self.model_ref.strip():
+            raise ValueError("model_ref is required")
+
+
+@dataclass(frozen=True, slots=True)
+class FoundationRuntimeConfig:
+    world: WorldRuntimeConfig
+    model: ModelRuntimeConfig
+
+    def public_snapshot(self) -> dict[str, Any]:
+        """Return only non-secret runtime configuration suitable for diagnostics."""
+
+        return {
+            "world": {
+                "locator": self.world.locator,
+                "expected_origin": self.world.expected_origin,
+                "timeout_seconds": self.world.timeout_seconds,
+            },
+            "model": {
+                "endpoint": self.model.endpoint,
+                "provider_binding_ref": self.model.provider_binding_ref,
+                "model_ref": self.model.model_ref,
+                "timeout_seconds": self.model.timeout_seconds,
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSecrets:
+    """Ephemeral transport credentials. This object is never persisted by Alsoul."""
+
+    model_authorization_token: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ModelContractProbeResult:
+    provider_binding_ref: str
+    model_ref: str
+    provider_request_digest: str
+    epistemic_kinds: tuple[str, ...]
+
+
+class ConfiguredFoundationRuntime:
+    """Configured F4 reactive runtime using the controlled network adapters.
+
+    Configuration and credentials remain outside canonical companion state. The
+    runtime composes a strict HTTPS world-source contract, bounded JSON extraction,
+    the configured model endpoint, restart-safe response coordination, and derived
+    operator diagnostics.
+    """
+
+    def __init__(
+        self,
+        services: FoundationServices,
+        *,
+        config: FoundationRuntimeConfig,
+        secrets: RuntimeSecrets | None = None,
+        clock: Clock | None = None,
+        ids: IdGenerator | None = None,
+        world_transport: HttpTransport | None = None,
+        model_transport: JsonHttpTransport | None = None,
+    ) -> None:
+        self.services = services
+        self.config = config
+        self.secrets = secrets or RuntimeSecrets()
+        self.clock = clock or services.clock or SystemClock()
+        self.ids = ids or UUIDGenerator()
+
+        self.world_adapter = HttpWorldAdapter(
+            locator=config.world.locator,
+            timeout_seconds=config.world.timeout_seconds,
+            transport=world_transport or UrllibHttpTransport(),
+        )
+        self.world_extractor = F4JsonMemoryRequirementExtractor(
+            expected_https_origin=config.world.expected_origin,
+            predicate=WORLD_MEMORY_REQUIREMENT_PREDICATE,
+        )
+        self.model_adapter = JsonModelProviderAdapter(
+            endpoint=config.model.endpoint,
+            provider_binding_ref=config.model.provider_binding_ref,
+            model_ref=config.model.model_ref,
+            authorization_token=self.secrets.model_authorization_token,
+            timeout_seconds=config.model.timeout_seconds,
+            transport=model_transport or UrllibJsonTransport(),
+        )
+        self.coordinator = FoundationResponseCoordinator(
+            services,
+            clock=self.clock,
+            ids=self.ids,
+        )
+        self.diagnostics = FoundationRuntimeDiagnostics(services.engine)
+
+    def respond(
+        self,
+        *,
+        relationship_id: UUID,
+        current_input_event_id: UUID,
+        surface_binding_id: UUID,
+        channel_binding_id: UUID,
+        after_process_loss: bool = False,
+        checkpoint: RuntimeCheckpoint | None = None,
+    ) -> FoundationResponseRunResult:
+        return self.coordinator.respond(
+            relationship_id=relationship_id,
+            current_input_event_id=current_input_event_id,
+            surface_binding_id=surface_binding_id,
+            channel_binding_id=channel_binding_id,
+            world_adapter=self.world_adapter,
+            world_extractor=self.world_extractor,
+            model_adapter=self.model_adapter,
+            after_process_loss=after_process_loss,
+            checkpoint=checkpoint,
+        )
+
+    def diagnose(
+        self, *, relationship_id: UUID, current_input_event_id: UUID
+    ) -> FoundationRuntimeDiagnostic:
+        return self.diagnostics.assess(
+            relationship_id=relationship_id,
+            current_input_event_id=current_input_event_id,
+        )
+
+    def probe_model_contract(self) -> ModelContractProbeResult:
+        """Perform an operator-only provider contract probe with synthetic context.
+
+        This is not CompanionPerson cognition and writes no ModelInvocation,
+        GeneratedOutput, memory, or Timeline state. It verifies only that the
+        configured endpoint can satisfy the current F4 wire contract.
+        """
+
+        context = _synthetic_provider_context()
+        digest = self.model_adapter.provider_request_digest(context)
+        draft = self.model_adapter.generate(context)
+        _validate_probe_sources(draft)
+        return ModelContractProbeResult(
+            provider_binding_ref=self.model_adapter.provider_binding_ref,
+            model_ref=self.model_adapter.model_ref,
+            provider_request_digest=digest,
+            epistemic_kinds=tuple(
+                segment.epistemic_kind for segment in draft.segments
+            ),
+        )
+
+
+def _synthetic_provider_context() -> dict[str, Any]:
+    return {
+        "person": {
+            "person_id": str(_PROBE_PERSON_ID),
+            "role": "PERSONAL_COMPANION",
+            "preferred_name": "Alsoul",
+            "self_revision": 1,
+        },
+        "relationship_id": str(_PROBE_RELATIONSHIP_ID),
+        "current_input": "Operational contract probe. Produce only the requested structured response.",
+        "personal_context": [
+            {
+                "claim_id": str(_PROBE_CLAIM_ID),
+                "predicate": "primary_machine.memory_gb",
+                "value": 16,
+                "epistemic_basis": "COUNTERPART_STATED_MEMORY",
+            }
+        ],
+        "world_context": [
+            {
+                "world_result_id": str(_PROBE_WORLD_RESULT_ID),
+                "predicate": WORLD_MEMORY_REQUIREMENT_PREDICATE,
+                "value": 24,
+                "epistemic_mode": "CURRENT_CHECKED",
+            }
+        ],
+    }
+
+
+def _validate_probe_sources(draft: FoundationResponseDraft) -> None:
+    if (
+        len(draft.segments) != 3
+        or draft.segments[0].source_ref != _PROBE_CLAIM_ID
+        or draft.segments[1].source_ref != _PROBE_WORLD_RESULT_ID
+        or draft.segments[2].source_ref is not None
+    ):
+        raise AdapterRejected(
+            "configured model endpoint did not preserve the synthetic F4 source-attribution contract"
+        )
+
+
+__all__ = [
+    "ConfiguredFoundationRuntime",
+    "FoundationRuntimeConfig",
+    "ModelContractProbeResult",
+    "ModelRuntimeConfig",
+    "RuntimeSecrets",
+    "WorldRuntimeConfig",
+]
