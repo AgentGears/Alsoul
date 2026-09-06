@@ -28,8 +28,8 @@ class ResponseRecoveryAssessment:
     reusable_generated_output_id: UUID | None = None
     adopted_output_id: UUID | None = None
     presented_event_id: UUID | None = None
-    latest_model_invocation_id: UUID | None = None
-    latest_model_invocation_outcome: str | None = None
+    unresolved_model_invocation_id: UUID | None = None
+    unresolved_model_invocation_outcome: str | None = None
     projection_reuse_blocker: str | None = None
 
 
@@ -105,16 +105,11 @@ class RecoveryCoordinator:
                     continue
 
                 mi_rows = conn.execute(
-                    select(schema.model_invocation)
-                    .where(
+                    select(schema.model_invocation).where(
                         schema.model_invocation.c.context_projection_id
                         == cp["projection_id"]
                     )
-                    .order_by(schema.model_invocation.c.started_at.desc())
                 ).mappings().all()
-
-                latest_id = mi_rows[0]["model_invocation_id"] if mi_rows else None
-                latest_outcome = mi_rows[0]["outcome"] if mi_rows else None
 
                 for mi in mi_rows:
                     if mi["outcome"] != "SUCCEEDED":
@@ -134,26 +129,30 @@ class RecoveryCoordinator:
                             reusable_generated_output_id=generated[
                                 "generated_output_id"
                             ],
-                            latest_model_invocation_id=latest_id,
-                            latest_model_invocation_outcome=latest_outcome,
                         )
                     return ResponseRecoveryAssessment(
                         "MODEL_ATTEMPT_UNRESOLVED",
                         current_input_event_id,
                         target["output_target_id"] if target else None,
                         reusable_projection_id=cp["projection_id"],
-                        latest_model_invocation_id=mi["model_invocation_id"],
-                        latest_model_invocation_outcome="SUCCEEDED",
+                        unresolved_model_invocation_id=mi["model_invocation_id"],
+                        unresolved_model_invocation_outcome="SUCCEEDED",
                     )
 
-                if mi_rows and mi_rows[0]["outcome"] == "IN_PROGRESS":
+                in_progress = next(
+                    (mi for mi in mi_rows if mi["outcome"] == "IN_PROGRESS"),
+                    None,
+                )
+                if in_progress is not None:
                     return ResponseRecoveryAssessment(
                         "MODEL_ATTEMPT_UNRESOLVED",
                         current_input_event_id,
                         target["output_target_id"] if target else None,
                         reusable_projection_id=cp["projection_id"],
-                        latest_model_invocation_id=latest_id,
-                        latest_model_invocation_outcome=latest_outcome,
+                        unresolved_model_invocation_id=in_progress[
+                            "model_invocation_id"
+                        ],
+                        unresolved_model_invocation_outcome="IN_PROGRESS",
                     )
 
                 return ResponseRecoveryAssessment(
@@ -161,8 +160,6 @@ class RecoveryCoordinator:
                     current_input_event_id,
                     target["output_target_id"] if target else None,
                     reusable_projection_id=cp["projection_id"],
-                    latest_model_invocation_id=latest_id,
-                    latest_model_invocation_outcome=latest_outcome,
                 )
 
             return ResponseRecoveryAssessment(
