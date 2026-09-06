@@ -16,6 +16,7 @@ from alsoul.domain.commands import (
     StartModelInvocationCommand,
     StartObservationCommand,
 )
+from alsoul.domain.models import FoundationResponseDraft, WorldAcquisitionSuccess
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
 from alsoul.services.common import canonical_json, sha256_text
 from alsoul.services.foundation import FoundationServices
@@ -72,15 +73,9 @@ class WorldAcquisitionRunner:
 
         try:
             acquired = adapter.acquire(captured_at=self.clock.now())
-        except Exception:
-            self.services.record_observation_failure(
-                operation_id=self.ids.new(),
-                observation_id=observation.observation_id,
-            )
-            raise
-
-        accepted = self.services.record_observation_success(
-            RecordObservationSuccessCommand(
+            if not isinstance(acquired, WorldAcquisitionSuccess):
+                raise TypeError("world adapter returned an invalid acquisition result")
+            success_command = RecordObservationSuccessCommand(
                 operation_id=self.ids.new(),
                 observation_id=observation.observation_id,
                 source_identity=acquired.source_identity,
@@ -92,12 +87,35 @@ class WorldAcquisitionRunner:
                 source_published_at=acquired.source_published_at,
                 source_modified_at=acquired.source_modified_at,
             )
-        )
+        except Exception:
+            self._mark_observation_failed_best_effort(observation.observation_id)
+            raise
+
+        try:
+            accepted = self.services.record_observation_success(success_command)
+        except Exception:
+            # If the success transaction definitely did not commit, FAILED is the
+            # conservative recoverable state. If it did commit before transport
+            # uncertainty, the terminal-state guard prevents rewriting SUCCEEDED.
+            self._mark_observation_failed_best_effort(observation.observation_id)
+            raise
+
         return WorldAcquisitionRunResult(
             observation_id=observation.observation_id,
             source_capture_id=accepted.source_capture_id,
             evidence_id=accepted.evidence_id,
         )
+
+    def _mark_observation_failed_best_effort(self, observation_id: UUID) -> None:
+        try:
+            self.services.record_observation_failure(
+                operation_id=self.ids.new(),
+                observation_id=observation_id,
+            )
+        except Exception:
+            # Preserve the primary failure. Recovery derives the durable state and
+            # will not treat an orphan STARTED observation as successful evidence.
+            pass
 
 
 class ModelGenerationRunner:
@@ -142,6 +160,10 @@ class ModelGenerationRunner:
 
         try:
             draft = adapter.generate(provider_context)
+            if not isinstance(draft, FoundationResponseDraft):
+                raise AdapterRejected("model adapter returned an invalid draft type")
+            content_text = draft.render_text()
+            semantic_payload = draft.to_payload()
         except AdapterRejected:
             self.services.fail_model_invocation(invocation.model_invocation_id)
             raise
@@ -157,24 +179,35 @@ class ModelGenerationRunner:
                 unknown=True,
             )
             raise AdapterOutcomeUnknown(
-                "model adapter raised after invocation dispatch began"
+                "model adapter outcome became unusable after invocation dispatch began"
             ) from exc
 
-        content_text = draft.render_text()
-        generated = self.services.complete_model_invocation(
-            CompleteModelInvocationCommand(
-                operation_id=self.ids.new(),
-                model_invocation_id=invocation.model_invocation_id,
-                content_text=content_text,
-                content_digest=sha256_text(content_text),
-                semantic_payload=draft.to_payload(),
-                received_at=self.clock.now(),
-            )
+        completion = CompleteModelInvocationCommand(
+            operation_id=self.ids.new(),
+            model_invocation_id=invocation.model_invocation_id,
+            content_text=content_text,
+            content_digest=sha256_text(content_text),
+            semantic_payload=semantic_payload,
+            received_at=self.clock.now(),
         )
+        try:
+            generated = self.services.complete_model_invocation(completion)
+        except Exception:
+            self._mark_model_unknown_best_effort(invocation.model_invocation_id)
+            raise
+
         return ModelGenerationRunResult(
             model_invocation_id=invocation.model_invocation_id,
             generated_output_id=generated.generated_output_id,
         )
+
+    def _mark_model_unknown_best_effort(self, model_invocation_id: UUID) -> None:
+        try:
+            self.services.fail_model_invocation(model_invocation_id, unknown=True)
+        except Exception:
+            # Preserve the primary persistence failure. If completion committed,
+            # SUCCEEDED stays terminal; otherwise recovery sees IN_PROGRESS/UNKNOWN.
+            pass
 
 
 __all__ = [
