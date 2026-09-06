@@ -76,10 +76,13 @@ For the F4 reactive path, reuse requires all of the following to remain true:
 purpose = RESPOND_TO_INTERACTION
 current input still exists in the same relationship
 current input is projected
+current input is the pinned Timeline frontier
 pinned Self revision is still current
 pinned Relationship revision is still current
 relationship Timeline frontier has not advanced
 ```
+
+The current-input frontier rule prevents a projection built for an older input from becoming executable merely because it was built after newer relationship history already existed.
 
 If any of those fences changed, the projection remains historical state but is not reused.
 
@@ -97,6 +100,7 @@ The current implementation reports a typed reuse blocker such as:
 SELF_REVISION_CHANGED
 RELATIONSHIP_REVISION_CHANGED
 TIMELINE_ADVANCED
+CURRENT_INPUT_NOT_AT_FRONTIER
 CURRENT_INPUT_INVALID
 ```
 
@@ -183,6 +187,7 @@ retry then creates a different ModelInvocation
 FAILED and UNKNOWN attempts may retry through a replacement provider
 provider/model replacement does not change Person or Relationship identity
 Timeline advancement makes an old ContextProjection non-reusable
+non-frontier reactive input cannot start provider execution
 stale ContextProjection cannot be invoked directly through the runner
 existing GeneratedOutput is recovered rather than regenerated
 acquisition retry after an orphaned STARTED attempt creates a new Observation
