@@ -23,11 +23,18 @@ from alsoul.storage import schema
 
 
 class FoundationServices(_FoundationServices):
-    """F4 service hardening layered over the initial implementation.
+    """F4 semantic application services.
 
-    The base implementation remains unchanged for auditability. This class tightens
-    the semantic admission/readiness boundaries identified during PR review.
+    Bootstrap is deliberately fenced out of this surface. Ordinary interaction,
+    recovery, and work paths may advance already-existing canonical state, but
+    they may not recreate missing Person/Relationship identity roots.
     """
+
+    def bootstrap_foundation(self, *args: Any, **kwargs: Any) -> None:
+        fail(
+            "BOOTSTRAP_NOT_APPLICATION_SERVICE",
+            "use FoundationBootstrapper only for explicit one-time foundation creation",
+        )
 
     def start_investigation(self, command: StartInvestigationCommand):
         if command.relationship_id is not None:
