@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Literal
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from sqlalchemy import select
 
-from alsoul.adapters.contracts import ModelProviderAdapter, WorldAcquisitionAdapter
+from alsoul.adapters.contracts import (
+    AdapterRejected,
+    ModelProviderAdapter,
+    WorldAcquisitionAdapter,
+    WorldResultExtractor,
+)
+from alsoul.adapters.world_extract import F4JsonMemoryRequirementExtractor
 from alsoul.domain.commands import (
     AdmitWorldResultCommand,
     AdoptCompanionOutputCommand,
@@ -18,6 +23,7 @@ from alsoul.domain.commands import (
     StartInvestigationCommand,
 )
 from alsoul.domain.errors import fail
+from alsoul.domain.models import CapturedWorldMaterial
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
 from alsoul.services.foundation import (
     FoundationServices,
@@ -30,9 +36,9 @@ from alsoul.services.provider_integration import (
 )
 from alsoul.services.provider_recovery import ProviderRecoveryCoordinator
 from alsoul.services.recovery import RecoveryCoordinator
+from alsoul.services.runtime_identity import response_operation_id
 from alsoul.storage import schema
 
-_RUNTIME_NAMESPACE = UUID("a7d54b3d-29f4-4f3f-8fa4-70a697078b42")
 _WORLD_OBJECTIVE = "Determine the current minimum memory requirement for the software."
 _WORLD_REQUEST = {"resource": "current software requirements"}
 
@@ -76,7 +82,9 @@ class FoundationResponseCoordinator:
     """Resume one F4 reactive response from the furthest durable semantic stage.
 
     The coordinator persists no mutable turn-status aggregate. It composes the
-    existing semantic services, provider runners, and recovery assessment.
+    existing semantic services, provider runners, recovery assessment, and a
+    bounded source interpreter. The interpreter proposes a WorldResult; it never
+    bypasses the evidence-backed WorldResult admission boundary.
     """
 
     def __init__(
@@ -101,10 +109,14 @@ class FoundationResponseCoordinator:
         channel_binding_id: UUID,
         world_adapter: WorldAcquisitionAdapter,
         model_adapter: ModelProviderAdapter,
+        world_extractor: WorldResultExtractor | None = None,
         after_process_loss: bool = False,
         checkpoint: RuntimeCheckpoint | None = None,
     ) -> FoundationResponseRunResult:
         emit = checkpoint or (lambda _stage: None)
+        extractor = world_extractor or F4JsonMemoryRequirementExtractor(
+            predicate=WORLD_MEMORY_REQUIREMENT_PREDICATE
+        )
 
         if after_process_loss:
             assessment = self.provider_recovery.reconcile_response_after_process_loss(
@@ -153,6 +165,7 @@ class FoundationResponseCoordinator:
             world_result_id = self._ensure_world_result(
                 context=context,
                 world_adapter=world_adapter,
+                world_extractor=extractor,
                 after_process_loss=after_process_loss,
                 checkpoint=emit,
             )
@@ -181,7 +194,10 @@ class FoundationResponseCoordinator:
             generated_output_id = assessment.reusable_generated_output_id
             world_result_id = self._world_result_for_projection(projection_id)
         else:
-            fail("RUNTIME_RECOVERY_STAGE_UNSUPPORTED", f"unsupported recovery stage {assessment.stage}")
+            fail(
+                "RUNTIME_RECOVERY_STAGE_UNSUPPORTED",
+                f"unsupported recovery stage {assessment.stage}",
+            )
 
         if generated_output_id is None:
             generated = ModelGenerationRunner(
@@ -322,12 +338,13 @@ class FoundationResponseCoordinator:
         *,
         context: _ResponseContext,
         world_adapter: WorldAcquisitionAdapter,
+        world_extractor: WorldResultExtractor,
         after_process_loss: bool,
         checkpoint: RuntimeCheckpoint,
     ) -> UUID:
         investigation = self.services.start_investigation(
             StartInvestigationCommand(
-                operation_id=self._singleton_operation_id(
+                operation_id=response_operation_id(
                     context.current_input_event_id, "investigation"
                 ),
                 initiated_by_companion_person_id=context.companion_person_id,
@@ -372,18 +389,34 @@ class FoundationResponseCoordinator:
             evidence_id = acquired.evidence_id
             checkpoint("WORLD_CAPTURED")
 
-        value, captured_at = self._extract_world_requirement(evidence_id)
+        material = self._load_world_material(evidence_id)
+        try:
+            proposal = world_extractor.extract(material)
+        except AdapterRejected as exc:
+            fail("WORLD_EXTRACTION_REJECTED", str(exc))
+        if (
+            proposal.predicate != WORLD_MEMORY_REQUIREMENT_PREDICATE
+            or proposal.result_kind != "REQUIREMENT"
+            or isinstance(proposal.value, bool)
+            or not isinstance(proposal.value, int)
+            or proposal.value <= 0
+        ):
+            fail(
+                "WORLD_EXTRACTION_REJECTED",
+                "world extractor returned a proposition outside the F4 result contract",
+            )
+
         result = self.services.admit_world_result(
             AdmitWorldResultCommand(
-                operation_id=self._singleton_operation_id(
+                operation_id=response_operation_id(
                     context.current_input_event_id, "world-result"
                 ),
                 investigation_id=investigation.investigation_id,
-                result_kind="REQUIREMENT",
-                predicate=WORLD_MEMORY_REQUIREMENT_PREDICATE,
-                value=value,
+                result_kind=proposal.result_kind,
+                predicate=proposal.predicate,
+                value=proposal.value,
                 support_evidence_ids=(evidence_id,),
-                valid_as_of=captured_at,
+                valid_as_of=proposal.valid_as_of,
             )
         )
         checkpoint("WORLD_RESULT_ADMITTED")
@@ -448,7 +481,7 @@ class FoundationResponseCoordinator:
                 is not None
             )
 
-    def _extract_world_requirement(self, evidence_id: UUID) -> tuple[int, datetime]:
+    def _load_world_material(self, evidence_id: UUID) -> CapturedWorldMaterial:
         with self.services.engine.connect() as conn:
             evidence = conn.execute(
                 select(schema.evidence_item).where(
@@ -479,20 +512,16 @@ class FoundationResponseCoordinator:
             ).mappings().one_or_none()
         if blob is None:
             fail("CAPTURE_CONTENT_UNAVAILABLE", "captured source content is unavailable")
-        try:
-            payload = json.loads(blob["content_text"])
-        except json.JSONDecodeError:
-            fail(
-                "WORLD_RESULT_SUPPORT_INVALID",
-                "captured world source is not valid JSON",
-            )
-        value = payload.get("minimum_memory_gb")
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            fail(
-                "WORLD_RESULT_SUPPORT_INVALID",
-                "captured world source does not contain a valid minimum_memory_gb",
-            )
-        return value, capture["captured_at"]
+        return CapturedWorldMaterial(
+            source_identity=capture["source_identity"],
+            requested_locator=capture["requested_locator"],
+            resolved_locator=capture["resolved_locator"],
+            content=blob["content_text"],
+            captured_at=capture["captured_at"],
+            source_version=capture["source_version"],
+            source_published_at=capture["source_published_at"],
+            source_modified_at=capture["source_modified_at"],
+        )
 
     def _world_result_for_projection(self, projection_id: UUID) -> UUID:
         with self.services.engine.connect() as conn:
@@ -508,7 +537,9 @@ class FoundationResponseCoordinator:
             )
         return rows[0]
 
-    def _load_final_result(self, presented_event_id: UUID | None) -> FoundationResponseRunResult:
+    def _load_final_result(
+        self, presented_event_id: UUID | None
+    ) -> FoundationResponseRunResult:
         if presented_event_id is None:
             fail("PRESENTATION_NOT_FOUND", "presented event is missing")
         with self.services.engine.connect() as conn:
@@ -546,13 +577,6 @@ class FoundationResponseCoordinator:
             generated_output_id=generated["generated_output_id"],
             context_projection_id=invocation["context_projection_id"],
             world_result_id=world_result_id,
-        )
-
-    @staticmethod
-    def _singleton_operation_id(current_input_event_id: UUID, stage: str) -> UUID:
-        return uuid5(
-            _RUNTIME_NAMESPACE,
-            f"{current_input_event_id}:{stage}:f4-runtime-v1",
         )
 
 

@@ -144,3 +144,27 @@ class WorldAcquisitionSuccess:
     source_version: str | None = None
     source_published_at: datetime | None = None
     source_modified_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CapturedWorldMaterial:
+    """Recoverable source material loaded from an admitted WorldSourceCapture."""
+
+    source_identity: str
+    requested_locator: str | None
+    resolved_locator: str | None
+    content: str
+    captured_at: datetime
+    source_version: str | None = None
+    source_published_at: datetime | None = None
+    source_modified_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractedWorldResult:
+    """Non-authoritative proposition proposal derived from captured source material."""
+
+    result_kind: str
+    predicate: str
+    value: Any
+    valid_as_of: datetime | None

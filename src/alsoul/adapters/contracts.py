@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
-from alsoul.domain.models import FoundationResponseDraft, WorldAcquisitionSuccess
+from alsoul.domain.models import (
+    CapturedWorldMaterial,
+    ExtractedWorldResult,
+    FoundationResponseDraft,
+    WorldAcquisitionSuccess,
+)
 
 
 class AdapterError(RuntimeError):
@@ -11,7 +16,7 @@ class AdapterError(RuntimeError):
 
 
 class AdapterRejected(AdapterError):
-    """The provider returned a definite non-usable result for this attempt."""
+    """The provider or controlled interpreter returned a definite non-usable result."""
 
 
 class AdapterOutcomeUnknown(AdapterError):
@@ -23,6 +28,18 @@ class WorldAcquisitionAdapter(Protocol):
     """Provider-independent F4 world-acquisition contract."""
 
     def acquire(self, *, captured_at: datetime) -> WorldAcquisitionSuccess:
+        ...
+
+
+@runtime_checkable
+class WorldResultExtractor(Protocol):
+    """Interpret one recoverable source capture into a bounded proposition proposal.
+
+    Extraction does not admit a WorldResult. The semantic application service still
+    validates evidence lineage and performs the authoritative admission boundary.
+    """
+
+    def extract(self, material: CapturedWorldMaterial) -> ExtractedWorldResult:
         ...
 
 
@@ -47,4 +64,5 @@ __all__ = [
     "AdapterRejected",
     "ModelProviderAdapter",
     "WorldAcquisitionAdapter",
+    "WorldResultExtractor",
 ]
