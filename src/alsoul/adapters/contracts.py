@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
+from uuid import UUID
 
 from alsoul.domain.models import (
     CapturedWorldMaterial,
@@ -21,6 +23,42 @@ class AdapterRejected(AdapterError):
 
 class AdapterOutcomeUnknown(AdapterError):
     """Dispatch may have occurred, but no trustworthy final result was recovered."""
+
+
+@dataclass(frozen=True, slots=True)
+class FirstPartyPresentationAcceptance:
+    """Positive sink acceptance for one idempotent first-party presentation request.
+
+    This receipt establishes that the configured first-party sink accepted the exact
+    CompanionOutput content under the supplied presentation key. It does not establish
+    that the counterpart read, heard, or understood the output.
+    """
+
+    presentation_key: str
+    receipt_ref: str
+    content_digest: str
+
+
+@runtime_checkable
+class FirstPartyPresentationAdapter(Protocol):
+    """Provider-independent first-party presentation acceptance contract.
+
+    Implementations must treat ``presentation_key`` as a semantic idempotency key:
+    replaying the same key with the same content must not create a second logical
+    presentation. Reusing the key with different content must be rejected.
+    """
+
+    def present(
+        self,
+        *,
+        presentation_key: str,
+        companion_output_id: UUID,
+        surface_binding_id: UUID,
+        channel_binding_id: UUID,
+        content_text: str,
+        content_digest: str,
+    ) -> FirstPartyPresentationAcceptance:
+        ...
 
 
 @runtime_checkable
@@ -62,6 +100,8 @@ __all__ = [
     "AdapterError",
     "AdapterOutcomeUnknown",
     "AdapterRejected",
+    "FirstPartyPresentationAcceptance",
+    "FirstPartyPresentationAdapter",
     "ModelProviderAdapter",
     "WorldAcquisitionAdapter",
     "WorldResultExtractor",
