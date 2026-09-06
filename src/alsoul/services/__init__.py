@@ -4,6 +4,7 @@ from .configured_runtime import (
     FoundationRuntimeConfig,
     ModelContractProbeResult,
     ModelRuntimeConfig,
+    PresentationRuntimeConfig,
     RuntimeSecrets,
     WorldRuntimeConfig,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "ModelContractProbeResult",
     "ModelGenerationRunner",
     "ModelRuntimeConfig",
+    "PresentationRuntimeConfig",
     "ProviderRecoveryCoordinator",
     "RuntimeSecrets",
     "TrustedCounterpartInputEnvelope",
