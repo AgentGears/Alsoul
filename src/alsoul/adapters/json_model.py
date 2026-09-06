@@ -4,8 +4,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.parse import SplitResult, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from alsoul.adapters.contracts import AdapterOutcomeUnknown, AdapterRejected
 from alsoul.domain.models import FoundationResponseDraft
@@ -31,9 +31,22 @@ class JsonHttpTransport(Protocol):
         ...
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Do not forward model credentials across HTTP redirects."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
 @dataclass(slots=True)
 class UrllibJsonTransport:
-    """Standard-library HTTPS JSON transport for a configured model endpoint."""
+    """Bounded, no-redirect HTTPS JSON transport for a configured model endpoint."""
+
+    max_response_bytes: int = 1_048_576
+
+    def __post_init__(self) -> None:
+        if self.max_response_bytes <= 0:
+            raise ValueError("max_response_bytes must be positive")
 
     def post_json(
         self,
@@ -50,10 +63,11 @@ class UrllibJsonTransport:
             headers=dict(headers),
             method="POST",
         )
+        opener = build_opener(_NoRedirectHandler())
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:
+            with opener.open(request, timeout=timeout_seconds) as response:
                 charset = response.headers.get_content_charset() or "utf-8"
-                content = response.read().decode(charset)
+                content = self._read_bounded(response, charset=charset)
                 response_headers = {
                     key.lower(): value for key, value in response.headers.items()
                 }
@@ -65,13 +79,25 @@ class UrllibJsonTransport:
                 )
         except HTTPError as exc:
             charset = exc.headers.get_content_charset() or "utf-8"
-            content = exc.read().decode(charset, errors="replace")
+            content = self._read_bounded(exc, charset=charset, errors="replace")
             return JsonHttpResponse(
                 status_code=int(exc.code),
                 resolved_endpoint=exc.geturl(),
                 content=content,
                 headers={key.lower(): value for key, value in exc.headers.items()},
             )
+
+    def _read_bounded(
+        self,
+        response,
+        *,
+        charset: str,
+        errors: str = "strict",
+    ) -> str:
+        raw = response.read(self.max_response_bytes + 1)
+        if len(raw) > self.max_response_bytes:
+            raise AdapterRejected("model endpoint response exceeded configured size limit")
+        return raw.decode(charset, errors=errors)
 
 
 @dataclass(slots=True)
@@ -92,8 +118,12 @@ class JsonModelProviderAdapter:
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.endpoint)
-        if parsed.scheme.lower() != "https" or not parsed.netloc:
+        if parsed.scheme.lower() != "https" or not parsed.netloc or parsed.hostname is None:
             raise ValueError("model endpoint must be an absolute https URL")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("model endpoint must not contain embedded credentials")
+        if parsed.fragment:
+            raise ValueError("model endpoint must not contain a URL fragment")
         if self.timeout_seconds <= 0:
             raise ValueError("model timeout_seconds must be positive")
         if not self.provider_binding_ref.strip():
@@ -110,17 +140,18 @@ class JsonModelProviderAdapter:
         if self.authorization_token:
             headers["Authorization"] = f"Bearer {self.authorization_token}"
 
+        required_kinds = (
+            "REMEMBERED_COUNTERPART_STATEMENT",
+            "CURRENT_CHECKED_WORLD",
+            "COMPANION_INTERPRETATION",
+        )
         request_body = {
             "schema_version": 1,
             "model_ref": self.model_ref,
             "provider_context": provider_context,
             "response_contract": {
                 "type": "FoundationResponseDraft",
-                "required_epistemic_kinds": [
-                    "REMEMBERED_COUNTERPART_STATEMENT",
-                    "CURRENT_CHECKED_WORLD",
-                    "COMPANION_INTERPRETATION",
-                ],
+                "required_epistemic_kinds": list(required_kinds),
             },
         }
         try:
@@ -130,6 +161,8 @@ class JsonModelProviderAdapter:
                 timeout_seconds=self.timeout_seconds,
                 headers=headers,
             )
+        except AdapterRejected:
+            raise
         except (TimeoutError, URLError, OSError) as exc:
             raise AdapterOutcomeUnknown(
                 "model transport outcome could not be established"
@@ -139,8 +172,8 @@ class JsonModelProviderAdapter:
             raise AdapterRejected(
                 f"model endpoint returned HTTP {response.status_code}"
             )
-        if urlsplit(response.resolved_endpoint).scheme.lower() != "https":
-            raise AdapterRejected("model endpoint resolved outside https")
+        if not _same_https_origin(urlsplit(self.endpoint), urlsplit(response.resolved_endpoint)):
+            raise AdapterRejected("model endpoint resolved outside configured HTTPS origin")
 
         try:
             payload = json.loads(response.content)
@@ -152,19 +185,36 @@ class JsonModelProviderAdapter:
                 "model endpoint returned an invalid FoundationResponseDraft"
             ) from exc
 
-        allowed = {
-            "REMEMBERED_COUNTERPART_STATEMENT",
-            "CURRENT_CHECKED_WORLD",
-            "COMPANION_INTERPRETATION",
-        }
-        if not draft.segments or any(
-            segment.epistemic_kind not in allowed or not segment.text.strip()
-            for segment in draft.segments
+        if tuple(segment.epistemic_kind for segment in draft.segments) != required_kinds:
+            raise AdapterRejected(
+                "model endpoint returned an invalid F4 epistemic segment sequence"
+            )
+        if any(not segment.text.strip() for segment in draft.segments):
+            raise AdapterRejected("model endpoint returned an empty response segment")
+        if (
+            draft.segments[0].source_ref is None
+            or draft.segments[1].source_ref is None
+            or draft.segments[2].source_ref is not None
         ):
             raise AdapterRejected(
-                "model endpoint returned invalid semantic response segments"
+                "model endpoint returned invalid F4 source attribution shape"
             )
         return draft
+
+
+def _same_https_origin(expected: SplitResult, actual: SplitResult) -> bool:
+    try:
+        expected_port = expected.port or 443
+        actual_port = actual.port or 443
+    except ValueError:
+        return False
+    return (
+        actual.scheme.lower() == "https"
+        and expected.hostname is not None
+        and actual.hostname is not None
+        and expected.hostname.lower() == actual.hostname.lower()
+        and expected_port == actual_port
+    )
 
 
 __all__ = [
