@@ -1,24 +1,36 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 
 from alsoul.domain.commands import (
     AdmitWorldResultCommand,
     AdoptCompanionOutputCommand,
     StartInvestigationCommand,
+    StartModelInvocationCommand,
 )
 from alsoul.domain.errors import DomainError, fail
-from alsoul.domain.models import AdoptCompanionOutputResult, FoundationResponseDraft
-from alsoul.services.common import sha256_text
+from alsoul.domain.models import (
+    AdoptCompanionOutputResult,
+    FoundationResponseDraft,
+    StartModelInvocationResult,
+)
+from alsoul.services.common import (
+    load_operation_receipt,
+    request_digest,
+    save_operation_receipt,
+    sha256_text,
+)
 from alsoul.services.foundation_base import (
     FoundationServices as _FoundationServices,
     RAM_PREDICATE,
     WORLD_MEMORY_REQUIREMENT_PREDICATE,
 )
+from alsoul.services.projection_reuse import projection_reuse_blocker
 from alsoul.storage import schema
 
 
@@ -53,6 +65,99 @@ class FoundationServices(_FoundationServices):
                         "investigation initiator does not own the supplied relationship",
                     )
         return super().start_investigation(command)
+
+    def start_model_invocation(
+        self, command: StartModelInvocationCommand
+    ) -> StartModelInvocationResult:
+        """Start one provider attempt only when retry semantics are safe.
+
+        A model retry is always a new ModelInvocation. An existing IN_PROGRESS
+        attempt must first be reconciled after process loss, and an existing
+        successful GeneratedOutput must be recovered rather than regenerated.
+        """
+
+        scope = "StartModelInvocation"
+        req = request_digest(asdict(command))
+        with self.engine.begin() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=scope,
+                operation_id=command.operation_id,
+                expected_request_digest=req,
+            )
+            if replay:
+                return StartModelInvocationResult(UUID(replay["model_invocation_id"]))
+
+            projection = conn.execute(
+                select(schema.context_projection).where(
+                    schema.context_projection.c.projection_id
+                    == command.context_projection_id
+                )
+            ).mappings().one_or_none()
+            if projection is None:
+                fail("CONTEXT_PROJECTION_NOT_FOUND", "ContextProjection does not exist")
+
+            blocker = projection_reuse_blocker(conn, dict(projection))
+            if blocker is not None:
+                fail(
+                    "CONTEXT_PROJECTION_NOT_REUSABLE",
+                    f"ContextProjection is no longer eligible for provider execution: {blocker}",
+                )
+
+            attempts = conn.execute(
+                select(schema.model_invocation).where(
+                    schema.model_invocation.c.context_projection_id
+                    == command.context_projection_id
+                )
+            ).mappings().all()
+            for attempt in attempts:
+                if attempt["outcome"] == "IN_PROGRESS":
+                    fail(
+                        "MODEL_INVOCATION_ALREADY_IN_PROGRESS",
+                        "an unresolved provider attempt already exists for this ContextProjection",
+                    )
+                if attempt["outcome"] == "SUCCEEDED":
+                    generated = conn.execute(
+                        select(schema.generated_output).where(
+                            schema.generated_output.c.model_invocation_id
+                            == attempt["model_invocation_id"]
+                        )
+                    ).mappings().one_or_none()
+                    if generated is None:
+                        fail(
+                            "MODEL_INVOCATION_INCONSISTENT",
+                            "successful ModelInvocation has no GeneratedOutput",
+                        )
+                    fail(
+                        "MODEL_OUTPUT_ALREADY_AVAILABLE",
+                        "recover the existing GeneratedOutput instead of starting another provider attempt",
+                    )
+
+            model_invocation_id = self.ids.new()
+            now = self.clock.now()
+            conn.execute(
+                insert(schema.model_invocation).values(
+                    model_invocation_id=model_invocation_id,
+                    context_projection_id=command.context_projection_id,
+                    provider_binding_ref=command.provider_binding_ref,
+                    model_ref=command.model_ref,
+                    renderer_version=command.renderer_version,
+                    provider_request_digest=command.provider_request_digest,
+                    started_at=now,
+                    outcome="IN_PROGRESS",
+                )
+            )
+            save_operation_receipt(
+                conn,
+                scope=scope,
+                operation_id=command.operation_id,
+                req_digest=req,
+                result_kind="ModelInvocation",
+                result_ref=model_invocation_id,
+                result_json={"model_invocation_id": str(model_invocation_id)},
+                committed_at=now,
+            )
+            return StartModelInvocationResult(model_invocation_id)
 
     def admit_world_result(self, command: AdmitWorldResultCommand):
         # Supporting evidence is validated by the base transaction through this
