@@ -35,13 +35,13 @@ class ProviderRecoveryCoordinator:
         )
         if (
             assessment.stage != "MODEL_ATTEMPT_UNRESOLVED"
-            or assessment.latest_model_invocation_outcome != "IN_PROGRESS"
-            or assessment.latest_model_invocation_id is None
+            or assessment.unresolved_model_invocation_outcome != "IN_PROGRESS"
+            or assessment.unresolved_model_invocation_id is None
         ):
             return assessment
 
         self.services.fail_model_invocation(
-            assessment.latest_model_invocation_id,
+            assessment.unresolved_model_invocation_id,
             unknown=True,
         )
         return self.assess_response(
