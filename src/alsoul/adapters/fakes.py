@@ -39,6 +39,9 @@ class FakeWorldAdapter:
 class FakeModelAdapter:
     """Deterministic final-expression adapter for the F4 acceptance slice."""
 
+    provider_binding_ref: str = "fixture-model-provider"
+    model_ref: str = "fixture-model-v1"
+
     def generate(self, provider_context: dict) -> FoundationResponseDraft:
         personal = provider_context["personal_context"]
         world = provider_context["world_context"]
