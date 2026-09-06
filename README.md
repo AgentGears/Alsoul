@@ -181,11 +181,13 @@ Provider execution is routed through Alsoul-owned orchestration boundaries. `Wor
 
 Provider recovery is also explicit. `RecoveryCoordinator` derives `MODEL_ATTEMPT_UNRESOLVED` for orphaned in-progress generation, `ProviderRecoveryCoordinator` can conservatively reconcile a known process-lost attempt to `UNKNOWN`, and the semantic service boundary prevents blind retry, stale ContextProjection reuse, and regeneration when a durable GeneratedOutput already exists.
 
+Reactive orchestration is now composed through `FoundationResponseCoordinator`. It derives progress from canonical rows, reuses already-durable Investigation/Capture/WorldResult/ContextProjection/GeneratedOutput state, and resumes after process death from the furthest trustworthy semantic boundary without persisting a parallel turn-status aggregate.
+
 The adapter package contains provider-independent contracts, deterministic acceptance adapters, a generic HTTP world-acquisition adapter, and an HTTPS JSON model adapter for an explicitly configured endpoint. Model credentials remain transport-only configuration and are not inserted into ContextProjection, provider context, or semantic response payloads.
 
 The repository continuously verifies source/test compilation, the executable acceptance suite, and migration upgrade/downgrade.
 
-See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), and [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md) for the executable foundation checkpoints.
+See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md), and [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md) for the executable foundation checkpoints.
 
 ## Documentation
 
@@ -199,6 +201,7 @@ Core documents:
 - [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md)
 - [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md)
 - [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md)
+- [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md)
 - [Architecture Checkpoint — Decisions 11.A through 15.B](docs/ARCHITECTURE_CHECKPOINT_11_15.md)
 
 Architecture decision records:
@@ -212,4 +215,4 @@ Architecture decision records:
 
 ## Status
 
-F4 provider recovery hardening. The code now distinguishes unresolved provider attempts from retryable terminal attempts, fences ContextProjection reuse against canonical-state advancement, permits provider replacement through new invocation identity, and preserves acquisition retry as a new Observation. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
+Restart-safe F4 reactive runtime coordination. The code now composes the walking skeleton from admitted input through fresh world acquisition, immutable cognition, generation, adoption, and presentation while injecting and recovering from process death at every durable boundary. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
