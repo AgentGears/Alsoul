@@ -5,6 +5,7 @@ import json
 import pytest
 
 from alsoul.host import (
+    HOST_CONFIG_VERSION,
     HostConfigurationError,
     assess_host_readiness,
     load_host_config,
@@ -15,7 +16,7 @@ from alsoul.storage import create_schema, create_sqlite_engine
 
 def _payload(database_path: str = "alsoul.db") -> dict:
     return {
-        "host_config_version": 1,
+        "host_config_version": HOST_CONFIG_VERSION,
         "database": {"path": database_path},
         "world": {
             "locator": "https://source.invalid/requirements",
@@ -26,6 +27,10 @@ def _payload(database_path: str = "alsoul.db") -> dict:
             "provider_binding_ref": "configured-provider",
             "model_ref": "configured-model-v1",
             "timeout_seconds": 8,
+        },
+        "presentation": {
+            "endpoint": "https://surface.invalid/present",
+            "timeout_seconds": 5,
         },
     }
 
@@ -40,6 +45,7 @@ def test_host_config_resolves_relative_database_path_without_creating_it(tmp_pat
     assert not config.database_path.exists()
     assert config.runtime.world.expected_origin == "https://source.invalid"
     assert config.runtime.model.provider_binding_ref == "configured-provider"
+    assert config.runtime.presentation.endpoint == "https://surface.invalid/present"
 
 
 def test_host_config_rejects_secret_material_in_public_configuration(tmp_path):
@@ -49,6 +55,16 @@ def test_host_config_rejects_secret_material_in_public_configuration(tmp_path):
     config_path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(HostConfigurationError, match="unsupported field"):
+        load_host_config(config_path)
+
+
+def test_host_config_requires_current_version_after_presentation_contract_change(tmp_path):
+    payload = _payload()
+    payload["host_config_version"] = 1
+    config_path = tmp_path / "host.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(HostConfigurationError, match="unsupported host_config_version"):
         load_host_config(config_path)
 
 
