@@ -1,22 +1,13 @@
 # Alsoul Foundation Decision Ledger
 
-**Status:** Convergence ledger through Decision 10.B  
+**Status:** Convergence ledger through Decision 15.B  
 **Publication:** GitHub-safe
 
-This ledger records decisions currently treated as converged enough to constrain implementation. Detailed ADRs supplement the concise entries below.
+This ledger records decisions treated as converged enough to constrain implementation. Detailed rationale and extended contracts live in the architecture checkpoint and ADRs.
 
 ## Decision 01 — Canonical Self identity boundary
 
-`SelfModel` is canonical continuity-bearing state distinct from `CompanionPerson` identity.
-
-```text
-CompanionPerson
-≠ SelfModel
-≠ Presentation Profile
-≠ RelationshipState
-```
-
-Provider/model configuration does not define the person.
+`CompanionPerson` identity and `SelfModel` continuity-bearing self-state are distinct. Provider/model configuration, relationship state, presentation configuration, memory, and world state do not define the Person.
 
 ## Decision 02.A — Constitutional Self
 
@@ -26,7 +17,7 @@ Foundation constitutional Self contains only:
 role = PERSONAL_COMPANION
 ```
 
-Architecture policy, authority, relationship state, autobiography, presentation, memory, and user modeling do not belong in constitutional Self.
+Architecture policy, authority, relationship, autobiography, presentation, memory, and user modeling are excluded.
 
 ## Decision 02.B — Slowly Mutable Self
 
@@ -36,190 +27,77 @@ Foundation slowly mutable Self contains only:
 preferred_name = "Alsoul"
 ```
 
-No generic personality scalar/profile is canonical Self state.
+Slowly mutable does not mean automatically learned from behavior or history.
 
 ## Decision 02.C — Narrative Self
 
-Narrative Self is a rebuildable interpretation of the companion, not canonical `SelfModel` and not autobiographical evidence.
-
-It is not required for the first vertical slice.
+Narrative Self is a rebuildable revisable interpretation generated from canonical Self plus admissible history/evidence. It is not canonical Self or autobiographical evidence and is not required in F4.
 
 ## Decision 02.D — Self revision and hydration
 
-Canonical Self uses immutable complete revisions selected by a stable current head.
-
-Stale writes are fenced by expected revision. Missing or invalid canonical Self fails closed for cognition as that person.
+Canonical Self uses immutable complete revisions selected by `SelfHead.current_revision`. Mutations are expected-revision/CAS fenced. Missing or inconsistent current Self fails closed before cognition as that Person.
 
 ## Decision 03.A — RelationshipState
 
-`RelationshipState` is the canonical durable relationship edge between one `CompanionPerson` and one durable counterpart.
-
-Foundation shape:
-
-```text
-RelationshipState {
-    relationship_id
-    relationship_revision
-    companion_person_id
-    counterpart_id
-}
-```
-
-Thread, surface, channel, provider, and credential identity do not define the relationship.
+`RelationshipState` is the canonical durable relationship edge between one `CompanionPerson` and one `CounterpartPerson`. Thread, surface, channel, embodiment, provider, and credential identities do not define the Relationship.
 
 ## Decision 03.B — RelationshipExperience
 
-`RelationshipExperience` is a derived evidence-grounded interpretation of patterns within a relationship.
-
-It is distinct from PersonModel, RelationshipState, AffectState, authority, and interaction policy.
-
-It is not required for the first vertical slice.
+`RelationshipExperience` is a derived evidence-grounded interpretation of patterns and meaning within one relationship. It is not RelationshipState, PersonModel, AffectState, authority, or mandatory behavior policy.
 
 ## Decision 03.C — Relationship revision and recovery
 
-Canonical RelationshipState uses immutable complete revisions selected by a current head.
-
-Recovery resolves an existing relationship. It does not use an implicit get-or-create path that could fabricate continuity after state loss.
+Relationship canonical state uses immutable complete revisions selected by a current head. Recovery resolves an existing relationship; it does not silently get-or-create continuity after state loss.
 
 ## Decision 04.A — CounterpartPerson
 
-`CounterpartPerson` is the durable Alsoul-side identity anchor for the external counterpart.
-
-Foundation shape:
-
-```text
-CounterpartPerson {
-    counterpart_id
-}
-```
-
-Names, profile facts, accounts, credentials, and authority are separate state.
-
-External infrastructure identity resolves through explicit bindings rather than model inference.
+`CounterpartPerson` is the durable Alsoul-side identity anchor for the counterpart. Descriptive beliefs, credentials, accounts, and authority remain separate. External identity resolution uses explicit bindings rather than model inference.
 
 ## Decision 04.B — PersonClaim
 
-A `PersonClaim` is an admitted durable evidence-grounded proposition held by one `CompanionPerson` about one `CounterpartPerson`.
-
-Foundation PersonClaims are factual only.
-
-Evidence linkage is first-class and many-to-many.
+A `PersonClaim` is an admitted durable evidence-grounded proposition held by one CompanionPerson about one CounterpartPerson. F4 claims are factual only and require explicit supporting evidence.
 
 ## Decision 04.C — PersonModel
 
-`PersonModel` is a rebuildable current projection over admissible PersonClaims:
+`PersonModel` is a rebuildable current structured projection over admissible PersonClaims. It is not an independent mutable profile store and needs no F4 persistence table.
 
-```text
-PersonModel(P1 → U1)
-```
+## Decision 04.D — PersonClaim admission and currentness
 
-It is not an authoritative user-profile blob and need not be separately persisted in the first vertical slice.
-
-## Decision 04.D — PersonClaim admission and projection
-
-Claims are admitted through a governed boundary from recoverable evidence.
-
-Claim proposition content is immutable after admission.
-
-Correction/currentness is represented through explicit claim relations rather than mutable `is_current` fields or latest-timestamp selection.
-
-No global per-subject claim revision is required for the first vertical slice.
+Claims are immutable after admission. Correction/currentness uses explicit supersession/correction relations rather than mutable `is_current` or latest-timestamp selection. Same-turn corrections are admitted before downstream projection.
 
 ## Decision 05.A — EvidenceItem
 
-`EvidenceItem` is an immutable durable evidentiary anchor over specific recoverable source material.
-
-Evidence origin, claim derivation, and user-facing epistemic presentation are separate dimensions.
-
-Generated companion output can establish what the companion generated, but does not independently establish the truth of its generated content.
+`EvidenceItem` is an immutable durable anchor over specific recoverable source material. Evidence attachment does not by itself mean the material semantically supports the proposition.
 
 ## Decision 05.B — InteractionEvent and canonical Timeline
 
-The canonical Timeline is append-oriented durable shared interaction history scoped to a relationship.
-
-Foundation event kinds:
-
-```text
-COUNTERPART_INPUT
-COMPANION_PRESENTED_OUTPUT
-```
-
-Model generation is not shared history until the presentation boundary is crossed.
-
-Canonical ordering uses a relationship-local monotonic `timeline_seq`; timestamps retain their own occurrence/recording semantics.
+The Timeline is append-oriented durable shared relationship history with relationship-local monotonic `timeline_seq`. Foundation event kinds are `COUNTERPART_INPUT` and `COMPANION_PRESENTED_OUTPUT`. Generated output is not shared history until presentation.
 
 ## Decision 05.C — MemoryClaim
 
-A `MemoryClaim` is an admitted durable evidence-grounded proposition carried forward for future recall within an explicit memory scope.
-
-Historical retention does not imply memory admission.
-
-For the first vertical slice, a factual person-scoped claim may physically satisfy both `MemoryClaim` and `PersonClaim` semantics.
+A `MemoryClaim` is an admitted durable evidence-grounded proposition permitted for future recall within explicit memory scope. Historical retention and current context do not imply durable memory admission. F4 physically reuses the factual PersonClaim for both roles.
 
 ## Decision 05.D — Memory lifecycle
 
-Memory admission, eligibility, retrieval, and context projection are separate stages.
-
-Scope/currentness/support precede relevance ranking.
-
-A future `FORGET` operation is a durable recall/re-admission fence, not factual contradiction and not ordinary historical deletion.
-
-No global MemoryHead or memory revision is required.
+Memory admission, eligibility, retrieval, and ContextProjection are separate stages. Scope/currentness/support precede relevance. Forgetting is a future additive recall/re-admission fence rather than historical deletion or factual contradiction.
 
 ## Decision 06.A — Investigation, Observation, WorldResult
 
-`Investigation` is the inquiry container.
-
-`Observation` records that actual world-facing acquisition occurred. Every Observation is bound to exactly one Investigation through `investigation_id`.
-
-`WorldResult` is an immutable evidence-backed conclusion derived within the Investigation.
-
-Search intent, tool invocation, and model prior knowledge are not observations.
+`Investigation` is a bounded inquiry container. `Observation` records actual acquisition and belongs to exactly one Investigation. `WorldResult` is an immutable evidence-backed conclusion derived within the Investigation. Search intent, tool invocation, and model prior knowledge are not observations.
 
 ## Decision 06.B — WorldSourceCapture
 
-A successful world Observation produces an immutable durable `WorldSourceCapture` representing the material actually acquired.
-
-Evidence points to the capture, not a mutable live location.
-
-Search discovery and underlying-source fetch are separate observations when both occur.
-
-External captures retain a content digest for integrity while capture identity remains acquisition-specific.
+A successful Observation yields an immutable `WorldSourceCapture` of the material actually acquired. Evidence points to the capture, not a mutable live location. Capture identity is acquisition-specific; content digest is integrity metadata, not identity.
 
 ## Decision 06.C — WorldResult derivation and freshness
 
-A WorldResult becomes admitted only after evidence materially supports both the proposition and the Investigation objective.
-
-For the foundation slice, evidence supporting a WorldResult as a current checked result must trace through `EvidenceItem → WorldSourceCapture → Observation` to the same `investigation_id` carried by the WorldResult. Historical evidence from another Investigation cannot be relabeled as a current acquisition.
-
-Freshness is use-relative rather than a universal stored score.
-
-For the first vertical slice, a freshness-sensitive current question always performs a new Investigation during the current turn.
-
-Unresolved material contradiction blocks use as settled checked truth.
+A WorldResult is admitted only when evidence materially supports the proposition. `CURRENT_CHECKED` use requires recoverable support through `EvidenceItem → WorldSourceCapture → Observation` to the same Investigation. Freshness is use-relative; acquisition timing and explicit `valid_as_of` must fit the current question. Unresolved material contradiction blocks settled checked use.
 
 ## Decision 07.A — ContextProjection as cognition boundary
 
-`ContextProjection` is an immutable invocation-scoped provider-independent semantic snapshot of the exact Alsoul-owned state selected for one cognition invocation.
-
-It pins canonical revisions/frontiers and exact selected source refs rather than relying on mutable provider context.
-
-```text
-not projected
-≠ forgotten
-≠ deleted
-≠ false
-```
-
-Eligibility precedes relevance. Projection-time epistemic classifications preserve distinctions such as counterpart-stated memory and current checked world result.
-
-Provider prompt/messages are a rendering of ContextProjection, not authority.
+`ContextProjection` is an immutable invocation-scoped provider-independent snapshot of the exact Alsoul-owned state selected for one cognition invocation. It pins canonical revisions/frontiers, source refs, evidence refs, and projection-time epistemic classifications. Provider prompts are renderings, not authority.
 
 ## Decision 07.B — Model invocation, adoption, and presentation
-
-One `ModelInvocation` binds exactly one ContextProjection.
-
-The output path is:
 
 ```text
 ContextProjection
@@ -237,156 +115,88 @@ presentation
 COMPANION_PRESENTED_OUTPUT
 ```
 
-`GeneratedOutput` is a candidate artifact. `CompanionOutput` is Alsoul's adoption boundary. Shared relationship history begins only at presentation.
-
-```text
-Generated ≠ Adopted ≠ Presented ≠ Heard
-```
-
-Retries are fenced by semantic output targets and idempotent presentation.
+Generated, adopted, presented, and heard are distinct. F4 adoption also requires user-visible text to equal the canonical rendering of its validated semantic payload.
 
 See [ADR-001](adr/ADR-001_CONTEXT_AND_OUTPUT.md).
 
 ## Decision 08.A — Capability, credentials, permission, approval, and Action
 
-Technical capability, authentication, standing authority, operation-specific approval, and semantic action intent are separate.
-
-```text
-Capability
-≠ CredentialBinding
-≠ Permission
-≠ Approval
-≠ Action
-```
-
-A model tool call is only an action proposal. Effectful dispatch requires current host/product policy, capability availability, credential feasibility, Permission, required Approval, and Action constraints to all pass.
-
-Credential secrets remain outside cognition.
+Technical capability, credentials, standing permission, operation-specific approval, and semantic Action are separate. A model tool call is only a proposal until host policy and authority checks admit/dispatch it. Credential secrets remain outside cognition.
 
 ## Decision 08.B — ExecutionAttempt, idempotency, Effect, and reconciliation
 
-One immutable `Action` may have multiple immutable `ExecutionAttempt`s. Retries preserve the same `action_id` and, where supported by the external contract, one stable external idempotency identity.
-
-`Effect` is evidence-grounded externally observable consequence, not merely successful transport/tool return.
-
-Execution distinguishes:
-
-```text
-CONFIRMED_EFFECT
-CONFIRMED_NO_EFFECT
-UNKNOWN_EFFECT
-```
-
-Unknown effect survives restart and blocks unsafe blind retry. Reconciliation uses read-side Observation/evidence where possible.
-
-Strong completion language is downstream of the actual confirmed Effect.
+One immutable Action may have multiple ExecutionAttempts. Effect is evidence-grounded external consequence, not transport success. Execution distinguishes `CONFIRMED_EFFECT`, `CONFIRMED_NO_EFFECT`, and `UNKNOWN_EFFECT`; unknown effect survives restart and blocks unsafe blind retry.
 
 See [ADR-002](adr/ADR-002_AUTHORITY_AND_EFFECTS.md).
 
-## Decision 09.A — DelegatedTask, Commitment, Procedure, and future activation
+## Decision 09.A — DelegatedTask, Commitment, Procedure, and Trigger
 
-A conversational request becomes durable work only through task admission.
-
-`DelegatedTask` is accepted durable work. `Commitment` is durable obligation. `Skill / Procedure` is reusable know-how. `Trigger` determines when work becomes eligible to continue.
-
-```text
-request ≠ Task
-Task ≠ Commitment
-Procedure ≠ Trigger
-```
-
-Future-facing promise and scheduling language may only be presented after the corresponding durable Task/Commitment/Trigger state commits.
+A conversational request becomes durable work only through task admission. `DelegatedTask` is accepted durable work, `Commitment` is durable obligation, `Procedure` is reusable know-how, and `Trigger` defines when work becomes eligible.
 
 ## Decision 09.B — Task lifecycle, TriggerActivation, WorkRun, completion, and cancellation
 
-Task lifecycle is append-oriented rather than a single mutable status field.
-
-`TriggerActivation` records one logical activation opportunity. Reprocessing the same occurrence must not create duplicate normal WorkRuns.
-
-`WorkRun` is one bounded execution undertaken to advance one Task. Internal retries and process restarts do not automatically create new WorkRuns.
-
-Task completion requires declared completion criteria to be satisfied by durable evidence/state. WorkRun success alone is insufficient.
-
-Cancellation is additive and fences future work without erasing history, rolling back confirmed Effects, or converting unknown Effects into confirmed no-effect.
-
-Commitment discharge remains separate from Task completion.
+Task lifecycle is append-oriented. `TriggerActivation` represents one logical activation opportunity. `WorkRun` is one bounded task execution; process/model/action retries do not automatically create new WorkRuns. Task completion requires declared criteria; Commitment discharge is separate. Cancellation fences future work without rewriting history or unknown effects.
 
 ## Decision 09.C — WorkArtifact, WorkProduct, delivery, and result ownership
 
-`WorkArtifact` is immutable durable material produced/acquired/transformed in a WorkRun.
-
-`WorkProduct` is the task-level deliverable Alsoul has adopted from one or more WorkArtifacts.
-
-```text
-Generated content
-≠ WorkArtifact
-≠ WorkProduct
-≠ external save Effect
-≠ Delivery
-```
-
-External saving uses the Action/Effect plane. Delivery is recipient/channel-specific and binds an exact WorkProduct version.
-
-Task completion criteria decide whether product adoption, external persistence, delivery, or another milestone is required.
+`WorkArtifact` is immutable durable produced/acquired/transformed material. `WorkProduct` is the task-level deliverable adopted from artifacts. Generated content, artifact, product, external save Effect, and Delivery remain distinct.
 
 See [ADR-003](adr/ADR-003_DURABLE_WORK.md).
 
 ## Decision 10.A — WorldSignal, Trigger, and proactive initiation
 
-`WorldSignal` is an immutable durable record that the host received an external/system stimulus relevant to possible world-state evaluation or future work.
-
-Signal receipt does not automatically establish an Observation, WorldResult, Trigger satisfaction, Permission, or instruction to act.
-
-A `Trigger` is declarative activation policy. Signal-occurrence Triggers may be satisfied by accepted source events; world-condition Triggers may require Investigation/Observation/WorldResult first.
-
-Proactive work and proactive contact are separate. Trigger activation may permit work continuation without granting authority to initiate social contact.
+`WorldSignal` records receipt of an external/system stimulus. Signal receipt does not automatically establish Observation, WorldResult, Trigger satisfaction, Permission, or instruction to act. Proactive work and proactive contact are separate.
 
 ## Decision 10.B — Signal deduplication, recurring edges, and proactive output idempotency
 
-Signal deduplication follows authoritative source event identity when available and is scoped to the source binding/event namespace. Payload similarity is not semantic event identity.
-
-`TriggerEvaluation` records condition interpretation against an exact state/evidence basis and distinguishes:
-
-```text
-SATISFIED
-NOT_SATISFIED
-UNRESOLVED
-```
-
-For default recurring edge semantics:
-
-```text
-NOT_SATISFIED → SATISFIED
-    activate
-
-SATISFIED → SATISFIED
-    no activation
-
-SATISFIED → UNRESOLVED → SATISFIED
-    no activation
-
-SATISFIED → NOT_SATISFIED
-    rearm
-```
-
-Activation identity is type-specific and stable. Proactive communication has an activation-scoped semantic output target so duplicate signals, model retries, WorkRun replay, and presentation retries do not become duplicate notifications.
+Signal deduplication follows authoritative source event identity where available, not payload similarity. `TriggerEvaluation` distinguishes `SATISFIED`, `NOT_SATISFIED`, and `UNRESOLVED`. Recurring world-condition triggers are edge-sensitive; temporary uncertainty does not rearm a satisfied trigger. Activation/output identity fences duplicate notifications.
 
 See [ADR-004](adr/ADR-004_PROACTIVITY.md).
 
-## Next convergence boundary — Decision 11.A
+## Decision 11.A — One Person across many presences
 
-The next major unresolved boundary is one Person across many presences:
+`CompanionPerson` remains the sole durable identity across `SurfaceBinding`, `ChannelBinding`, and `EmbodimentBinding`. Inbound routing resolves trusted destination and sender identity before Timeline admission; infrastructure presence does not redefine Person or Relationship.
 
-```text
-SurfaceBinding
-ChannelBinding
-EmbodimentBinding
-```
+## Decision 11.B — Modality acquisition and presentation truth
 
-It must preserve:
+Rich modality separates received capture, derived representation, semantic interaction/output, rendering, presentation, and stronger reception evidence:
 
 ```text
-Person ≠ Surface ≠ Channel ≠ Embodiment
+received media ≠ transcript
+transcript ≠ admitted proposition
+adopted ≠ rendered ≠ presented
+presented ≠ read/heard ≠ understood
 ```
 
-while defining inbound routing, relationship resolution, presentation semantics, and continuity across text, push, voice, desktop, wearable, and future embodiments.
+Streaming presentation records exact presented extent; social interruption does not automatically resume unpresented remainder.
+
+## Decision 12.A — PresentationProfile, AffectState, InteractionPolicy
+
+`PresentationProfile` is durable versioned presentation configuration outside Self. `AffectState` is bounded source-linked current interactional/appraisal state, not stable personality. `InteractionPolicy` is an immutable derived control snapshot. Style may shape truthful expression but cannot alter epistemic truth or authority.
+
+## Decision 13.A — ConversationOpenLoop
+
+`ConversationOpenLoop` is durable relationship-scoped unresolved conversational dependency. It is not MemoryClaim, DelegatedTask, Commitment, Trigger, or WorkRun. Lifecycle distinguishes resolved, cancelled, superseded, and expired; unfinished dialogue does not authorize background work or proactive contact.
+
+## Decision 14.A — Whole-system hydration and recovery
+
+Recovery is deterministic reconstruction from Alsoul-owned durable state, not provider/model runtime restoration. Readiness is operation-specific. Canonical identity/Self and required Relationship integrity are hard blockers; other missing domains degrade/block only dependent operations. Recovery resumes from the furthest trustworthy durable stage.
+
+## Decision 15.A — F4 physical persistence
+
+F4 uses a transactional relational store. Self and Relationship use immutable complete revisions plus current heads. Timeline, evidence, claims, captures, WorldResults, ContextProjections, generated/adopted outputs, and presented history are immutable or append-oriented. External calls occur outside long-lived database transactions.
+
+## Decision 15.B — F4 application services and recovery state
+
+Canonical F4 state advances only through typed semantic application services. Database-command retries use stable operation identity and request digests. New external acquisition creates a new Observation; new model execution creates a new ModelInvocation; output adoption and presentation have separate idempotency fences. Response recovery stage is derived from canonical rows rather than stored as a mutable turn-status authority.
+
+See:
+
+- [Architecture Checkpoint — Decisions 11.A through 15.B](ARCHITECTURE_CHECKPOINT_11_15.md)
+- [ADR-005](adr/ADR-005_PRESENCE_POLICY_AND_RECOVERY.md)
+- [ADR-006](adr/ADR-006_F4_PERSISTENCE_AND_SERVICES.md)
+- [F4 Implementation Bootstrap](F4_IMPLEMENTATION_BOOTSTRAP.md)
+
+## Current implementation boundary
+
+The executable walking skeleton implements only persistent identity/relationship, canonical first-party text history, one evidence-grounded personal memory, fresh world acquisition/result, ContextProjection, model invocation, output adoption, presentation, and complete runtime reconstruction. Broader effectful work, durable tasks, proactivity, rich modality, affect, and open-loop persistence remain outside F4 implementation.
