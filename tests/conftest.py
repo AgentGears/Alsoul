@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Engine
 
 from alsoul.domain.types import FixedClock, UUIDGenerator
-from alsoul.services.foundation import FoundationServices
+from alsoul.services import FoundationBootstrapper, FoundationServices
 from alsoul.storage import create_schema, create_sqlite_engine
 
 
@@ -21,7 +22,17 @@ def db_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def services(db_path: Path, now: datetime) -> FoundationServices:
+def engine(db_path: Path) -> Engine:
     engine = create_sqlite_engine(db_path)
     create_schema(engine)
+    return engine
+
+
+@pytest.fixture
+def services(engine: Engine, now: datetime) -> FoundationServices:
     return FoundationServices(engine, clock=FixedClock(now), ids=UUIDGenerator())
+
+
+@pytest.fixture
+def bootstrapper(engine: Engine, now: datetime) -> FoundationBootstrapper:
+    return FoundationBootstrapper(engine, clock=FixedClock(now), ids=UUIDGenerator())

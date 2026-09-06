@@ -175,7 +175,11 @@ src/alsoul/
 
 Database migrations live under `migrations/`, and executable architecture tests live under `tests/`.
 
-See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md) for the concrete scope and recovery contract.
+Foundation identity creation is an explicit administration boundary through `FoundationBootstrapper`; ordinary `FoundationServices` fail closed rather than recreating missing Person/Relationship roots. Provider-independent adapter contracts now sit above deterministic acceptance adapters and a generic HTTP world-acquisition adapter, while semantic Observation/Evidence/WorldResult admission remains inside the application-service boundary.
+
+The repository continuously verifies source/test compilation, the executable acceptance suite, and migration upgrade/downgrade.
+
+See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md) for the concrete walking-skeleton scope and [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md) for the post-bootstrap trust-boundary hardening.
 
 ## Documentation
 
@@ -186,6 +190,7 @@ Core documents:
 - [Foundation Walking Skeleton](docs/FOUNDATION_WALKING_SKELETON.md)
 - [Decision Ledger](docs/DECISION_LEDGER.md)
 - [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md)
+- [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md)
 - [Architecture Checkpoint — Decisions 11.A through 15.B](docs/ARCHITECTURE_CHECKPOINT_11_15.md)
 
 Architecture decision records:
@@ -199,4 +204,4 @@ Architecture decision records:
 
 ## Status
 
-Foundation implementation bootstrap. The current code exercises the F4 persistence/service boundary with deterministic acceptance tests. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
+Foundation implementation hardening. The current code exercises the F4 persistence/service boundary, derives recovery progress from canonical rows, separates explicit identity bootstrap from runtime services, and continuously verifies the executable foundation contract. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from alsoul.adapters import FakeModelAdapter, FakeWorldAdapter
 from alsoul.domain.commands import (
@@ -28,8 +28,10 @@ from alsoul.storage import create_sqlite_engine
 from alsoul.storage import schema
 
 
-def test_f4_survives_process_death_and_preserves_provenance(services, db_path, now):
-    ids = services.bootstrap_foundation(identity_namespace="test-user", external_subject="u1")
+def test_f4_survives_process_death_and_preserves_provenance(
+    services, bootstrapper, db_path, now
+):
+    ids = bootstrapper.bootstrap(identity_namespace="test-user", external_subject="u1")
 
     first_input = services.append_counterpart_input(
         AppendCounterpartInputCommand(
