@@ -30,27 +30,30 @@ ModelInvocation
 
 A projection is derived and rebuildable. Projections actually used by material model invocations should be retained as immutable attribution manifests.
 
-A foundation projection binds at least:
+A general projection binds its cognition purpose and source snapshot:
 
 ```text
 ContextProjection {
     projection_id
+    purpose
     created_at
     projection_schema_version
 
     companion_person_id
-    relationship_id
-    current_input_event_id
+    relationship_id?
+    current_input_event_id?
 
     source_self_revision
-    source_relationship_revision
-    source_timeline_frontier
+    source_relationship_revision?
+    source_timeline_frontier?
 
     selected_event_refs[]
     personal_context_items[]
     world_context_items[]
 }
 ```
+
+For the foundation reactive response, `purpose = RESPOND_TO_INTERACTION`, `relationship_id`, `current_input_event_id`, the relationship revision, and Timeline frontier are mandatory.
 
 `source_timeline_frontier` records what canonical relationship history existed at build time. `selected_event_refs[]` records which historical events cognition actually saw. They are deliberately different.
 
