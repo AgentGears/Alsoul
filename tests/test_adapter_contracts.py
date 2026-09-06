@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Mapping
 
+import pytest
+
 from alsoul.adapters import (
     FakeModelAdapter,
     FakeWorldAdapter,
@@ -91,3 +93,13 @@ def test_http_world_adapter_does_not_invent_invalid_source_time():
     ).acquire(captured_at=captured_at)
 
     assert acquired.source_modified_at is None
+
+
+def test_http_world_adapter_rejects_non_http_locator():
+    with pytest.raises(ValueError, match="http or https"):
+        HttpWorldAdapter(locator="file:///tmp/source.json")
+
+
+def test_http_world_adapter_rejects_non_positive_timeout():
+    with pytest.raises(ValueError, match="positive"):
+        HttpWorldAdapter(locator="https://source.invalid/requirements", timeout_seconds=0)
