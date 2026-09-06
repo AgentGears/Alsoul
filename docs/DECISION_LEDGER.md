@@ -1,9 +1,9 @@
 # Alsoul Foundation Decision Ledger
 
-**Status:** Convergence ledger; pre-ADR  
+**Status:** Convergence ledger through Decision 10.B  
 **Publication:** GitHub-safe
 
-This ledger records the foundation decisions currently treated as converged enough to constrain implementation. It is intentionally concise. Individual ADRs may later replace ledger entries as implementation begins.
+This ledger records decisions currently treated as converged enough to constrain implementation. Detailed ADRs supplement the concise entries below.
 
 ## Decision 01 — Canonical Self identity boundary
 
@@ -198,17 +198,195 @@ For the first vertical slice, a freshness-sensitive current question always perf
 
 Unresolved material contradiction blocks use as settled checked truth.
 
-## Next convergence boundary — Decision 07.A
+## Decision 07.A — ContextProjection as cognition boundary
 
-`ContextProjection` remains the next unresolved foundation boundary.
+`ContextProjection` is an immutable invocation-scoped provider-independent semantic snapshot of the exact Alsoul-owned state selected for one cognition invocation.
 
-It must define:
+It pins canonical revisions/frontiers and exact selected source refs rather than relying on mutable provider context.
 
 ```text
-what canonical/derived state may enter cognition
-which source revisions/frontiers are recorded
-how relevant state may be summarized or omitted
-how epistemic provenance survives rendering
-how a model invocation is bound to the exact canonical state it saw
-how provider-specific prompt material remains a projection rather than authority
+not projected
+≠ forgotten
+≠ deleted
+≠ false
 ```
+
+Eligibility precedes relevance. Projection-time epistemic classifications preserve distinctions such as counterpart-stated memory and current checked world result.
+
+Provider prompt/messages are a rendering of ContextProjection, not authority.
+
+## Decision 07.B — Model invocation, adoption, and presentation
+
+One `ModelInvocation` binds exactly one ContextProjection.
+
+The output path is:
+
+```text
+ContextProjection
+↓
+ModelInvocation
+↓
+GeneratedOutput
+↓
+adoption
+↓
+CompanionOutput
+↓
+presentation
+↓
+COMPANION_PRESENTED_OUTPUT
+```
+
+`GeneratedOutput` is a candidate artifact. `CompanionOutput` is Alsoul's adoption boundary. Shared relationship history begins only at presentation.
+
+```text
+Generated ≠ Adopted ≠ Presented ≠ Heard
+```
+
+Retries are fenced by semantic output targets and idempotent presentation.
+
+See [ADR-001](adr/ADR-001_CONTEXT_AND_OUTPUT.md).
+
+## Decision 08.A — Capability, credentials, permission, approval, and Action
+
+Technical capability, authentication, standing authority, operation-specific approval, and semantic action intent are separate.
+
+```text
+Capability
+≠ CredentialBinding
+≠ Permission
+≠ Approval
+≠ Action
+```
+
+A model tool call is only an action proposal. Effectful dispatch requires current host/product policy, capability availability, credential feasibility, Permission, required Approval, and Action constraints to all pass.
+
+Credential secrets remain outside cognition.
+
+## Decision 08.B — ExecutionAttempt, idempotency, Effect, and reconciliation
+
+One immutable `Action` may have multiple immutable `ExecutionAttempt`s. Retries preserve the same `action_id` and, where supported by the external contract, one stable external idempotency identity.
+
+`Effect` is evidence-grounded externally observable consequence, not merely successful transport/tool return.
+
+Execution distinguishes:
+
+```text
+CONFIRMED_EFFECT
+CONFIRMED_NO_EFFECT
+UNKNOWN_EFFECT
+```
+
+Unknown effect survives restart and blocks unsafe blind retry. Reconciliation uses read-side Observation/evidence where possible.
+
+Strong completion language is downstream of the actual confirmed Effect.
+
+See [ADR-002](adr/ADR-002_AUTHORITY_AND_EFFECTS.md).
+
+## Decision 09.A — DelegatedTask, Commitment, Procedure, and future activation
+
+A conversational request becomes durable work only through task admission.
+
+`DelegatedTask` is accepted durable work. `Commitment` is durable obligation. `Skill / Procedure` is reusable know-how. `Trigger` determines when work becomes eligible to continue.
+
+```text
+request ≠ Task
+Task ≠ Commitment
+Procedure ≠ Trigger
+```
+
+Future-facing promise and scheduling language may only be presented after the corresponding durable Task/Commitment/Trigger state commits.
+
+## Decision 09.B — Task lifecycle, TriggerActivation, WorkRun, completion, and cancellation
+
+Task lifecycle is append-oriented rather than a single mutable status field.
+
+`TriggerActivation` records one logical activation opportunity. Reprocessing the same occurrence must not create duplicate normal WorkRuns.
+
+`WorkRun` is one bounded execution undertaken to advance one Task. Internal retries and process restarts do not automatically create new WorkRuns.
+
+Task completion requires declared completion criteria to be satisfied by durable evidence/state. WorkRun success alone is insufficient.
+
+Cancellation is additive and fences future work without erasing history, rolling back confirmed Effects, or converting unknown Effects into confirmed no-effect.
+
+Commitment discharge remains separate from Task completion.
+
+## Decision 09.C — WorkArtifact, WorkProduct, delivery, and result ownership
+
+`WorkArtifact` is immutable durable material produced/acquired/transformed in a WorkRun.
+
+`WorkProduct` is the task-level deliverable Alsoul has adopted from one or more WorkArtifacts.
+
+```text
+Generated content
+≠ WorkArtifact
+≠ WorkProduct
+≠ external save Effect
+≠ Delivery
+```
+
+External saving uses the Action/Effect plane. Delivery is recipient/channel-specific and binds an exact WorkProduct version.
+
+Task completion criteria decide whether product adoption, external persistence, delivery, or another milestone is required.
+
+See [ADR-003](adr/ADR-003_DURABLE_WORK.md).
+
+## Decision 10.A — WorldSignal, Trigger, and proactive initiation
+
+`WorldSignal` is an immutable durable record that the host received an external/system stimulus relevant to possible world-state evaluation or future work.
+
+Signal receipt does not automatically establish an Observation, WorldResult, Trigger satisfaction, Permission, or instruction to act.
+
+A `Trigger` is declarative activation policy. Signal-occurrence Triggers may be satisfied by accepted source events; world-condition Triggers may require Investigation/Observation/WorldResult first.
+
+Proactive work and proactive contact are separate. Trigger activation may permit work continuation without granting authority to initiate social contact.
+
+## Decision 10.B — Signal deduplication, recurring edges, and proactive output idempotency
+
+Signal deduplication follows authoritative source event identity when available and is scoped to the source binding/event namespace. Payload similarity is not semantic event identity.
+
+`TriggerEvaluation` records condition interpretation against an exact state/evidence basis and distinguishes:
+
+```text
+SATISFIED
+NOT_SATISFIED
+UNRESOLVED
+```
+
+For default recurring edge semantics:
+
+```text
+NOT_SATISFIED → SATISFIED
+    activate
+
+SATISFIED → SATISFIED
+    no activation
+
+SATISFIED → UNRESOLVED → SATISFIED
+    no activation
+
+SATISFIED → NOT_SATISFIED
+    rearm
+```
+
+Activation identity is type-specific and stable. Proactive communication has an activation-scoped semantic output target so duplicate signals, model retries, WorkRun replay, and presentation retries do not become duplicate notifications.
+
+See [ADR-004](adr/ADR-004_PROACTIVITY.md).
+
+## Next convergence boundary — Decision 11.A
+
+The next major unresolved boundary is one Person across many presences:
+
+```text
+SurfaceBinding
+ChannelBinding
+EmbodimentBinding
+```
+
+It must preserve:
+
+```text
+Person ≠ Surface ≠ Channel ≠ Embodiment
+```
+
+while defining inbound routing, relationship resolution, presentation semantics, and continuity across text, push, voice, desktop, wearable, and future embodiments.
