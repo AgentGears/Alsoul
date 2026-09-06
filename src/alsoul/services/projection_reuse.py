@@ -79,8 +79,8 @@ def projection_reuse_blocker(conn, projection: dict[str, Any]) -> str | None:
         return "TIMELINE_HEAD_MISSING"
     if timeline_head["last_timeline_seq"] != projection["source_timeline_frontier"]:
         return "TIMELINE_ADVANCED"
-    if current_input["timeline_seq"] > projection["source_timeline_frontier"]:
-        return "CURRENT_INPUT_AFTER_FRONTIER"
+    if current_input["timeline_seq"] != projection["source_timeline_frontier"]:
+        return "CURRENT_INPUT_NOT_AT_FRONTIER"
 
     return None
 
