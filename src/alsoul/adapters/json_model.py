@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from hashlib import sha256
 from typing import Any, Mapping, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import SplitResult, urlsplit
@@ -131,6 +132,11 @@ class JsonModelProviderAdapter:
         if not self.model_ref.strip():
             raise ValueError("model_ref is required")
 
+    def provider_request_digest(self, provider_context: dict[str, Any]) -> str:
+        body = self._request_body(provider_context)
+        encoded = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return sha256(encoded).hexdigest()
+
     def generate(self, provider_context: dict[str, Any]) -> FoundationResponseDraft:
         headers = {
             "Accept": "application/json",
@@ -140,20 +146,7 @@ class JsonModelProviderAdapter:
         if self.authorization_token:
             headers["Authorization"] = f"Bearer {self.authorization_token}"
 
-        required_kinds = (
-            "REMEMBERED_COUNTERPART_STATEMENT",
-            "CURRENT_CHECKED_WORLD",
-            "COMPANION_INTERPRETATION",
-        )
-        request_body = {
-            "schema_version": 1,
-            "model_ref": self.model_ref,
-            "provider_context": provider_context,
-            "response_contract": {
-                "type": "FoundationResponseDraft",
-                "required_epistemic_kinds": list(required_kinds),
-            },
-        }
+        request_body = self._request_body(provider_context)
         try:
             response = self.transport.post_json(
                 self.endpoint,
@@ -185,6 +178,7 @@ class JsonModelProviderAdapter:
                 "model endpoint returned an invalid FoundationResponseDraft"
             ) from exc
 
+        required_kinds = self._required_kinds()
         if tuple(segment.epistemic_kind for segment in draft.segments) != required_kinds:
             raise AdapterRejected(
                 "model endpoint returned an invalid F4 epistemic segment sequence"
@@ -200,6 +194,25 @@ class JsonModelProviderAdapter:
                 "model endpoint returned invalid F4 source attribution shape"
             )
         return draft
+
+    def _request_body(self, provider_context: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "model_ref": self.model_ref,
+            "provider_context": provider_context,
+            "response_contract": {
+                "type": "FoundationResponseDraft",
+                "required_epistemic_kinds": list(self._required_kinds()),
+            },
+        }
+
+    @staticmethod
+    def _required_kinds() -> tuple[str, str, str]:
+        return (
+            "REMEMBERED_COUNTERPART_STATEMENT",
+            "CURRENT_CHECKED_WORLD",
+            "COMPANION_INTERPRETATION",
+        )
 
 
 def _same_https_origin(expected: SplitResult, actual: SplitResult) -> bool:
