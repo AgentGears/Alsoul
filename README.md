@@ -4,7 +4,7 @@
 
 Alsoul is a persistent personal companion architecture designed to remain one continuous person across model, process, thread, surface, channel, and provider changes.
 
-The project is currently in **foundation convergence / pre-implementation**. The semantic backbone is converged through identity, history, memory, fresh world access, cognition/output, authority/effects, durable delegated work, and proactive initiation. The next architecture boundary is one Person across many surfaces/channels/embodiments, while the first implementation target remains deliberately narrow.
+The project has entered **foundation implementation**. The semantic backbone is converged through identity, history, memory, fresh world access, cognition/output, authority/effects, durable delegated work, proactivity, presence/modality, presentation policy, conversational open loops, recovery, and the F4 persistence/service boundary. The first executable walking skeleton is intentionally much narrower than the full architecture.
 
 ## Product thesis
 
@@ -51,6 +51,10 @@ Action ≠ ExecutionAttempt ≠ Effect
 WorkArtifact ≠ WorkProduct ≠ Delivery
 WorldSignal ≠ Observation
 background work ≠ proactive contact
+PresentationProfile ≠ SelfModel
+AffectState ≠ stable personality
+ConversationOpenLoop ≠ DelegatedTask ≠ Commitment
+persistence ≠ recoverability ≠ hydration
 ```
 
 ## Current architecture map
@@ -59,6 +63,8 @@ background work ≠ proactive contact
 CompanionPerson
     │
     ├── SelfModel
+    ├── PresentationProfile
+    ├── SurfaceBinding / ChannelBinding / EmbodimentBinding
     │
     └── RelationshipState ─── CounterpartPerson
             │                     │
@@ -84,15 +90,17 @@ Fresh world question
 
 Memory / PersonModel / WorldResult / current interaction
     │
-    └── ContextProjection
+    └── InteractionPolicy
             │
-            └── ModelInvocation
+            └── ContextProjection
                     │
-                    └── GeneratedOutput
+                    └── ModelInvocation
                             │
-                            └── CompanionOutput
+                            └── GeneratedOutput
                                     │
-                                    └── presented Timeline event
+                                    └── CompanionOutput
+                                            │
+                                            └── presented Timeline event
 
 Effectful work
     │
@@ -129,19 +137,19 @@ Proactive world path
 
 ## Foundation walking skeleton
 
-The first vertical slice remains intentionally much smaller than the full architecture. It proves one continuous companion that can:
+The first executable vertical slice remains intentionally much smaller than the full architecture. It proves one continuous companion that can:
 
 1. recover the same durable person and relationship after complete process death;
 2. recover one evidence-grounded personal memory;
 3. receive a question requiring current external information;
-4. perform a real investigation and preserve what was actually checked;
+4. perform a fresh investigation and preserve what was actually acquired;
 5. derive an evidence-backed world result;
 6. build an immutable ContextProjection carrying exact personal/world provenance;
 7. bind one model invocation to that projection;
 8. distinguish generated candidate output from Alsoul-adopted output and actual shared-history presentation; and
 9. present memory, checked information, and interpretation as distinct epistemic classes.
 
-The target interaction should be mechanically capable of meaning:
+The target interaction is mechanically capable of meaning:
 
 ```text
 "You told me ..."
@@ -151,7 +159,23 @@ The target interaction should be mechanically capable of meaning:
 
 without those distinctions being prompt conventions or stylistic guesses.
 
-Effectful external Actions, background delegated work, proactive monitoring, multi-channel delivery, and rich embodiment are architecturally bounded but deliberately excluded from the first implementation slice.
+The implementation bootstrap uses deterministic world/model adapters in the acceptance suite and a file-backed relational store to exercise complete runtime reconstruction. Effectful external Actions, background delegated work, proactive monitoring, multi-channel delivery, and rich modality remain outside F4.
+
+## Implementation
+
+The first source tree lives under `src/alsoul` and is organized around semantic boundaries rather than provider APIs:
+
+```text
+src/alsoul/
+    domain/
+    storage/
+    services/
+    adapters/
+```
+
+Database migrations live under `migrations/`, and executable architecture tests live under `tests/`.
+
+See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md) for the concrete scope and recovery contract.
 
 ## Documentation
 
@@ -161,6 +185,8 @@ Core documents:
 - [Architecture Convergence](docs/ARCHITECTURE_CONVERGENCE.md)
 - [Foundation Walking Skeleton](docs/FOUNDATION_WALKING_SKELETON.md)
 - [Decision Ledger](docs/DECISION_LEDGER.md)
+- [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md)
+- [Architecture Checkpoint — Decisions 11.A through 15.B](docs/ARCHITECTURE_CHECKPOINT_11_15.md)
 
 Architecture decision records:
 
@@ -168,9 +194,9 @@ Architecture decision records:
 - [ADR-002 — Authority, Action, Execution, and Effect](docs/adr/ADR-002_AUTHORITY_AND_EFFECTS.md)
 - [ADR-003 — Durable Work, Commitments, Tasks, and Deliverables](docs/adr/ADR-003_DURABLE_WORK.md)
 - [ADR-004 — World Signals, Triggers, and Proactive Initiation](docs/adr/ADR-004_PROACTIVITY.md)
+- [ADR-005 — Presence, Presentation Policy, Conversational Continuity, and Recovery](docs/adr/ADR-005_PRESENCE_POLICY_AND_RECOVERY.md)
+- [ADR-006 — F4 Persistence and Application-Service Boundary](docs/adr/ADR-006_F4_PERSISTENCE_AND_SERVICES.md)
 
 ## Status
 
-Pre-implementation foundation checkpoint through Decision 10.B.
-
-The next major architecture boundary is `SurfaceBinding` / `ChannelBinding` / `EmbodimentBinding`. In parallel, the project is ready to freeze the first vertical-slice physical schema and convert foundation acceptance contracts into executable tests.
+Foundation implementation bootstrap. The current code exercises the F4 persistence/service boundary with deterministic acceptance tests. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
