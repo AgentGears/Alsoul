@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 from alsoul.adapters.contracts import (
@@ -20,6 +20,8 @@ from alsoul.domain.models import FoundationResponseDraft, WorldAcquisitionSucces
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
 from alsoul.services.common import sha256_text
 from alsoul.services.foundation import FoundationServices
+
+AttemptStartedHook = Callable[[UUID], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +63,7 @@ class WorldAcquisitionRunner:
         adapter: WorldAcquisitionAdapter,
         acquisition_kind: str,
         request_descriptor: dict[str, Any],
+        after_observation_started: AttemptStartedHook | None = None,
     ) -> WorldAcquisitionRunResult:
         observation = self.services.start_observation(
             StartObservationCommand(
@@ -70,6 +73,12 @@ class WorldAcquisitionRunner:
                 request_descriptor=request_descriptor,
             )
         )
+
+        # This hook is deliberately outside the provider try/except. A caller that
+        # simulates or detects process loss after the durable STARTED boundary must
+        # leave the Observation STARTED rather than rewriting it as FAILED.
+        if after_observation_started is not None:
+            after_observation_started(observation.observation_id)
 
         try:
             acquired = adapter.acquire(captured_at=self.clock.now())
@@ -144,6 +153,7 @@ class ModelGenerationRunner:
         *,
         context_projection_id: UUID,
         adapter: ModelProviderAdapter,
+        after_invocation_started: AttemptStartedHook | None = None,
     ) -> ModelGenerationRunResult:
         provider_context = self.services.render_provider_context(context_projection_id)
         request_digest = adapter.provider_request_digest(provider_context)
@@ -157,6 +167,11 @@ class ModelGenerationRunner:
                 provider_request_digest=request_digest,
             )
         )
+
+        # As with Observation, process loss after this durable boundary must leave
+        # IN_PROGRESS intact for explicit reconciliation to UNKNOWN.
+        if after_invocation_started is not None:
+            after_invocation_started(invocation.model_invocation_id)
 
         try:
             draft = adapter.generate(provider_context)
@@ -211,6 +226,7 @@ class ModelGenerationRunner:
 
 
 __all__ = [
+    "AttemptStartedHook",
     "ModelGenerationRunResult",
     "ModelGenerationRunner",
     "WorldAcquisitionRunResult",
