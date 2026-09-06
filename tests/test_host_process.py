@@ -147,9 +147,10 @@ def _prepare_database(db_path: Path, now):
     create_schema(engine)
     services = FoundationServices(engine, clock=FixedClock(now), ids=UUIDGenerator())
     bootstrapper = FoundationBootstrapper(engine, clock=FixedClock(now), ids=UUIDGenerator())
+    external_subject = str(uuid4())
     ids = bootstrapper.bootstrap(
         identity_namespace="host-process",
-        external_subject=str(uuid4()),
+        external_subject=external_subject,
     )
     memory = services.append_counterpart_input(
         AppendCounterpartInputCommand(
@@ -175,21 +176,25 @@ def _prepare_database(db_path: Path, now):
             source_event_id=memory.event_id,
         )
     )
-    current = services.append_counterpart_input(
-        AppendCounterpartInputCommand(
-            operation_id=uuid4(),
-            companion_person_id=ids.companion_person_id,
-            counterpart_id=ids.counterpart_id,
-            relationship_id=ids.relationship_id,
-            ingress_idempotency_key="host-current",
-            content_text="Would the current software run on my machine?",
-            occurred_at=now,
-            surface_binding_id=ids.surface_binding_id,
-            channel_binding_id=ids.channel_binding_id,
-        )
-    )
     engine.dispose()
-    return ids, current
+    return ids, external_subject
+
+
+def _ingress_envelope(now, *, external_subject: str) -> str:
+    return json.dumps(
+        {
+            "identity_namespace": "host-process",
+            "external_subject": external_subject,
+            "surface_namespace": "alsoul.first_party",
+            "surface_ref": "primary-text-surface",
+            "channel_namespace": "alsoul.first_party",
+            "channel_ref": "primary-text-channel",
+            "transport_event_id": "transport-event-1",
+            "content_text": "Would the current software run on my machine?",
+            "occurred_at": now.isoformat(),
+            "conversation_id": "thread-b",
+        }
+    )
 
 
 def _write_config(path: Path, *, db_path: Path, base_url: str) -> None:
@@ -210,7 +215,12 @@ def _write_config(path: Path, *, db_path: Path, base_url: str) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _run_host(config_path: Path, *args: str, env: dict[str, str] | None = None):
+def _run_host(
+    config_path: Path,
+    *args: str,
+    env: dict[str, str] | None = None,
+    input_text: str | None = None,
+):
     command = [
         sys.executable,
         "-m",
@@ -225,13 +235,15 @@ def _run_host(config_path: Path, *args: str, env: dict[str, str] | None = None):
         capture_output=True,
         text=True,
         env=env,
+        input=input_text,
         timeout=30,
     )
 
 
-def test_host_process_exposes_readiness_diagnostics_probe_and_full_response(tmp_path, now):
+def test_host_process_ingests_then_resumes_full_interaction_across_processes(tmp_path, now):
     db_path = tmp_path / "alsoul.db"
-    ids, current = _prepare_database(db_path, now)
+    ids, external_subject = _prepare_database(db_path, now)
+    envelope = _ingress_envelope(now, external_subject=external_subject)
 
     with _provider_server(tmp_path) as (base_url, cert, state):
         config_path = tmp_path / "host.json"
@@ -245,13 +257,27 @@ def test_host_process_exposes_readiness_diagnostics_probe_and_full_response(tmp_
         assert state.world_requests == 0
         assert state.model_requests == 0
 
+        ingest = _run_host(config_path, "ingest", input_text=envelope)
+        assert ingest.returncode == 0, ingest.stderr
+        ingress_result = json.loads(ingest.stdout)["result"]
+        current_event_id = ingress_result["event_id"]
+        assert ingress_result["relationship_id"] == str(ids.relationship_id)
+        assert ingress_result["idempotent_replay"] is False
+        assert "Would the current software" not in ingest.stdout
+
+        replay = _run_host(config_path, "ingest", input_text=envelope)
+        assert replay.returncode == 0, replay.stderr
+        replay_result = json.loads(replay.stdout)["result"]
+        assert replay_result["event_id"] == current_event_id
+        assert replay_result["idempotent_replay"] is True
+
         diagnose = _run_host(
             config_path,
             "diagnose",
             "--relationship-id",
             str(ids.relationship_id),
             "--current-input-event-id",
-            str(current.event_id),
+            current_event_id,
         )
         assert diagnose.returncode == 0, diagnose.stderr
         diagnostic = json.loads(diagnose.stdout)["result"]
@@ -277,24 +303,36 @@ def test_host_process_exposes_readiness_diagnostics_probe_and_full_response(tmp_
         assert secret not in probe.stdout
         assert secret not in probe.stderr
 
-        respond = _run_host(
+        interact = _run_host(
             config_path,
-            "respond",
-            "--relationship-id",
-            str(ids.relationship_id),
-            "--current-input-event-id",
-            str(current.event_id),
-            "--surface-binding-id",
-            str(ids.surface_binding_id),
-            "--channel-binding-id",
-            str(ids.channel_binding_id),
+            "interact",
             env=env,
+            input_text=envelope,
         )
-        assert respond.returncode == 0, respond.stderr
-        response_payload = json.loads(respond.stdout)["result"]
+        assert interact.returncode == 0, interact.stderr
+        interaction_payload = json.loads(interact.stdout)["result"]
+        assert interaction_payload["ingress"]["event_id"] == current_event_id
+        assert interaction_payload["ingress"]["idempotent_replay"] is True
+        response_payload = interaction_payload["response"]
         assert response_payload["presented_event_id"]
-        assert secret not in respond.stdout
-        assert secret not in respond.stderr
+        assert secret not in interact.stdout
+        assert secret not in interact.stderr
+        assert "Would the current software" not in interact.stdout
+        assert state.world_requests == 1
+        assert state.model_requests == 2
+
+        second_interact = _run_host(
+            config_path,
+            "interact",
+            env=env,
+            input_text=envelope,
+        )
+        assert second_interact.returncode == 0, second_interact.stderr
+        second_payload = json.loads(second_interact.stdout)["result"]
+        assert (
+            second_payload["response"]["presented_event_id"]
+            == response_payload["presented_event_id"]
+        )
         assert state.world_requests == 1
         assert state.model_requests == 2
 
@@ -306,7 +344,17 @@ def test_host_process_exposes_readiness_diagnostics_probe_and_full_response(tmp_
                 == UUID(response_payload["presented_event_id"])
             )
         ).mappings().one()
+        current = conn.execute(
+            select(schema.interaction_event).where(
+                schema.interaction_event.c.event_id == UUID(current_event_id)
+            )
+        ).mappings().one()
         counts = {
+            "current_inputs": conn.execute(
+                select(func.count())
+                .select_from(schema.interaction_event)
+                .where(schema.interaction_event.c.event_kind == "COUNTERPART_INPUT")
+            ).scalar_one(),
             "world_results": conn.execute(
                 select(func.count()).select_from(schema.world_result)
             ).scalar_one(),
@@ -321,7 +369,15 @@ def test_host_process_exposes_readiness_diagnostics_probe_and_full_response(tmp_
         }
     engine.dispose()
 
-    assert counts == {"world_results": 1, "generated": 1, "presented": 1}
+    assert current["relationship_id"] == ids.relationship_id
+    assert current["surface_binding_id"] == ids.surface_binding_id
+    assert current["channel_binding_id"] == ids.channel_binding_id
+    assert counts == {
+        "current_inputs": 2,
+        "world_results": 1,
+        "generated": 1,
+        "presented": 1,
+    }
     assert "You told me" in presented["content_text"]
     assert "I checked" in presented["content_text"]
     assert "My take" in presented["content_text"]

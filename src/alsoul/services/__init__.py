@@ -9,12 +9,19 @@ from .configured_runtime import (
 )
 from .diagnostics import FoundationRuntimeDiagnostic, FoundationRuntimeDiagnostics
 from .foundation import FoundationServices
+from .ingress import (
+    AdmitTrustedCounterpartInputResult,
+    FirstPartyIngress,
+    TrustedCounterpartInputEnvelope,
+)
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
 
 __all__ = [
+    "AdmitTrustedCounterpartInputResult",
     "ConfiguredFoundationRuntime",
+    "FirstPartyIngress",
     "FoundationBootstrapper",
     "FoundationResponseCoordinator",
     "FoundationRuntimeConfig",
@@ -26,6 +33,7 @@ __all__ = [
     "ModelRuntimeConfig",
     "ProviderRecoveryCoordinator",
     "RuntimeSecrets",
+    "TrustedCounterpartInputEnvelope",
     "WorldAcquisitionRunner",
     "WorldRuntimeConfig",
 ]
