@@ -112,6 +112,7 @@ InteractionEvent {
     timeline_seq
     actor_ref
     kind
+    content_text
     occurred_at
     recorded_at
     conversation_id?
@@ -363,22 +364,25 @@ latest claim ≠ current claim by timestamp alone
 ```text
 ContextProjection {
     projection_id
+    purpose
     created_at
     projection_schema_version
 
     companion_person_id
-    relationship_id
-    current_input_event_id
+    relationship_id?
+    current_input_event_id?
 
     source_self_revision
-    source_relationship_revision
-    source_timeline_frontier
+    source_relationship_revision?
+    source_timeline_frontier?
 
     selected_event_refs[]
     personal_context_items[]
     world_context_items[]
 }
 ```
+
+For the foundation reactive response, `purpose = RESPOND_TO_INTERACTION`, the relationship/current-input bindings, relationship revision, and Timeline frontier are mandatory.
 
 The Timeline frontier records what canonical history existed; selected event refs record what cognition actually saw.
 
