@@ -98,7 +98,12 @@ class UrllibJsonTransport:
         raw = response.read(self.max_response_bytes + 1)
         if len(raw) > self.max_response_bytes:
             raise AdapterRejected("model endpoint response exceeded configured size limit")
-        return raw.decode(charset, errors=errors)
+        try:
+            return raw.decode(charset, errors=errors)
+        except (UnicodeDecodeError, LookupError) as exc:
+            raise AdapterRejected(
+                "model endpoint returned an undecodable response body"
+            ) from exc
 
 
 @dataclass(slots=True)
