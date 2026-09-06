@@ -2,11 +2,13 @@ from .contracts import (
     AdapterError,
     AdapterOutcomeUnknown,
     AdapterRejected,
+    FirstPartyPresentationAcceptance,
+    FirstPartyPresentationAdapter,
     ModelProviderAdapter,
     WorldAcquisitionAdapter,
     WorldResultExtractor,
 )
-from .fakes import FakeModelAdapter, FakeWorldAdapter
+from .fakes import FakeModelAdapter, FakePresentationAdapter, FakeWorldAdapter
 from .http_world import HttpResponse, HttpTransport, HttpWorldAdapter, UrllibHttpTransport
 from .json_model import (
     JsonHttpResponse,
@@ -14,6 +16,7 @@ from .json_model import (
     JsonModelProviderAdapter,
     UrllibJsonTransport,
 )
+from .json_presentation import JsonFirstPartyPresentationAdapter
 from .world_extract import F4JsonMemoryRequirementExtractor, https_origin
 
 __all__ = [
@@ -22,10 +25,14 @@ __all__ = [
     "AdapterRejected",
     "F4JsonMemoryRequirementExtractor",
     "FakeModelAdapter",
+    "FakePresentationAdapter",
     "FakeWorldAdapter",
+    "FirstPartyPresentationAcceptance",
+    "FirstPartyPresentationAdapter",
     "HttpResponse",
     "HttpTransport",
     "HttpWorldAdapter",
+    "JsonFirstPartyPresentationAdapter",
     "JsonHttpResponse",
     "JsonHttpTransport",
     "JsonModelProviderAdapter",
