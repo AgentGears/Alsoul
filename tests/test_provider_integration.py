@@ -54,6 +54,9 @@ class InspectingModelAdapter:
     provider_binding_ref: str = "configured-provider-binding"
     model_ref: str = "configured-model"
 
+    def provider_request_digest(self, provider_context: dict) -> str:
+        return FakeModelAdapter().provider_request_digest(provider_context)
+
     def generate(self, provider_context: dict) -> FoundationResponseDraft:
         with self.engine.connect() as conn:
             invocations = conn.execute(
@@ -64,6 +67,9 @@ class InspectingModelAdapter:
         assert len(invocations) == 1
         assert invocations[0]["provider_binding_ref"] == self.provider_binding_ref
         assert invocations[0]["model_ref"] == self.model_ref
+        assert invocations[0]["provider_request_digest"] == self.provider_request_digest(
+            provider_context
+        )
         return FakeModelAdapter().generate(provider_context)
 
 
@@ -71,6 +77,9 @@ class InspectingModelAdapter:
 class UnknownModelAdapter:
     provider_binding_ref: str = "unknown-provider-binding"
     model_ref: str = "unknown-model"
+
+    def provider_request_digest(self, provider_context: dict) -> str:
+        return FakeModelAdapter().provider_request_digest(provider_context)
 
     def generate(self, provider_context: dict) -> FoundationResponseDraft:
         raise AdapterOutcomeUnknown("transport outcome unknown")
@@ -80,6 +89,9 @@ class UnknownModelAdapter:
 class RejectedModelAdapter:
     provider_binding_ref: str = "rejected-provider-binding"
     model_ref: str = "rejected-model"
+
+    def provider_request_digest(self, provider_context: dict) -> str:
+        return FakeModelAdapter().provider_request_digest(provider_context)
 
     def generate(self, provider_context: dict) -> FoundationResponseDraft:
         raise AdapterRejected("provider rejected request")
