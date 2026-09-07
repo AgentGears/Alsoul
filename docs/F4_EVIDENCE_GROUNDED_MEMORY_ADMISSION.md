@@ -30,6 +30,10 @@ COUNTERPART_INPUT InteractionEvent
 ↓
 bounded deterministic extraction
 ↓
+F4MemoryCandidate
+↓
+source binding
+↓
 F4MemoryProposal
 ↓
 relationship/current-claim validation
@@ -61,7 +65,7 @@ An explicit correction can be expressed with bounded correction language, for ex
 Actually, my machine has 32 GB RAM.
 ```
 
-The extractor does not produce a proposal for questions, unrelated storage quantities, third-party machines, or generic `GB` mentions. Examples that do not become proposals include:
+The extractor does not produce a candidate for questions, unrelated storage quantities, third-party machines, or generic `GB` mentions. Examples that do not become candidates include:
 
 ```text
 Does my machine have 16 GB RAM?
@@ -69,20 +73,36 @@ My USB drive has 16 GB RAM.
 Their machine has 16 GB RAM.
 ```
 
-Absence of a proposal does not alter history. The original InteractionEvent remains canonical Timeline state.
+Absence of a candidate does not alter history. The original InteractionEvent remains canonical Timeline state.
 
-## Proposal is not admission
+## Candidate is not proposal
 
-`F4MemoryProposal` is non-authoritative candidate state. It contains only:
+`F4MemoryCandidate` is a non-authoritative semantic interpretation of statement text. It contains only:
 
 ```text
-source_event_id
 predicate
 value
 explicit_correction
 ```
 
-The proposal does not itself create an EvidenceItem, Claim, memory scope, or current PersonModel state.
+It has no source-event identity and therefore cannot itself become admissible memory.
+
+A separate source-binding step creates `F4MemoryProposal`:
+
+```text
+F4MemoryProposal {
+    source_event_id
+    predicate
+    value
+    explicit_correction
+}
+```
+
+This boundary makes provenance explicit: the same semantic candidate is not yet a memory proposal until it is bound to one canonical source event.
+
+## Proposal is not admission
+
+`F4MemoryProposal` remains non-authoritative. It does not itself create an EvidenceItem, Claim, memory scope, or current PersonModel state.
 
 Admission occurs only through the existing semantic transaction. That transaction validates the relationship, source event, counterpart actor, predicate, value, and statement support before atomically writing:
 
@@ -103,7 +123,11 @@ For the local first-party surface, memory admission occurs after trusted input p
 ```text
 COUNTERPART_INPUT committed
 ↓
-memory proposal / admission
+extracted candidate
+↓
+memory proposal
+↓
+Claim/Evidence admission
 ↓
 ContextProjection
 ↓
@@ -171,7 +195,7 @@ process loss
 ↓
 replay same source event
 ↓
-proposal / admission can still occur
+candidate / proposal / admission can still occur
 ```
 
 and:
@@ -214,15 +238,17 @@ The current F4 response contract remains intentionally fixed and narrow. Broader
 
 The executable suite must prove at least:
 
-1. an explicit primary-machine RAM statement produces one bounded proposal;
-2. questions and unrelated `GB` statements produce no proposal;
-3. one source event creates one evidence-grounded admitted claim;
-4. replaying the same source event does not duplicate Claim or EvidenceItem state;
-5. an explicit correction creates a new claim and `CORRECTS` edge;
-6. a different value without explicit correction fails closed;
-7. a repeated same value leaves one current claim;
-8. current-memory retrieval resolves the corrected claim rather than the historical one;
-9. local first-party response construction performs memory admission before ContextProjection so newly admitted memory is eligible only after commit.
+1. an explicit primary-machine RAM statement produces one bounded extracted candidate;
+2. the candidate is a distinct object from the source-bound memory proposal;
+3. questions and unrelated `GB` statements produce no candidate;
+4. one source event creates one evidence-grounded admitted claim;
+5. replaying the same source event does not duplicate Claim or EvidenceItem state;
+6. an explicit correction creates a new claim and `CORRECTS` edge;
+7. a different value without explicit correction fails closed;
+8. a repeated same value leaves one current claim;
+9. current-memory retrieval resolves the corrected claim rather than the historical one;
+10. local first-party response construction performs memory admission before ContextProjection so newly admitted memory is eligible only after commit;
+11. the admitted memory survives complete surface/runtime recomposition and is available to a later interaction.
 
 ## Scope boundary
 
