@@ -20,7 +20,7 @@ def test_administrator_initializes_migrates_and_bootstraps_fresh_store(tmp_path)
 
     initialized = admin.initialize_store(database)
     assert initialized.database_path == database.resolve()
-    assert initialized.schema_revision == "0001_f4_foundation"
+    assert initialized.schema_revision == "0002_conversation_open_loop"
 
     empty = admin.status(database)
     assert empty.schema_at_head
@@ -30,8 +30,8 @@ def test_administrator_initializes_migrates_and_bootstraps_fresh_store(tmp_path)
     assert empty.relationship_count == 0
 
     migrated = admin.migrate_store(database)
-    assert migrated.previous_revision == "0001_f4_foundation"
-    assert migrated.schema_revision == "0001_f4_foundation"
+    assert migrated.previous_revision == "0002_conversation_open_loop"
+    assert migrated.schema_revision == "0002_conversation_open_loop"
     assert migrated.changed is False
 
     external_subject = str(uuid4())
