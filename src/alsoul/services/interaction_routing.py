@@ -51,10 +51,6 @@ _CONVERSATIONAL_PATTERNS = (
         r"^\s*(?:bye|goodbye|good\s+night|see\s+you(?:\s+later)?)\s*[.!]?\s*$",
         flags=re.IGNORECASE,
     ),
-    re.compile(
-        r"^\s*tell\s+me\s+what\s+you\s+think\s+about\s+this\s*[.!?]?\s*$",
-        flags=re.IGNORECASE,
-    ),
 )
 
 
