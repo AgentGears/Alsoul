@@ -55,6 +55,7 @@ PresentationProfile ≠ SelfModel
 AffectState ≠ stable personality
 ConversationOpenLoop ≠ DelegatedTask ≠ Commitment
 persistence ≠ recoverability ≠ hydration
+schema initialization ≠ identity bootstrap ≠ runtime recovery
 ```
 
 ## Current architecture map
@@ -169,16 +170,20 @@ The first source tree lives under `src/alsoul` and is organized around semantic 
 
 ```text
 src/alsoul/
-    domain/
-    storage/
-    services/
+    admin/
     adapters/
+    domain/
     host/
+    migrations/
+    services/
+    storage/
 ```
 
-Database migrations live under `migrations/`, and executable architecture tests live under `tests/`.
+Packaged database migrations live under `src/alsoul/migrations/`, and executable architecture tests live under `tests/`.
 
-Foundation identity creation is an explicit administration boundary through `FoundationBootstrapper`; ordinary `FoundationServices` fail closed rather than recreating missing Person/Relationship roots.
+First-run administration is explicit through `alsoul-admin` and `FoundationAdministrator`. `initialize-store` creates only a new schema store, `migrate-store` advances an existing store to the packaged migration head, `status` derives content-free administration state, and `bootstrap-foundation` creates the one-time F4 Person/Counterpart/Relationship identity graph. Existing database paths are never overwritten by initialization, schema migration is never an implicit runtime side effect, and partially existing canonical identity blocks bootstrap rather than being silently repaired.
+
+Foundation identity creation remains isolated in `FoundationBootstrapper`; ordinary `FoundationServices` and `alsoul-host` fail closed rather than recreating missing Person/Relationship roots. A schema-ready but identity-empty store can pass structural host readiness while trusted ingress still fails identity resolution without creating any replacement identity.
 
 Trusted first-party ingress is explicit through `FirstPartyIngress`. An authenticated transport assertion resolves only pre-existing CounterpartIdentityBinding, RelationshipState, SurfaceBinding, and ChannelBinding state before it can become a canonical `COUNTERPART_INPUT`. The model never participates in identity resolution, unknown identity fails closed, and semantic transport-event replay collapses to one Timeline event.
 
@@ -188,19 +193,21 @@ Provider recovery is explicit. `RecoveryCoordinator` derives `MODEL_ATTEMPT_UNRE
 
 Reactive orchestration is composed through `FoundationResponseCoordinator`. It derives progress from canonical rows, reuses already-durable Investigation/Capture/WorldResult/ContextProjection/GeneratedOutput state, and resumes after process death from the furthest trustworthy semantic boundary without persisting a parallel turn-status aggregate.
 
-First-party presentation is now an explicit acceptance boundary. The coordinator derives a restart-stable semantic presentation key from the adopted `CompanionOutput` and exact surface/channel route, sends the exact content and digest through a provider-independent presentation adapter, and commits `COMPANION_PRESENTED_OUTPUT` only after validating a positive sink receipt. A lost acceptance response leaves shared history unadvanced; a later process safely retries the same key, allowing the sink to deduplicate the transport replay while Alsoul records one logical presentation. Presented still does not mean read, heard, or understood.
+First-party presentation is an explicit acceptance boundary. The coordinator derives a restart-stable semantic presentation key from the adopted `CompanionOutput` and exact surface/channel route, sends the exact content and digest through a provider-independent presentation adapter, and commits `COMPANION_PRESENTED_OUTPUT` only after validating a positive sink receipt. A lost acceptance response leaves shared history unadvanced; a later process safely retries the same key, allowing the sink to deduplicate the transport replay while Alsoul records one logical presentation. Presented still does not mean read, heard, or understood.
 
 The adapter package contains provider-independent contracts, deterministic acceptance adapters, a generic HTTP world-acquisition adapter, an HTTPS JSON model adapter, and an HTTPS first-party presentation adapter. Model credentials remain transport-only configuration and are not inserted into ContextProjection, provider context, semantic response payloads, or presentation state.
 
 `ConfiguredFoundationRuntime` closes the fixture-to-runtime boundary for the reactive slice. It requires configured HTTPS world/model/presentation routes, applies a source-origin-pinned JSON world interpreter before WorldResult admission, keeps runtime credentials separate from public configuration, exposes a synthetic model-contract probe, and provides content-free recovery diagnostics derived from canonical rows.
 
-The process-facing runtime is exposed through `alsoul-host` and `python -m alsoul.host`. Host configuration version 2 requires the existing database plus explicit world, model, and first-party presentation routes. The host reads model authorization only from the process environment, validates existing persistence before opening runtime state, and exposes `ready`, `ingest`, `interact`, `diagnose`, `probe-model-contract`, and lower-level `respond`. It never creates schema or identity roots; bootstrap remains a separate administration boundary.
+The process-facing runtime is exposed through `alsoul-host` and `python -m alsoul.host`. Host configuration version 2 requires the existing database plus explicit world, model, and first-party presentation routes. The host reads model authorization only from the process environment, validates existing persistence before opening runtime state, and exposes `ready`, `ingest`, `interact`, `diagnose`, `probe-model-contract`, and lower-level `respond`. It never initializes schema or identity roots; those are separate administration operations.
 
 The process acceptance path admits a trusted current input in one process, resumes it in a later process, performs configured HTTPS world/model/presentation I/O, and verifies that replay after presentation does not duplicate the input, acquisition, generation, adoption, sink presentation, or Timeline presentation. It also verifies the harder uncertain-presentation case: the sink may accept an output and lose the response, after which a new process retries the same semantic key without false shared history or duplicate logical presentation.
 
-The repository continuously verifies source/test compilation, the executable acceptance suite, process-level HTTPS runtime execution, and migration upgrade/downgrade.
+The administration acceptance path separately proves a clean first run: a new store is initialized and migrated, foundation identity is explicitly bootstrapped in a later process, and ordinary runtime presented with an identity-empty store refuses ingress without manufacturing Person, CounterpartPerson, or RelationshipState.
 
-See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md), [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md), [F4 Configured Reactive Runtime](docs/F4_CONFIGURED_RUNTIME.md), [F4 Runtime Host](docs/F4_RUNTIME_HOST.md), [F4 Trusted First-Party Ingress](docs/F4_FIRST_PARTY_INGRESS.md), and [F4 First-Party Presentation Acceptance](docs/F4_FIRST_PARTY_PRESENTATION.md) for the executable foundation checkpoints.
+The repository continuously verifies source/test compilation, the executable acceptance suite, process-level runtime/administration behavior, and migration upgrade/downgrade.
+
+See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md), [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md), [F4 Configured Reactive Runtime](docs/F4_CONFIGURED_RUNTIME.md), [F4 Runtime Host](docs/F4_RUNTIME_HOST.md), [F4 Trusted First-Party Ingress](docs/F4_FIRST_PARTY_INGRESS.md), [F4 First-Party Presentation Acceptance](docs/F4_FIRST_PARTY_PRESENTATION.md), and [F4 Administration and First-Run Bootstrap](docs/F4_ADMINISTRATION.md) for the executable foundation checkpoints.
 
 ## Documentation
 
@@ -219,6 +226,7 @@ Core documents:
 - [F4 Runtime Host](docs/F4_RUNTIME_HOST.md)
 - [F4 Trusted First-Party Ingress](docs/F4_FIRST_PARTY_INGRESS.md)
 - [F4 First-Party Presentation Acceptance](docs/F4_FIRST_PARTY_PRESENTATION.md)
+- [F4 Administration and First-Run Bootstrap](docs/F4_ADMINISTRATION.md)
 - [Architecture Checkpoint — Decisions 11.A through 15.B](docs/ARCHITECTURE_CHECKPOINT_11_15.md)
 
 Architecture decision records:
@@ -232,4 +240,4 @@ Architecture decision records:
 
 ## Status
 
-Presentation-gated trusted first-party F4 interaction. The executable slice can accept an authenticated first-party transport assertion, recover the same counterpart/relationship/presence graph across process death, perform evidence-backed world acquisition and model generation, adopt one companion response, require actual first-party sink acceptance, and only then commit one canonical presented Timeline event. Unknown presentation outcomes remain unconfirmed and recover through the same stable semantic presentation key. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
+Explicitly initializable, presentation-gated trusted first-party F4 interaction. A fresh installation can now create and migrate a new store through a separate administration process, bootstrap the initial durable identity graph exactly once, and then hand control to the ordinary runtime. The reactive slice can accept authenticated first-party input, recover the same counterpart/relationship/presence graph across process death, perform evidence-backed world acquisition and model generation, adopt one companion response, require actual first-party sink acceptance, and only then commit one canonical presented Timeline event. Missing identity remains a hard runtime failure rather than an implicit bootstrap trigger. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.

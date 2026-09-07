@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, func, insert, select
 
+from alsoul.domain.errors import fail
 from alsoul.domain.models import FoundationIds
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
 from alsoul.storage import schema
 
 
 class FoundationBootstrapper:
-    """Explicit one-time creation boundary for the F4 foundation identity graph.
+    """Explicit creation boundary for an F4 foundation identity graph.
 
     Recovery and ordinary application services must never call this boundary when
     canonical identity state is missing. Missing identity during recovery is a
@@ -35,6 +36,7 @@ class FoundationBootstrapper:
         surface_ref: str = "primary-text-surface",
         channel_namespace: str = "alsoul.first_party",
         channel_ref: str = "primary-text-channel",
+        require_empty: bool = False,
     ) -> FoundationIds:
         now = self.clock.now()
         person_id = self.ids.new()
@@ -45,6 +47,29 @@ class FoundationBootstrapper:
         channel_binding_id = self.ids.new()
 
         with self.engine.begin() as conn:
+            if require_empty:
+                foundation_tables = (
+                    schema.companion_person,
+                    schema.self_revision,
+                    schema.self_head,
+                    schema.counterpart_person,
+                    schema.counterpart_identity_binding,
+                    schema.relationship_identity,
+                    schema.relationship_revision,
+                    schema.relationship_head,
+                    schema.relationship_timeline_head,
+                    schema.surface_binding,
+                    schema.channel_binding,
+                )
+                if any(
+                    conn.execute(select(func.count()).select_from(table)).scalar_one()
+                    for table in foundation_tables
+                ):
+                    fail(
+                        "FOUNDATION_ALREADY_BOOTSTRAPPED",
+                        "foundation bootstrap requires an empty canonical identity graph",
+                    )
+
             conn.execute(
                 insert(schema.companion_person).values(
                     person_id=person_id,
