@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from alsoul.domain.errors import fail
+from alsoul.services.foundation import FoundationServices
 from alsoul.services.memory_admission import extract_f4_memory_candidate
 from alsoul.storage import schema
 
@@ -48,7 +49,7 @@ class F4InteractionPurposeGate:
     the event.
     """
 
-    def __init__(self, services) -> None:
+    def __init__(self, services: FoundationServices) -> None:
         self.services = services
 
     def classify_event(self, source_event_id: UUID) -> F4InteractionClassification:
