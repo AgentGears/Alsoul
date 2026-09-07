@@ -15,6 +15,12 @@ from .ingress import (
     FirstPartyIngress,
     TrustedCounterpartInputEnvelope,
 )
+from .memory_admission import (
+    F4CounterpartMemoryAdmission,
+    F4MemoryAdmissionResult,
+    F4MemoryProposal,
+    extract_f4_memory_proposal,
+)
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
@@ -22,6 +28,9 @@ from .runtime import FoundationResponseCoordinator
 __all__ = [
     "AdmitTrustedCounterpartInputResult",
     "ConfiguredFoundationRuntime",
+    "F4CounterpartMemoryAdmission",
+    "F4MemoryAdmissionResult",
+    "F4MemoryProposal",
     "FirstPartyIngress",
     "FoundationBootstrapper",
     "FoundationResponseCoordinator",
@@ -38,4 +47,5 @@ __all__ = [
     "TrustedCounterpartInputEnvelope",
     "WorldAcquisitionRunner",
     "WorldRuntimeConfig",
+    "extract_f4_memory_proposal",
 ]
