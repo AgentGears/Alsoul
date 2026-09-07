@@ -70,6 +70,8 @@ context_projection_open_loop_item
 
 `context_projection_open_loop_item` gives cognition explicit lineage to the exact durable loop selected for one immutable `ContextProjection`.
 
+Schema v2 is composed without mutating the metadata frozen into schema v1. Migration revision `0001_f4_foundation` therefore remains reproducible, while revision `0002_conversation_open_loop` advances an existing or newly initialized store to the current schema.
+
 ## Relationship-scoped continuity
 
 Unlike immediate-prior Timeline context, a `ConversationOpenLoop` is relationship-scoped rather than thread- or route-scoped.
@@ -112,6 +114,14 @@ Provider rendering places the selected loop in a dedicated `conversation_open_lo
 
 The model does not choose which loop is selected. Selection occurs before provider execution under the deterministic host contract.
 
+The provider-context contract changes at this checkpoint, so the renderer identity advances to:
+
+```text
+f4-renderer-v3
+```
+
+Renderer identity is part of invocation provenance; a new rendered field is not treated as the same wire contract under an old renderer version.
+
 ## Recovery compatibility
 
 A durable projection created before this open-loop selection contract may contain only the current resume input. Such a projection remains historical state but is not reusable cognition context.
@@ -130,9 +140,25 @@ new provider attempt if needed
 
 An already-generated candidate attached to the incompatible legacy projection is not adopted merely because it is durable.
 
-Once a valid open-loop-aware projection is committed, retries use that exact immutable loop/event selection rather than resolving the relationship again.
+Once a valid open-loop-aware projection is committed, recovery preserves its exact immutable loop/event lineage. Reuse is still conditional: immediately before another provider execution, Alsoul re-evaluates the complete active `DECISION` loop set for the relationship.
 
-If the selected loop is closed before a new provider attempt, the projection becomes non-reusable. Historical projection membership is not rewritten.
+```text
+selected OL1 remains open
++
+active matching loops = {OL1}
+→ projection may remain reusable
+
+selected OL1 closed
+→ projection non-reusable
+
+active matching loops = {OL1, OL2, ...}
+→ projection non-reusable
+→ fresh selection is ambiguous
+```
+
+This extra fence matters because another already-admitted Timeline event can later be admitted as a second open loop without advancing the Timeline frontier. Timeline equality alone therefore cannot prove that the earlier open-loop selection remains unambiguous.
+
+Historical projection membership is never rewritten when reuse becomes invalid.
 
 ## Authority exclusions
 
@@ -162,5 +188,23 @@ This checkpoint intentionally does not implement:
 - background work from conversational state;
 - proactive reminders or contact;
 - conversion of open-loop content into MemoryClaim.
+
+## Acceptance contract
+
+The executable suite must prove at least:
+
+1. bounded decision-opening text can create one durable relationship-scoped `ConversationOpenLoop` without creating memory or world work;
+2. replay of the same opening source is idempotent;
+3. bounded resume can cross intervening dialogue and conversation/thread changes while remaining in the same RelationshipState;
+4. resume projects exactly the opening event and current input and records explicit `ContextProjection → ConversationOpenLoop` lineage;
+5. provider context carries the selected loop separately from personal/world proposition context;
+6. the open-loop provider rendering contract records `renderer_version = f4-renderer-v3`;
+7. explicit `RESOLVED` and `CANCELLED` transitions are append-oriented terminal closures;
+8. a closed loop cannot be resumed;
+9. multiple unresolved matching loops fail closed rather than selecting the latest;
+10. projection reuse rechecks the complete active matching-loop set and rejects a projection if another loop becomes active without Timeline advancement;
+11. a legacy projection without open-loop lineage is not reusable for a resume input, even if it already has a generated candidate;
+12. schema v1 metadata remains frozen while schema v2 composes the current runtime schema; and
+13. migration upgrade to current head and downgrade to base both succeed.
 
 The narrow checkpoint exists to prove durable conversational continuity while preserving the distinction between unresolved dialogue and every stronger kind of state.
