@@ -107,6 +107,18 @@ class LocalFirstPartySurfaceApplication:
         if not event_key:
             raise ValueError("transport_event_id must be non-empty when supplied")
 
+        occurred_at = self.surface_store.reserve_input(
+            transport_event_id=event_key,
+            identity_namespace=self.identity.identity_namespace,
+            external_subject=self.identity.external_subject,
+            surface_namespace=self.identity.surface_namespace,
+            surface_ref=self.identity.surface_ref,
+            channel_namespace=self.identity.channel_namespace,
+            channel_ref=self.identity.channel_ref,
+            content_text=content_text,
+            conversation_id=conversation_id,
+            occurred_at=self.clock.now(),
+        )
         envelope = TrustedCounterpartInputEnvelope(
             identity_namespace=self.identity.identity_namespace,
             external_subject=self.identity.external_subject,
@@ -116,7 +128,7 @@ class LocalFirstPartySurfaceApplication:
             channel_ref=self.identity.channel_ref,
             transport_event_id=event_key,
             content_text=content_text,
-            occurred_at=self.clock.now(),
+            occurred_at=occurred_at,
             conversation_id=conversation_id,
         )
         admitted = self.ingress.admit(envelope)
