@@ -13,6 +13,12 @@ from alsoul.adapters import AdapterRejected, JsonHttpResponse
 
 
 @dataclass(frozen=True, slots=True)
+class LocalSurfaceInputReservation:
+    occurred_at: datetime
+    existing: bool
+
+
+@dataclass(frozen=True, slots=True)
 class LocalSurfacePresentation:
     presentation_key: str
     companion_output_id: UUID
@@ -57,7 +63,7 @@ class LocalSurfaceStore:
         content_text: str,
         conversation_id: str | None,
         occurred_at: datetime,
-    ) -> datetime:
+    ) -> LocalSurfaceInputReservation:
         values = (
             transport_event_id,
             identity_namespace,
@@ -92,7 +98,10 @@ class LocalSurfaceStore:
                     raise ValueError(
                         "transport_event_id was replayed with different local input semantics"
                     )
-                return datetime.fromisoformat(str(existing["occurred_at"]))
+                return LocalSurfaceInputReservation(
+                    occurred_at=datetime.fromisoformat(str(existing["occurred_at"])),
+                    existing=True,
+                )
 
             conn.execute(
                 """
@@ -112,7 +121,7 @@ class LocalSurfaceStore:
                 (*values, occurred_at.isoformat()),
             )
             conn.commit()
-        return occurred_at
+        return LocalSurfaceInputReservation(occurred_at=occurred_at, existing=False)
 
     def accept_transport_request(
         self,
@@ -330,6 +339,7 @@ def _string(value: Any, field: str) -> str:
 
 
 __all__ = [
+    "LocalSurfaceInputReservation",
     "LocalSurfacePresentation",
     "LocalSurfacePresentationTransport",
     "LocalSurfaceStore",
