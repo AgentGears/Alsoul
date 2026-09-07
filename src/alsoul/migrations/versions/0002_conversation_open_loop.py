@@ -8,6 +8,7 @@ from __future__ import annotations
 from alembic import op
 
 from alsoul.storage.schema_v2 import (
+    context_projection_open_loop_item,
     conversation_open_loop,
     conversation_open_loop_closure,
 )
@@ -22,9 +23,11 @@ def upgrade() -> None:
     bind = op.get_bind()
     conversation_open_loop.create(bind=bind, checkfirst=False)
     conversation_open_loop_closure.create(bind=bind, checkfirst=False)
+    context_projection_open_loop_item.create(bind=bind, checkfirst=False)
 
 
 def downgrade() -> None:
     bind = op.get_bind()
+    context_projection_open_loop_item.drop(bind=bind, checkfirst=False)
     conversation_open_loop_closure.drop(bind=bind, checkfirst=False)
     conversation_open_loop.drop(bind=bind, checkfirst=False)
