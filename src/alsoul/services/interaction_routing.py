@@ -46,13 +46,21 @@ class F4InteractionPurposeGate:
     The gate is deterministic and provider-independent. It does not ask a model to
     infer intent and it writes no canonical state. Classification is derived from the
     immutable InteractionEvent text only after trusted ingress has already persisted
-    the event.
+    the event. Optional expected route references fence high-level callers to the
+    exact canonical event they intend to continue.
     """
 
     def __init__(self, services: FoundationServices) -> None:
         self.services = services
 
-    def classify_event(self, source_event_id: UUID) -> F4InteractionClassification:
+    def classify_event(
+        self,
+        source_event_id: UUID,
+        *,
+        expected_relationship_id: UUID | None = None,
+        expected_surface_binding_id: UUID | None = None,
+        expected_channel_binding_id: UUID | None = None,
+    ) -> F4InteractionClassification:
         with self.services.engine.connect() as conn:
             event = conn.execute(
                 select(schema.interaction_event).where(
@@ -81,6 +89,30 @@ class F4InteractionPurposeGate:
             fail(
                 "INTERACTION_PURPOSE_SOURCE_INVALID",
                 "interaction-purpose gate accepts only counterpart input in its relationship",
+            )
+        if (
+            expected_relationship_id is not None
+            and event["relationship_id"] != expected_relationship_id
+        ):
+            fail(
+                "INTERACTION_PURPOSE_ROUTE_MISMATCH",
+                "current input does not belong to the supplied relationship",
+            )
+        if (
+            expected_surface_binding_id is not None
+            and event["surface_binding_id"] != expected_surface_binding_id
+        ):
+            fail(
+                "INTERACTION_PURPOSE_ROUTE_MISMATCH",
+                "current input does not belong to the supplied surface binding",
+            )
+        if (
+            expected_channel_binding_id is not None
+            and event["channel_binding_id"] != expected_channel_binding_id
+        ):
+            fail(
+                "INTERACTION_PURPOSE_ROUTE_MISMATCH",
+                "current input does not belong to the supplied channel binding",
             )
 
         return F4InteractionClassification(
