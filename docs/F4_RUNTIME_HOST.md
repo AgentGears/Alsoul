@@ -2,7 +2,7 @@
 
 **Status:** Implemented foundation checkpoint
 
-The configured F4 slice has a narrow process-facing host. The host turns persistence, recovery, trusted first-party ingress, bounded interaction-purpose routing, provider execution, and presentation acceptance into an executable process without creating a second source of semantic authority.
+The configured F4 slice has a narrow process-facing host. The host turns persistence, recovery, trusted first-party ingress, bounded interaction-purpose routing, bounded conversational context selection, provider execution, and presentation acceptance into an executable process without creating a second source of semantic authority.
 
 ## Boundary
 
@@ -18,7 +18,7 @@ alsoul-host
     ├── trusted first-party ingress
     ├── bounded high-level interaction
     │   ├── MEMORY_STATEMENT        → governed memory admission → stop
-    │   ├── CONVERSATIONAL_RESPONSE → model generation → adoption → presentation
+    │   ├── CONVERSATIONAL_RESPONSE → bounded context → generation → adoption → presentation
     │   └── WORLD_QUESTION          → fresh-world checked response path
     └── lower-level WORLD_QUESTION response/recovery
 ```
@@ -38,6 +38,9 @@ interaction classification ≠ model authority
 memory admission ≠ response obligation
 conversation ≠ fresh-world investigation
 conversation ≠ memory admission
+Timeline context ≠ MemoryClaim
+reference resolution ≠ model-selected history
+prior Companion output ≠ factual source authority
 GeneratedOutput ≠ CompanionOutput
 CompanionOutput ≠ presentation attempt ≠ sink acceptance ≠ Timeline presentation
 presented ≠ read/heard/understood
@@ -118,7 +121,10 @@ F4InteractionPurposeGate
 │
 ├── CONVERSATIONAL_RESPONSE
 │   ↓
-│   ContextProjection(Self + Relationship + current input)
+│   ContextProjection
+│       Self + Relationship + current input
+│       optional exact immediately-prior presented exchange
+│       no personal/world proposition items
 │   ↓
 │   ModelInvocation / GeneratedOutput
 │   ↓
@@ -147,15 +153,19 @@ The purpose gate derives classification from the immutable canonical event and f
 
 For `MEMORY_STATEMENT`, `interaction.memory_admission` is populated and `interaction.response` is null. No Investigation, ModelInvocation, CompanionOutput, presentation attempt, or presented Timeline event is required.
 
-For `CONVERSATIONAL_RESPONSE`, `interaction.response` contains a conversational response result. The path performs model generation and presentation but no fresh-world acquisition and no memory admission. The model receives only the source-free conversational projection; output must contain exactly one unsourced `COMPANION_EXPRESSION` before adoption is permitted.
+For `CONVERSATIONAL_RESPONSE`, `interaction.response` contains a conversational response result. Self-contained forms project the current interaction only. The narrow contextual `that`/`it` grammar may project exactly the immediately preceding completed presented exchange. Selection is performed by Alsoul-owned semantic services, not by host CLI code or the model. Both forms perform model generation and presentation but no fresh-world acquisition and no memory admission.
+
+The model contract requires exactly one unsourced `COMPANION_EXPRESSION`. Selected prior Timeline events remain historical conversational context rather than remembered/checked source attribution.
 
 For `WORLD_QUESTION`, `interaction.response` contains the checked response result with personal-memory and fresh-world provenance.
 
-Unsupported high-level input remains canonical Timeline history but fails with `INTERACTION_PURPOSE_UNSUPPORTED` before provider work. The host does not send unsupported input to a model to guess intent.
+Unsupported high-level input remains canonical Timeline history but fails with `INTERACTION_PURPOSE_UNSUPPORTED` before provider work. The host does not send unsupported input to a model to guess intent or history.
 
 Exact replay recovers the same canonical input and furthest durable semantic response stage. Memory-only replay performs no provider work; conversational replay does not duplicate generation, adoption, or presentation; checked-response replay does not duplicate acquisition, generation, adoption, or presentation.
 
-See [F4 Interaction Purpose Gate](F4_INTERACTION_PURPOSE_GATE.md), [F4 Conversational Response Path](F4_CONVERSATIONAL_RESPONSE.md), [F4 Trusted First-Party Ingress](F4_FIRST_PARTY_INGRESS.md), and [F4 First-Party Presentation Acceptance](F4_FIRST_PARTY_PRESENTATION.md).
+For contextual conversation, a committed ContextProjection owns the exact selected event set. Recovery does not perform a fresh Timeline lookup.
+
+See [F4 Interaction Purpose Gate](F4_INTERACTION_PURPOSE_GATE.md), [F4 Conversational Response Path](F4_CONVERSATIONAL_RESPONSE.md), [F4 Prior-Timeline Context Selection](F4_PRIOR_TIMELINE_CONTEXT.md), [F4 Trusted First-Party Ingress](F4_FIRST_PARTY_INGRESS.md), and [F4 First-Party Presentation Acceptance](F4_FIRST_PARTY_PRESENTATION.md).
 
 ### Content-free recovery diagnostic
 
@@ -165,7 +175,7 @@ alsoul-host --config ./host.json diagnose \
   --current-input-event-id <event-id>
 ```
 
-Diagnostics derive response recovery state from canonical rows without returning counterpart text, captured source bodies, generated prose, or credentials. For conversational responses the same generic response stages apply, but no Investigation or WorldResult is required.
+Diagnostics derive response recovery state from canonical rows without returning counterpart text, selected prior Timeline text, captured source bodies, generated prose, or credentials. For conversational responses the same generic response stages apply, but no Investigation or WorldResult is required.
 
 ### Model contract probe
 
@@ -185,14 +195,14 @@ alsoul-host --config ./host.json respond \
   --channel-binding-id <channel-binding-id>
 ```
 
-`respond` remains the lower-level primitive only for an interaction already classified as `WORLD_QUESTION`. It now re-validates that bounded purpose before dispatching world or model work.
+`respond` remains the lower-level primitive only for an interaction already classified as `WORLD_QUESTION`. It re-validates that bounded purpose before dispatching world or model work.
 
 ```text
 interact = select and execute one implemented F4 semantic path
 respond  = execute/resume the checked WORLD_QUESTION path only
 ```
 
-A caller therefore cannot use the lower-level command to force a greeting, memory statement, or unsupported input through fresh-world acquisition.
+A caller therefore cannot use the lower-level command to force a greeting, contextual utterance, memory statement, or unsupported input through fresh-world acquisition.
 
 After a known complete process-loss boundary, `--after-process-loss` allows the provider-recovery coordinator to reconcile unresolved provider attempts before any retry decision.
 
@@ -249,15 +259,17 @@ The executable suite must preserve at least:
 
 1. memory-only host interaction can complete with provider routes unreachable and performs no provider work;
 2. bounded conversational input routes to `CONVERSATIONAL_RESPONSE` without creating Investigation or WorldResult;
-3. conversational output is generated, explicitly adopted, accepted by the first-party sink, and only then written to canonical Timeline history;
-4. conversational replay after process replacement does not duplicate model generation, adoption, or presentation;
-5. checked-response process recovery still preserves acquisition/generation/presentation idempotency;
-6. lower-level `respond` rejects non-`WORLD_QUESTION` canonical inputs before provider work;
-7. unsupported high-level input is preserved as canonical input but fails before provider execution; and
-8. route mismatch cannot continue a canonical event under another relationship, surface, or channel.
+3. bounded contextual conversation either selects exactly the immediately prior completed presented exchange or fails before provider execution;
+4. selected Timeline context is not promoted into MemoryClaim or factual source attribution;
+5. conversational output is generated, explicitly adopted, accepted by the first-party sink, and only then written to canonical Timeline history;
+6. conversational replay after process replacement does not duplicate context selection, model generation, adoption, or presentation;
+7. checked-response process recovery still preserves acquisition/generation/presentation idempotency;
+8. lower-level `respond` rejects non-`WORLD_QUESTION` canonical inputs before provider work;
+9. unsupported high-level input is preserved as canonical input but fails before provider execution; and
+10. route mismatch cannot continue a canonical event under another relationship, surface, or channel.
 
 ## Deliberate exclusions
 
-This checkpoint does not add general conversational intent classification, model-selected routing, arbitrary small talk, deictic prior-turn resolution, general question answering, mixed memory-and-question utterances, read/heard/understood receipts, public network authentication, automatic counterpart or relationship creation, external Actions, durable delegated tasks, schedules/proactivity, multi-channel fallback, or rich embodiment.
+This checkpoint does not add general conversational intent classification, model-selected routing/context retrieval, arbitrary small talk, general pronoun/coreference resolution, generic transcript windows, semantic Timeline search, cross-thread/channel contextual resolution, general question answering, mixed memory-and-question utterances, read/heard/understood receipts, public network authentication, automatic counterpart or relationship creation, external Actions, durable delegated tasks, schedules/proactivity, multi-channel fallback, or rich embodiment.
 
-The host remains a narrow executable boundary for one durable companion: canonical input comes first, bounded purpose is selected without model authority, memory can be admitted without fabricated speech, self-contained conversation can produce source-free Companion expression without pretending to have checked the world, and fresh-world questions retain explicit evidence and recovery semantics.
+The host remains a narrow executable boundary for one durable companion: canonical input comes first, bounded purpose and bounded contextual selection occur without model authority, memory can be admitted without fabricated speech, conversation can use exact selected history without pretending that history is memory or world evidence, and fresh-world questions retain explicit evidence and recovery semantics.
