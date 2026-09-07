@@ -56,6 +56,7 @@ AffectState ≠ stable personality
 ConversationOpenLoop ≠ DelegatedTask ≠ Commitment
 persistence ≠ recoverability ≠ hydration
 schema initialization ≠ identity bootstrap ≠ runtime recovery
+surface operational state ≠ canonical companion state
 ```
 
 ## Current architecture map
@@ -177,6 +178,7 @@ src/alsoul/
     migrations/
     services/
     storage/
+    surface/
 ```
 
 Packaged database migrations live under `src/alsoul/migrations/`, and executable architecture tests live under `tests/`.
@@ -201,13 +203,19 @@ The adapter package contains provider-independent contracts, deterministic accep
 
 The process-facing runtime is exposed through `alsoul-host` and `python -m alsoul.host`. Host configuration version 2 requires the existing database plus explicit world, model, and first-party presentation routes. The host reads model authorization only from the process environment, validates existing persistence before opening runtime state, and exposes `ready`, `ingest`, `interact`, `diagnose`, `probe-model-contract`, and lower-level `respond`. It never initializes schema or identity roots; those are separate administration operations.
 
+A minimal local first-party web surface is exposed through `alsoul-surface` and `python -m alsoul.surface`. It binds only to `127.0.0.1`, uses an operator-configured existing identity/surface/channel route, and sends every message through `FirstPartyIngress` plus the configured reactive runtime. The browser layer performs no canonical semantic writes. A separate local surface-state database preserves exact inbound transport replay semantics and presentation acceptance across surface-process replacement while remaining explicitly non-canonical. The browser API returns only user-facing content and transport replay state, not internal Person/Relationship/cognition identifiers.
+
+The local presentation sink reuses the existing semantic presentation-key contract. Exact acceptance is persisted before the runtime commits `COMPANION_PRESENTED_OUTPUT`; exact replay returns the same acceptance, and semantic key reuse with different content is rejected. The local surface's operational state is therefore not a second Timeline or memory system—it exists only to make the local transport/presentation boundary restart-idempotent.
+
 The process acceptance path admits a trusted current input in one process, resumes it in a later process, performs configured HTTPS world/model/presentation I/O, and verifies that replay after presentation does not duplicate the input, acquisition, generation, adoption, sink presentation, or Timeline presentation. It also verifies the harder uncertain-presentation case: the sink may accept an output and lose the response, after which a new process retries the same semantic key without false shared history or duplicate logical presentation.
 
 The administration acceptance path separately proves a clean first run: a new store is initialized and migrated, foundation identity is explicitly bootstrapped in a later process, and ordinary runtime presented with an identity-empty store refuses ingress without manufacturing Person, CounterpartPerson, or RelationshipState.
 
-The repository continuously verifies source/test compilation, the executable acceptance suite, process-level runtime/administration behavior, and migration upgrade/downgrade.
+The local-surface acceptance path proves that closing one complete surface/runtime composition and constructing another over the same canonical database and local surface state preserves the same Person, counterpart, RelationshipState, input event, CompanionOutput, and presented Timeline event. Replaying the same local transport event performs no second world acquisition or model generation and does not create a second local presentation acceptance.
 
-See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md), [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md), [F4 Configured Reactive Runtime](docs/F4_CONFIGURED_RUNTIME.md), [F4 Runtime Host](docs/F4_RUNTIME_HOST.md), [F4 Trusted First-Party Ingress](docs/F4_FIRST_PARTY_INGRESS.md), [F4 First-Party Presentation Acceptance](docs/F4_FIRST_PARTY_PRESENTATION.md), and [F4 Administration and First-Run Bootstrap](docs/F4_ADMINISTRATION.md) for the executable foundation checkpoints.
+The repository continuously verifies source/test compilation, the executable acceptance suite, process-level runtime/administration/local-surface behavior, and migration upgrade/downgrade.
+
+See [F4 Implementation Bootstrap](docs/F4_IMPLEMENTATION_BOOTSTRAP.md), [F4 Implementation Hardening](docs/F4_IMPLEMENTATION_HARDENING.md), [F4 Controlled Provider Integration](docs/F4_CONTROLLED_PROVIDER_INTEGRATION.md), [F4 Provider Recovery Hardening](docs/F4_PROVIDER_RECOVERY_HARDENING.md), [F4 End-to-End Runtime Coordinator](docs/F4_RUNTIME_COORDINATOR.md), [F4 Configured Reactive Runtime](docs/F4_CONFIGURED_RUNTIME.md), [F4 Runtime Host](docs/F4_RUNTIME_HOST.md), [F4 Trusted First-Party Ingress](docs/F4_FIRST_PARTY_INGRESS.md), [F4 First-Party Presentation Acceptance](docs/F4_FIRST_PARTY_PRESENTATION.md), [F4 Administration and First-Run Bootstrap](docs/F4_ADMINISTRATION.md), and [F4 Local First-Party Surface](docs/F4_LOCAL_FIRST_PARTY_SURFACE.md) for the executable foundation checkpoints.
 
 ## Documentation
 
@@ -227,6 +235,7 @@ Core documents:
 - [F4 Trusted First-Party Ingress](docs/F4_FIRST_PARTY_INGRESS.md)
 - [F4 First-Party Presentation Acceptance](docs/F4_FIRST_PARTY_PRESENTATION.md)
 - [F4 Administration and First-Run Bootstrap](docs/F4_ADMINISTRATION.md)
+- [F4 Local First-Party Surface](docs/F4_LOCAL_FIRST_PARTY_SURFACE.md)
 - [Architecture Checkpoint — Decisions 11.A through 15.B](docs/ARCHITECTURE_CHECKPOINT_11_15.md)
 
 Architecture decision records:
@@ -240,4 +249,4 @@ Architecture decision records:
 
 ## Status
 
-Explicitly initializable, presentation-gated trusted first-party F4 interaction. A fresh installation can now create and migrate a new store through a separate administration process, bootstrap the initial durable identity graph exactly once, and then hand control to the ordinary runtime. The reactive slice can accept authenticated first-party input, recover the same counterpart/relationship/presence graph across process death, perform evidence-backed world acquisition and model generation, adopt one companion response, require actual first-party sink acceptance, and only then commit one canonical presented Timeline event. Missing identity remains a hard runtime failure rather than an implicit bootstrap trigger. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
+Locally usable, explicitly initializable, presentation-gated trusted first-party F4 interaction. A fresh installation can create and migrate a new store through a separate administration process, bootstrap the initial durable identity graph exactly once, and then hand control to the ordinary runtime. The reactive slice can accept trusted first-party input, recover the same counterpart/relationship/presence graph across process death, perform evidence-backed world acquisition and model generation, adopt one companion response, require first-party sink acceptance, and only then commit one canonical presented Timeline event. A loopback browser surface now sits in front of those same boundaries without becoming a second identity, cognition, memory, or persistence authority. Missing identity remains a hard runtime failure rather than an implicit bootstrap trigger. Broader F2 domains remain architecturally specified but are deliberately not implemented in the walking skeleton yet.
