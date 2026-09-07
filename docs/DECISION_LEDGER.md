@@ -178,7 +178,17 @@ Streaming presentation records exact presented extent; social interruption does 
 
 `ConversationOpenLoop` is durable relationship-scoped unresolved conversational dependency. It is not MemoryClaim, DelegatedTask, Commitment, Trigger, or WorkRun. Lifecycle distinguishes resolved, cancelled, superseded, and expired; unfinished dialogue does not authorize background work or proactive contact.
 
-The executable F4 slice now implements one bounded `DECISION` open-loop kind. Opening and explicit `RESOLVED`/`CANCELLED` closure are append-oriented. Resume selects exactly one unresolved matching loop by relationship, records that loop explicitly in `ContextProjection`, and fails closed on missing or ambiguous state rather than using latest-wins or model-selected history.
+The executable F4 slice implements one bounded `DECISION` open-loop kind. Opening and explicit `RESOLVED`/`CANCELLED` closure are append-oriented. Unqualified resume selects exactly one unresolved matching loop by relationship and fails closed on missing or ambiguous state rather than using latest-wins or model-selected history.
+
+## Decision 13.B — Targetable open-loop references
+
+`open_loop_id` remains canonical loop identity. Human-addressable routing is separate immutable `ConversationOpenLoopReference` metadata grounded in the canonical opening event. F4 decision loops use a versioned `DECISION_OPTION_PAIR` reference derived only through mechanical Unicode/whitespace/case normalization and order-independent pair canonicalization. Semantic similarity, embeddings, model inference, and recency do not participate.
+
+A later directive produces a bounded selector. Unqualified selectors require one active decision loop. Explicit selectors require one active loop with an exact durable reference match. Zero explicit matches fail not-found and multiple matches fail ambiguous; no ranking phase exists. The same selector layer may govern resume, resolve, and cancel.
+
+Successful selection is pinned into immutable `ContextProjection` selector provenance. The model receives only the host-resolved loop. Projection reuse preserves the original selector semantics: unqualified selection requires global active-loop uniqueness, while explicit selection requires uniqueness only among active loops matching its pinned reference. Unrelated loops do not invalidate explicit selection; closure or a second matching loop does.
+
+See [F4 Targetable Conversation Open Loop](F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md).
 
 ## Decision 14.A — Whole-system hydration and recovery
 
@@ -186,11 +196,11 @@ Recovery is deterministic reconstruction from Alsoul-owned durable state, not pr
 
 ## Decision 15.A — F4 physical persistence
 
-F4 uses a transactional relational store. Self and Relationship use immutable complete revisions plus current heads. Timeline, evidence, claims, captures, WorldResults, ContextProjections, generated/adopted outputs, presented history, and the bounded ConversationOpenLoop lifecycle are immutable or append-oriented. External calls occur outside long-lived database transactions.
+F4 uses a transactional relational store. Self and Relationship use immutable complete revisions plus current heads. Timeline, evidence, claims, captures, WorldResults, ContextProjections, generated/adopted outputs, presented history, ConversationOpenLoop lifecycle, durable open-loop references, and selector provenance are immutable or append-oriented. External calls occur outside long-lived database transactions.
 
 ## Decision 15.B — F4 application services and recovery state
 
-Canonical F4 state advances only through typed semantic application services. Database-command retries use stable operation identity and request digests. New external acquisition creates a new Observation; new model execution creates a new ModelInvocation; output adoption and presentation have separate idempotency fences. Response recovery stage is derived from canonical rows rather than stored as a mutable turn-status authority. Open-loop-aware projection reuse additionally rechecks that its selected loop remains the sole active matching loop before another provider execution.
+Canonical F4 state advances only through typed semantic application services. Database-command retries use stable operation identity and request digests. New external acquisition creates a new Observation; new model execution creates a new ModelInvocation; output adoption and presentation have separate idempotency fences. Response recovery stage is derived from canonical rows rather than stored as a mutable turn-status authority. Open-loop-aware projection reuse revalidates the exact selector semantics pinned by the projection before another provider execution.
 
 See:
 
@@ -199,7 +209,8 @@ See:
 - [ADR-006](adr/ADR-006_F4_PERSISTENCE_AND_SERVICES.md)
 - [F4 Implementation Bootstrap](F4_IMPLEMENTATION_BOOTSTRAP.md)
 - [F4 Conversation Open Loop](F4_CONVERSATION_OPEN_LOOP.md)
+- [F4 Targetable Conversation Open Loop](F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md)
 
 ## Current implementation boundary
 
-The executable walking skeleton now includes persistent identity/relationship, canonical first-party text history, one evidence-grounded personal memory, fresh world acquisition/result, bounded source-free conversation, mechanically selected immediate-prior Timeline context, one relationship-scoped `DECISION` ConversationOpenLoop, immutable ContextProjection, model invocation, output adoption, presentation, and complete runtime reconstruction. Broader open-loop kinds, automatic expiry/supersession, generic semantic history retrieval, effectful work, durable tasks, proactivity, rich modality, and affect remain outside F4 implementation.
+The executable walking skeleton now includes persistent identity/relationship, canonical first-party text history, one evidence-grounded personal memory, fresh world acquisition/result, bounded source-free conversation, mechanically selected immediate-prior Timeline context, one relationship-scoped `DECISION` ConversationOpenLoop with deterministic explicit addressing, immutable ContextProjection, model invocation, output adoption, presentation, and complete runtime reconstruction. Broader open-loop kinds, semantic reference matching, automatic expiry/supersession, generic semantic history retrieval, effectful work, durable tasks, proactivity, rich modality, and affect remain outside F4 implementation.
