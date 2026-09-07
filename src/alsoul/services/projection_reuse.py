@@ -168,9 +168,13 @@ def _contextual_selection_blocker(
     ):
         return "CONTEXTUAL_HISTORY_SELECTION_INVALID"
 
+    # Conversation identity is carried by the triggering counterpart input. The
+    # presented output is causally bound to that input through reply_to_event_id;
+    # F4 presentation rows do not duplicate conversation_id.
+    if prior_input["conversation_id"] != current_input["conversation_id"]:
+        return "CONTEXTUAL_HISTORY_BOUNDARY_MISMATCH"
+
     for event in (prior_input, prior_output):
-        if event["conversation_id"] != current_input["conversation_id"]:
-            return "CONTEXTUAL_HISTORY_BOUNDARY_MISMATCH"
         if (
             event["surface_binding_id"] != current_input["surface_binding_id"]
             or event["channel_binding_id"] != current_input["channel_binding_id"]
