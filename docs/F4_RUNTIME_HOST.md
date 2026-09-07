@@ -101,7 +101,7 @@ READY
 
 It performs no world, model, or presentation I/O. Provider contract verification is a separate operation so local process readiness cannot silently become a remote dependency check.
 
-A missing database fails closed and is not created as a side effect of readiness.
+A missing database fails closed and is not created as a side effect of readiness. A structurally compatible but identity-empty database can pass this readiness check because identity bootstrap is a separate administration concern; ingress will still fail closed until the required bindings exist.
 
 ## Commands
 
@@ -250,21 +250,23 @@ The network may contain two transport attempts. Alsoul still has one logical fir
 
 If the Timeline event already exists, recovery returns the existing completed response and does not redispatch to the presentation sink.
 
-## Bootstrap separation
+## Administration and bootstrap separation
 
-The host intentionally has no `bootstrap` command.
+The runtime host intentionally has no schema-initialization, migration, or bootstrap command. Those operations live in the separate `alsoul-admin` process boundary:
 
 ```text
-schema migration / creation
+alsoul-admin initialize-store / migrate-store
         ≠
-foundation identity bootstrap
+alsoul-admin bootstrap-foundation
         ≠
-trusted ingress
+alsoul-host trusted ingress
         ≠
-ordinary response execution
+alsoul-host ordinary response execution / recovery
 ```
 
-`FoundationBootstrapper` remains an explicit administration boundary. If Person or Relationship roots are missing, ordinary runtime and ingress fail rather than manufacturing replacement identity.
+`alsoul-admin bootstrap-foundation` invokes the explicit `FoundationBootstrapper` boundary with an empty-store fence. If Person, CounterpartPerson, RelationshipState, or their foundation bindings are missing during ordinary runtime, `alsoul-host` fails rather than calling administration or manufacturing replacement identity.
+
+See [F4 Administration and First-Run Bootstrap](F4_ADMINISTRATION.md) for the installation, migration, bootstrap, and administration-status contract.
 
 ## TLS transport
 
@@ -339,14 +341,15 @@ retry in a new process
     world/model work not repeated
 ```
 
+A separate administration/process test starts from a fresh store, explicitly initializes and bootstraps it through `alsoul-admin`, and proves that an identity-empty but schema-compatible runtime host does not create missing bindings when ingress fails.
+
 The tests also verify that provider credentials and counterpart input are not echoed through process-control output.
 
 ## Deliberate exclusions
 
 This checkpoint does not add:
 
-- a public bootstrap command;
-- schema migration orchestration inside the runtime host;
+- schema initialization, migration, or bootstrap inside `alsoul-host`;
 - public network authentication;
 - automatic counterpart or relationship creation;
 - model-based identity resolution;
@@ -357,4 +360,4 @@ This checkpoint does not add:
 - multi-channel fallback;
 - rich embodiment.
 
-The purpose remains narrow: execute one trusted first-party F4 interaction end to end while preserving canonical identity, history, evidence, cognition, adoption, actual first-party presentation acceptance, and recovery boundaries.
+The purpose remains narrow: execute one trusted first-party F4 interaction end to end while preserving canonical identity, history, evidence, cognition, adoption, actual first-party presentation acceptance, and recovery boundaries while keeping first-run administration outside the runtime host.
