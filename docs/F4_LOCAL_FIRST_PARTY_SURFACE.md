@@ -2,7 +2,7 @@
 
 **Status:** Implemented foundation checkpoint
 
-The F4 slice has a minimal loopback first-party web surface. It provides an actual user-facing interaction boundary while preserving separation between presence, trusted identity resolution, canonical runtime state, interaction-purpose routing, cognition, and presentation acceptance.
+The F4 slice has a minimal loopback first-party web surface. It provides an actual user-facing interaction boundary while preserving separation between presence, trusted identity resolution, canonical runtime state, interaction-purpose routing, bounded conversational context selection, cognition, and presentation acceptance.
 
 ## Core boundary
 
@@ -29,6 +29,8 @@ F4InteractionPurposeGate
     ├── CONVERSATIONAL_RESPONSE
     │   ↓
     │   source-free ContextProjection
+    │       current input
+    │       optional exact immediately-prior presented exchange
     │   ↓
     │   model generation / conversational adoption
     │   ↓
@@ -58,6 +60,7 @@ Surface ≠ CompanionPerson
 Surface ≠ CounterpartPerson identity authority
 Surface ≠ RelationshipState
 Surface ≠ interaction-purpose authority
+Surface ≠ conversational reference-resolution authority
 Surface ≠ cognition
 Surface ≠ canonical persistence authority
 surface operational state ≠ canonical companion state
@@ -65,6 +68,8 @@ browser request ≠ identity inference
 surface notice ≠ CompanionOutput
 conversation ≠ fresh-world investigation
 conversation ≠ memory admission
+Timeline context ≠ MemoryClaim
+prior Companion output ≠ factual source authority
 GeneratedOutput ≠ CompanionOutput
 presentation sink acceptance ≠ read/heard/understood
 surface startup ≠ schema initialization ≠ identity bootstrap
@@ -173,18 +178,35 @@ How are you?
 Goodbye.
 ```
 
-the runtime selects `CONVERSATIONAL_RESPONSE` and executes:
+the runtime selects `CONVERSATIONAL_RESPONSE` and projects current Self, Relationship, Timeline frontier, and current input with no personal/world propositions.
+
+The surface also supports the narrow contextual grammar implemented by the semantic runtime:
 
 ```text
-COUNTERPART_INPUT
+What do you think about that?
+What do you think of it?
+Tell me what you think about that.
+```
+
+For those forms the browser still makes no reference-resolution decision. After canonical ingress, the semantic projection boundary either selects exactly the immediately preceding completed presented exchange or fails closed before model execution.
+
+```text
+prior COUNTERPART_INPUT
 ↓
+its adjacent COMPANION_PRESENTED_OUTPUT
+↓
+current contextual COUNTERPART_INPUT
+```
+
+The prior triggering input must belong to the same conversation binding, and the prior exchange must use the same surface/channel route as the current input. The prior Companion presentation must causally reply to that adjacent input.
+
+A successful conversational path then executes:
+
+```text
 source-free ContextProjection
-    pinned Self revision
-    pinned Relationship revision
-    current input
-    Timeline frontier
     no projected personal Claim
     no projected WorldResult
+    optional bounded prior Timeline events
 ↓
 ModelInvocation
 ↓
@@ -203,15 +225,9 @@ COMPANION_PRESENTED_OUTPUT
 browser message bubble
 ```
 
-This path performs no fresh-world acquisition and no memory admission. The resulting source-free expression is Companion-owned wording; it does not claim remembered or checked provenance.
+This path performs no fresh-world acquisition and no memory admission. Selected prior Timeline text remains historical interaction context; it is not promoted into MemoryClaim or factual source authority.
 
-Contextual/deictic requests such as:
-
-```text
-Tell me what you think about this.
-```
-
-remain unsupported because the current F4 projection does not yet define a bounded prior-history selection policy for resolving `this`.
+Contextual forms outside the narrow grammar, including `Tell me what you think about this.`, remain unsupported. The browser does not expand them into a transcript window or ask the model to choose a referent.
 
 ### Checked world question
 
@@ -238,7 +254,7 @@ content_text
 transport_event_id?
 ```
 
-The browser response exposes user-facing content/status, bounded purpose, and transport replay state rather than internal Person, Relationship, evidence, memory, or cognition identifiers.
+The browser response exposes user-facing content/status, bounded purpose, and transport replay state rather than internal Person, Relationship, evidence, memory, context-selection, or cognition identifiers.
 
 ## Durable local operational state
 
@@ -254,6 +270,7 @@ It may contain local input/output text because exact replay and exact presentati
 ```text
 local surface state
     ≠ Timeline
+    ≠ ContextProjection
     ≠ EvidenceItem
     ≠ MemoryClaim
     ≠ PersonClaim
@@ -274,6 +291,8 @@ same transport_event_id + different semantics
 ```
 
 Memory replay recovers the same admitted Claim/Evidence without provider work. Conversational and checked-response replay resume from the furthest trustworthy canonical response stage rather than regenerating already-durable work.
+
+For contextual conversation, a committed ContextProjection owns the exact prior-event selection. Recovery never asks the local surface to reconstruct or reselect that history.
 
 ## Presentation acceptance across restart
 
@@ -331,6 +350,27 @@ no duplicate model dispatch
 no duplicate logical presentation
 ```
 
+Contextual continuity across recomposition:
+
+```text
+composition A
+    "Hello."
+    ↓
+    presented Companion response
+↓
+close composition A
+↓
+composition B over same canonical + surface stores
+    "What do you think about that?"
+    ↓
+    same RelationshipState
+    exact immediately-prior presented exchange selected
+    ↓
+    source-free conversational response
+    ↓
+    no world acquisition
+```
+
 Completed checked-response replay retains its existing stronger acquisition/generation/presentation idempotency guarantees.
 
 ## Browser UI
@@ -348,7 +388,7 @@ The dependency-free page:
 - suppresses request logging; and
 - sends restrictive browser security headers.
 
-The UI performs no direct canonical semantic writes.
+The UI performs no direct canonical semantic writes and does not choose prior Timeline context.
 
 ## First-run sequence
 
@@ -362,13 +402,13 @@ The local surface starts only after explicit administration:
 5. alsoul-surface --config ./host.json --state ./surface-state.db ...
 6. open the printed loopback URL
 7. optionally establish the bounded F4 personal memory through a supported memory statement
-8. use a bounded self-contained conversational form or the supported current-world question
+8. use a bounded conversational form or the supported current-world question
 ```
 
 No manual pre-seeding of the F4 memory claim is required for the natural local path.
 
 ## Deliberate exclusions
 
-This checkpoint does not add public network access, remote user authentication, multi-user routing, automatic identity bootstrap, schema migration, model-based identity/purpose selection, general conversational routing, arbitrary small talk, deictic prior-turn resolution, mixed memory-and-question utterances, general-purpose memory admission, arbitrary fresh-world questions, read/heard/understood receipts, multi-channel fallback, voice/rich embodiment, external Actions, delegated work, or schedules/proactivity.
+This checkpoint does not add public network access, remote user authentication, multi-user routing, automatic identity bootstrap, schema migration, model-based identity/purpose/context selection, general conversational routing, arbitrary small talk, general pronoun/coreference resolution, generic prior-history windows, semantic Timeline search, cross-thread/channel contextual resolution, mixed memory-and-question utterances, general-purpose memory admission, arbitrary fresh-world questions, read/heard/understood receipts, multi-channel fallback, voice/rich embodiment, external Actions, delegated work, or schedules/proactivity.
 
-The purpose remains narrow: expose implemented F4 semantic paths through a real local surface without turning the browser or surface process into a second identity, routing, cognition, memory, epistemic, or persistence authority.
+The purpose remains narrow: expose implemented F4 semantic paths through a real local surface without turning the browser or surface process into a second identity, routing, context-selection, cognition, memory, epistemic, or persistence authority.

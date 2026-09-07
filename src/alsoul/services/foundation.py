@@ -10,21 +10,25 @@ from sqlalchemy import insert, select
 from alsoul.domain.commands import (
     AdmitWorldResultCommand,
     AdoptCompanionOutputCommand,
+    BuildContextProjectionCommand,
     StartInvestigationCommand,
     StartModelInvocationCommand,
 )
 from alsoul.domain.errors import DomainError, fail
 from alsoul.domain.models import (
     AdoptCompanionOutputResult,
+    BuildContextProjectionResult,
     FoundationResponseDraft,
     StartModelInvocationResult,
 )
 from alsoul.services.common import (
+    canonical_json,
     load_operation_receipt,
     request_digest,
     save_operation_receipt,
     sha256_text,
 )
+from alsoul.services.conversation_context import requires_prior_timeline_context
 from alsoul.services.foundation_base import (
     FoundationServices as _FoundationServices,
     RAM_PREDICATE,
@@ -47,6 +51,352 @@ class FoundationServices(_FoundationServices):
             "BOOTSTRAP_NOT_APPLICATION_SERVICE",
             "use FoundationBootstrapper only for explicit one-time foundation creation",
         )
+
+    def build_context_projection(
+        self, command: BuildContextProjectionCommand
+    ) -> BuildContextProjectionResult:
+        """Build the normal projection or the bounded immediate-prior-exchange form.
+
+        F4 contextual conversation does not gain an unrestricted transcript window.
+        Only the deterministic deictic grammar may request prior Timeline context, and
+        that context is exactly one immediately preceding presented exchange on the
+        same relationship, conversation, surface, and channel.
+        """
+
+        with self.engine.connect() as conn:
+            current_input = conn.execute(
+                select(schema.interaction_event).where(
+                    schema.interaction_event.c.event_id
+                    == command.current_input_event_id
+                )
+            ).mappings().one_or_none()
+
+        if current_input is None or not requires_prior_timeline_context(
+            current_input["content_text"]
+        ):
+            return super().build_context_projection(command)
+
+        if command.required_personal_predicates or command.required_world_result_ids:
+            fail(
+                "CONVERSATIONAL_CONTEXT_PROJECTION_INVALID",
+                "bounded prior-Timeline conversation cannot also project personal or world propositions",
+            )
+        return self._build_prior_timeline_context_projection(command)
+
+    def _build_prior_timeline_context_projection(
+        self, command: BuildContextProjectionCommand
+    ) -> BuildContextProjectionResult:
+        scope = "BuildContextProjection"
+        req = request_digest(asdict(command))
+        with self.engine.begin() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=scope,
+                operation_id=command.operation_id,
+                expected_request_digest=req,
+            )
+            if replay:
+                return BuildContextProjectionResult(
+                    projection_id=UUID(replay["projection_id"]),
+                    source_self_revision=int(replay["source_self_revision"]),
+                    source_relationship_revision=int(
+                        replay["source_relationship_revision"]
+                    ),
+                    source_timeline_frontier=int(replay["source_timeline_frontier"]),
+                    manifest_digest=replay["manifest_digest"],
+                )
+
+            relationship = conn.execute(
+                select(schema.relationship_identity).where(
+                    schema.relationship_identity.c.relationship_id
+                    == command.relationship_id
+                )
+            ).mappings().one_or_none()
+            if relationship is None:
+                fail("RELATIONSHIP_NOT_FOUND", "projection relationship does not exist")
+            if relationship["companion_person_id"] != command.companion_person_id:
+                fail(
+                    "PROJECTION_RELATIONSHIP_REVISION_INVALID",
+                    "projection companion does not own relationship",
+                )
+
+            self_head = conn.execute(
+                select(schema.self_head).where(
+                    schema.self_head.c.person_id == command.companion_person_id
+                )
+            ).mappings().one_or_none()
+            if self_head is None:
+                fail("SELF_HEAD_NOT_FOUND", "SelfHead missing")
+            self_revision = conn.execute(
+                select(schema.self_revision).where(
+                    schema.self_revision.c.person_id == command.companion_person_id,
+                    schema.self_revision.c.revision == self_head["current_revision"],
+                )
+            ).mappings().one_or_none()
+            if self_revision is None:
+                fail("SELF_REVISION_NOT_FOUND", "SelfHead points to missing SelfRevision")
+
+            relationship_head = conn.execute(
+                select(schema.relationship_head).where(
+                    schema.relationship_head.c.relationship_id == command.relationship_id
+                )
+            ).mappings().one_or_none()
+            if relationship_head is None:
+                fail("RELATIONSHIP_HEAD_NOT_FOUND", "RelationshipHead missing")
+            relationship_revision = conn.execute(
+                select(schema.relationship_revision).where(
+                    schema.relationship_revision.c.relationship_id
+                    == command.relationship_id,
+                    schema.relationship_revision.c.revision
+                    == relationship_head["current_revision"],
+                )
+            ).mappings().one_or_none()
+            if relationship_revision is None:
+                fail(
+                    "RELATIONSHIP_REVISION_NOT_FOUND",
+                    "RelationshipHead points to missing revision",
+                )
+
+            input_event = conn.execute(
+                select(schema.interaction_event).where(
+                    schema.interaction_event.c.event_id
+                    == command.current_input_event_id
+                )
+            ).mappings().one_or_none()
+            if (
+                input_event is None
+                or input_event["relationship_id"] != command.relationship_id
+                or input_event["event_kind"] != "COUNTERPART_INPUT"
+                or input_event["actor_kind"] != "COUNTERPART"
+                or input_event["actor_ref"] != relationship["counterpart_id"]
+            ):
+                fail(
+                    "PROJECTION_CURRENT_INPUT_INVALID",
+                    "current input is not a counterpart input in projection relationship",
+                )
+            if not requires_prior_timeline_context(input_event["content_text"]):
+                fail(
+                    "CONVERSATIONAL_CONTEXT_PROJECTION_INVALID",
+                    "current input does not require bounded prior-Timeline context",
+                )
+
+            timeline = conn.execute(
+                select(schema.relationship_timeline_head).where(
+                    schema.relationship_timeline_head.c.relationship_id
+                    == command.relationship_id
+                )
+            ).mappings().one_or_none()
+            if timeline is None:
+                fail("RELATIONSHIP_NOT_FOUND", "relationship Timeline head is missing")
+            if int(input_event["timeline_seq"]) != int(timeline["last_timeline_seq"]):
+                fail(
+                    "PROJECTION_CONTEXTUAL_INPUT_NOT_FRONTIER",
+                    "contextual conversation may project prior history only from the current Timeline frontier",
+                )
+
+            prior_input, prior_output = self._select_immediate_prior_exchange(
+                conn,
+                relationship=relationship,
+                current_input=input_event,
+            )
+            selected_events = (prior_input, prior_output, input_event)
+
+            manifest = {
+                "projection_schema_version": 1,
+                "purpose": "RESPOND_TO_INTERACTION",
+                "companion_person_id": str(command.companion_person_id),
+                "relationship_id": str(command.relationship_id),
+                "current_input_event_id": str(command.current_input_event_id),
+                "source_self_revision": int(self_head["current_revision"]),
+                "source_relationship_revision": int(
+                    relationship_head["current_revision"]
+                ),
+                "source_timeline_frontier": int(timeline["last_timeline_seq"]),
+                "selected_event_refs": [
+                    str(event["event_id"]) for event in selected_events
+                ],
+                "timeline_context_selection": "IMMEDIATE_PREVIOUS_PRESENTED_EXCHANGE",
+                "personal_context_items": [],
+                "world_context_items": [],
+            }
+            digest = sha256_text(canonical_json(manifest))
+            projection_id = self.ids.new()
+            now = self.clock.now()
+            conn.execute(
+                insert(schema.context_projection).values(
+                    projection_id=projection_id,
+                    projection_schema_version=1,
+                    purpose="RESPOND_TO_INTERACTION",
+                    created_at=now,
+                    companion_person_id=command.companion_person_id,
+                    relationship_id=command.relationship_id,
+                    current_input_event_id=command.current_input_event_id,
+                    source_self_revision=self_head["current_revision"],
+                    source_relationship_revision=relationship_head["current_revision"],
+                    source_timeline_frontier=timeline["last_timeline_seq"],
+                    manifest_digest=digest,
+                )
+            )
+            for ordinal, event in enumerate(selected_events):
+                conn.execute(
+                    insert(schema.context_projection_event).values(
+                        projection_id=projection_id,
+                        ordinal=ordinal,
+                        event_id=event["event_id"],
+                    )
+                )
+
+            save_operation_receipt(
+                conn,
+                scope=scope,
+                operation_id=command.operation_id,
+                req_digest=req,
+                result_kind="ContextProjection",
+                result_ref=projection_id,
+                result_json={
+                    "projection_id": str(projection_id),
+                    "source_self_revision": int(self_head["current_revision"]),
+                    "source_relationship_revision": int(
+                        relationship_head["current_revision"]
+                    ),
+                    "source_timeline_frontier": int(timeline["last_timeline_seq"]),
+                    "manifest_digest": digest,
+                },
+                committed_at=now,
+            )
+            return BuildContextProjectionResult(
+                projection_id,
+                int(self_head["current_revision"]),
+                int(relationship_head["current_revision"]),
+                int(timeline["last_timeline_seq"]),
+                digest,
+            )
+
+    def _select_immediate_prior_exchange(
+        self,
+        conn,
+        *,
+        relationship: dict[str, Any],
+        current_input: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        current_seq = int(current_input["timeline_seq"])
+        if current_seq < 3:
+            fail(
+                "CONVERSATIONAL_CONTEXT_UNAVAILABLE",
+                "bounded contextual conversation requires an immediately preceding presented exchange",
+            )
+
+        rows = conn.execute(
+            select(schema.interaction_event).where(
+                schema.interaction_event.c.relationship_id
+                == current_input["relationship_id"],
+                schema.interaction_event.c.timeline_seq.in_(
+                    (current_seq - 2, current_seq - 1)
+                ),
+            )
+        ).mappings().all()
+        by_seq = {int(row["timeline_seq"]): row for row in rows}
+        prior_input = by_seq.get(current_seq - 2)
+        prior_output = by_seq.get(current_seq - 1)
+        if prior_input is None or prior_output is None:
+            fail(
+                "CONVERSATIONAL_CONTEXT_UNAVAILABLE",
+                "immediately preceding Timeline exchange is incomplete",
+            )
+
+        if (
+            prior_input["event_kind"] != "COUNTERPART_INPUT"
+            or prior_input["actor_kind"] != "COUNTERPART"
+            or prior_input["actor_ref"] != relationship["counterpart_id"]
+        ):
+            fail(
+                "CONVERSATIONAL_CONTEXT_UNAVAILABLE",
+                "prior Timeline event is not the counterpart side of a completed exchange",
+            )
+        if (
+            prior_output["event_kind"] != "COMPANION_PRESENTED_OUTPUT"
+            or prior_output["actor_kind"] != "COMPANION"
+            or prior_output["actor_ref"] != relationship["companion_person_id"]
+            or prior_output["companion_output_id"] is None
+            or prior_output["reply_to_event_id"] != prior_input["event_id"]
+        ):
+            fail(
+                "CONVERSATIONAL_CONTEXT_UNAVAILABLE",
+                "prior Timeline event is not a presented Companion response to the adjacent counterpart input",
+            )
+
+        if prior_input["conversation_id"] != current_input["conversation_id"]:
+            fail(
+                "CONVERSATIONAL_CONTEXT_BOUNDARY_MISMATCH",
+                "bounded contextual reference does not cross conversation boundaries",
+            )
+        for event in (prior_input, prior_output):
+            if (
+                event["surface_binding_id"] != current_input["surface_binding_id"]
+                or event["channel_binding_id"]
+                != current_input["channel_binding_id"]
+            ):
+                fail(
+                    "CONVERSATIONAL_CONTEXT_BOUNDARY_MISMATCH",
+                    "bounded contextual reference does not cross surface or channel boundaries",
+                )
+        return dict(prior_input), dict(prior_output)
+
+    def render_provider_context(self, projection_id: UUID) -> dict[str, Any]:
+        """Render selected prior Timeline events as context, never as claim/world truth."""
+
+        provider_context = super().render_provider_context(projection_id)
+        with self.engine.connect() as conn:
+            projection = conn.execute(
+                select(schema.context_projection).where(
+                    schema.context_projection.c.projection_id == projection_id
+                )
+            ).mappings().one_or_none()
+            if projection is None:
+                fail("CONTEXT_PROJECTION_NOT_FOUND", "ContextProjection does not exist")
+            selected = conn.execute(
+                select(
+                    schema.context_projection_event.c.ordinal,
+                    schema.interaction_event.c.event_id,
+                    schema.interaction_event.c.timeline_seq,
+                    schema.interaction_event.c.actor_kind,
+                    schema.interaction_event.c.event_kind,
+                    schema.interaction_event.c.content_text,
+                )
+                .join(
+                    schema.interaction_event,
+                    schema.context_projection_event.c.event_id
+                    == schema.interaction_event.c.event_id,
+                )
+                .where(
+                    schema.context_projection_event.c.projection_id == projection_id
+                )
+                .order_by(schema.context_projection_event.c.ordinal)
+            ).mappings().all()
+
+        if len(selected) <= 1:
+            return provider_context
+        if selected[-1]["event_id"] != projection["current_input_event_id"]:
+            fail(
+                "CONTEXT_PROJECTION_EVENT_ORDER_INVALID",
+                "current input must be the final selected event in bounded contextual projection",
+            )
+
+        prior_events = selected[:-1]
+        provider_context["prior_timeline_context"] = {
+            "selection_policy": "IMMEDIATE_PREVIOUS_PRESENTED_EXCHANGE",
+            "events": [
+                {
+                    "event_id": str(event["event_id"]),
+                    "timeline_seq": int(event["timeline_seq"]),
+                    "actor_kind": event["actor_kind"],
+                    "event_kind": event["event_kind"],
+                    "content_text": event["content_text"],
+                }
+                for event in prior_events
+            ],
+        }
+        return provider_context
 
     def start_investigation(self, command: StartInvestigationCommand):
         if command.relationship_id is not None:

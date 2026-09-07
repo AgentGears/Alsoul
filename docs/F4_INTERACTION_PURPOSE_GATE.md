@@ -4,7 +4,7 @@
 
 This checkpoint prevents canonical counterpart input from being forced through a semantic path that the input does not justify.
 
-F4 now distinguishes three bounded implemented purposes:
+F4 distinguishes three bounded implemented purposes:
 
 ```text
 MEMORY_STATEMENT
@@ -23,6 +23,7 @@ memory statement ≠ fresh-world question ≠ conversational response
 memory admission ≠ response obligation
 conversation ≠ fresh-world investigation
 conversation ≠ memory admission
+reference resolution ≠ model-selected history
 no CompanionOutput ≠ failed interaction
 surface notice ≠ CompanionOutput
 surface notice ≠ presented Timeline event
@@ -49,7 +50,10 @@ F4InteractionPurposeGate
 │
 ├── CONVERSATIONAL_RESPONSE
 │   ↓
-│   source-free ContextProjection
+│   ContextProjection
+│       current input
+│       optional bounded immediately-prior presented exchange
+│       no personal/world proposition items
 │   ↓
 │   ModelInvocation / GeneratedOutput
 │   ↓
@@ -82,13 +86,11 @@ F4InteractionPurposeGate
     COMPANION_PRESENTED_OUTPUT
 ```
 
-This ordering matters. The transport or browser does not classify raw input before canonical admission, and the model does not decide which semantic path should run.
+The transport or browser does not classify raw input before canonical admission, and the model does not decide which semantic path or prior-history selection should run.
 
 ## Deterministic bounded classification
 
 `F4InteractionPurposeGate` is provider-independent and read-only. It loads one immutable canonical `COUNTERPART_INPUT`, validates that the event belongs to the expected counterpart/relationship and exact surface/channel route, and classifies only the event's canonical text.
-
-The current classifier recognizes a deliberately small grammar.
 
 A supported memory statement includes bounded forms such as:
 
@@ -105,7 +107,7 @@ Would the current software run on my machine?
 Does my computer meet the current software memory requirements?
 ```
 
-A supported conversational response includes self-contained social forms such as:
+A supported self-contained conversational response includes forms such as:
 
 ```text
 Hello.
@@ -114,21 +116,33 @@ How are you?
 Goodbye.
 ```
 
-Inputs outside those contracts are not handed to a model to guess intent. For example:
+A narrow contextual conversational grammar is also implemented:
+
+```text
+What do you think about that?
+What do you think of it?
+Tell me what you think about that.
+```
+
+Those contextual forms classify as `CONVERSATIONAL_RESPONSE`, but classification alone does not establish a referent. The semantic projection boundary must mechanically select exactly the immediately preceding completed presented exchange or fail closed before model work.
+
+Inputs outside the bounded contracts are not handed to a model to guess intent. For example:
 
 ```text
 Tell me a joke.
 What is the weather?
 Tell me what you think about this.
+Compare what I said earlier this week with what I said last month.
 My machine has 16 GB RAM; would it run?
 ```
 
 remain canonical counterpart history but produce `INTERACTION_PURPOSE_UNSUPPORTED` at the high-level F4 interaction boundary.
 
-The contextual phrase `this` remains unsupported because this checkpoint does not yet define a bounded prior-history selection policy for conversational reference resolution.
+The contextual phrase `this` remains unsupported because the current grammar intentionally resolves only the bounded `that`/`it` forms against the immediately preceding presented exchange. General coreference resolution is not implemented.
 
 ```text
 unknown purpose ≠ model-selected purpose
+bounded contextual purpose ≠ unrestricted history retrieval
 ```
 
 ## Memory-only interaction
@@ -157,11 +171,29 @@ Exact transport/source replay recovers the same canonical input and admitted Cla
 
 ## Conversational interaction
 
-For `CONVERSATIONAL_RESPONSE`, the high-level runtime builds a minimal response projection containing the pinned Self revision, Relationship revision, Timeline frontier, and current input while selecting no personal Claim or WorldResult proposition.
+For `CONVERSATIONAL_RESPONSE`, the high-level runtime builds a response projection containing pinned Self revision, Relationship revision, Timeline frontier, and current input while selecting no personal Claim or WorldResult proposition.
+
+For a self-contained form:
 
 ```text
-CONVERSATIONAL_RESPONSE
+selected_event_refs = [current_input]
+```
+
+For a bounded contextual form, the projection service may instead select:
+
+```text
+prior counterpart input
 ↓
+its adjacent COMPANION_PRESENTED_OUTPUT
+↓
+current contextual input
+```
+
+under the `IMMEDIATE_PREVIOUS_PRESENTED_EXCHANGE` policy. The prior exchange must satisfy exact Timeline adjacency, causal `reply_to_event_id`, same conversation binding on the prior counterpart input, and the same surface/channel route as the current input. Otherwise the interaction fails before provider execution.
+
+Both conversational forms continue through:
+
+```text
 ContextProjection
     personal_context_items = []
     world_context_items = []
@@ -181,9 +213,9 @@ presentation acceptance
 presented Timeline event
 ```
 
-This path performs no fresh-world acquisition and no memory admission. A source-free expression is Companion-owned wording, not evidence-backed world or memory provenance.
+Selected Timeline history remains historical interaction context. It does not become admitted memory, checked world truth, or source authority for the new expression.
 
-See [F4 Conversational Response Path](F4_CONVERSATIONAL_RESPONSE.md) for the complete contract.
+See [F4 Conversational Response Path](F4_CONVERSATIONAL_RESPONSE.md) and [F4 Prior-Timeline Context Selection](F4_PRIOR_TIMELINE_CONTEXT.md).
 
 ## World-question interaction
 
@@ -213,7 +245,7 @@ A prior memory-only interaction can establish the remembered personal fact witho
 
 `ConfiguredFoundationRuntime.interact` is the high-level F4 interaction boundary. Both the process-facing host and local first-party surface use this boundary.
 
-`ConfiguredFoundationRuntime.respond` remains the lower-level checked `WORLD_QUESTION` response/recovery primitive. It now verifies the canonical input purpose and rejects a memory or conversational input before provider work.
+`ConfiguredFoundationRuntime.respond` remains the lower-level checked `WORLD_QUESTION` response/recovery primitive. It verifies canonical input purpose and rejects a memory or conversational input before provider work.
 
 ```text
 interact = select and execute one implemented F4 semantic path
@@ -254,7 +286,9 @@ same canonical input
 same bounded classification
 ```
 
-Memory replay remains provider-free. Conversational replay and checked-response replay use the existing canonical response recovery graph so committed projection, generation, adoption, and presentation stages are recovered rather than duplicated.
+Memory replay remains provider-free. Conversational replay and checked-response replay use the canonical response recovery graph so committed projection, generation, adoption, and presentation stages are recovered rather than duplicated.
+
+For contextual conversation, once the ContextProjection has committed, its selected prior events are immutable projection membership. Recovery does not search history again.
 
 ## Acceptance contract
 
@@ -263,19 +297,22 @@ The executable suite must prove at least:
 1. supported memory statements classify as `MEMORY_STATEMENT`;
 2. supported current-world questions classify as `WORLD_QUESTION`;
 3. bounded self-contained social inputs classify as `CONVERSATIONAL_RESPONSE`;
-4. contextual/deictic, arbitrary-world, mixed, and otherwise unsupported utterances remain `UNSUPPORTED`;
-5. classification is derived from canonical counterpart Timeline state and writes no semantic state;
-6. route mismatch fails closed before semantic continuation;
-7. a memory-only interaction admits one evidence-grounded memory without unrelated provider work;
-8. a conversational interaction produces one source-free Companion expression without Investigation or WorldResult;
-9. conversational replay does not duplicate model generation, adoption, presentation, or Timeline output;
-10. a later world question can recover previously admitted memory after complete runtime/surface recomposition;
-11. the process-facing host and local surface use the same high-level purpose gate;
-12. the lower-level checked-response path rejects non-world-question input before provider work; and
-13. memory surface acknowledgement remains operational UI status rather than CompanionPerson output.
+4. the narrow `that`/`it` contextual forms classify as `CONVERSATIONAL_RESPONSE`;
+5. contextual forms outside the bounded grammar, arbitrary-world, mixed, and otherwise unsupported utterances remain `UNSUPPORTED`;
+6. classification is derived from canonical counterpart Timeline state and writes no semantic state;
+7. route mismatch fails closed before semantic continuation;
+8. a memory-only interaction admits one evidence-grounded memory without unrelated provider work;
+9. self-contained conversation produces one source-free Companion expression without Investigation or WorldResult;
+10. bounded contextual conversation either selects the exact immediately preceding presented exchange or fails before model work;
+11. contextual selection does not turn Timeline history into memory/world source authority;
+12. conversational replay does not duplicate model generation, adoption, presentation, or Timeline output;
+13. a later world question can recover previously admitted memory after complete runtime/surface recomposition;
+14. the process-facing host and local surface use the same high-level purpose gate;
+15. the lower-level checked-response path rejects non-world-question input before provider work; and
+16. memory surface acknowledgement remains operational UI status rather than CompanionPerson output.
 
 ## Scope boundary
 
-This checkpoint does not implement general conversational intent classification, model-selected routing, mixed memory-and-question utterances, arbitrary small talk, deictic prior-turn resolution, general question answering, arbitrary fresh-world questions, general memory extraction, external Actions, delegated work, or proactive initiation.
+This checkpoint does not implement general conversational intent classification, model-selected routing, mixed memory-and-question utterances, arbitrary small talk, general pronoun/coreference resolution, generic transcript windows, semantic Timeline search, cross-thread contextual resolution, general question answering, arbitrary fresh-world questions, general memory extraction, external Actions, delegated work, or proactive initiation.
 
 The gate remains intentionally as narrow as the F4 implementation itself.
