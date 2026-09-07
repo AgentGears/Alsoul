@@ -20,6 +20,10 @@ from alsoul.adapters import (
 from alsoul.domain.errors import fail
 from alsoul.domain.models import FoundationResponseDraft
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
+from alsoul.services.conversational_runtime import (
+    FoundationConversationalResponseCoordinator,
+    FoundationConversationalResponseRunResult,
+)
 from alsoul.services.diagnostics import (
     FoundationRuntimeDiagnostic,
     FoundationRuntimeDiagnostics,
@@ -149,7 +153,11 @@ class FoundationInteractionRunResult:
 
     interaction_purpose: F4InteractionPurpose
     memory_admission: F4MemoryAdmissionResult | None = None
-    response: FoundationResponseRunResult | None = None
+    response: (
+        FoundationResponseRunResult
+        | FoundationConversationalResponseRunResult
+        | None
+    ) = None
 
 
 class ConfiguredFoundationRuntime:
@@ -157,8 +165,10 @@ class ConfiguredFoundationRuntime:
 
     Configuration and credentials remain outside canonical companion state. The
     runtime first applies a provider-independent interaction-purpose gate. A bounded
-    memory statement can terminate after evidence-grounded memory admission, while a
-    bounded world question enters the existing recovery-safe reactive response path.
+    memory statement can terminate after evidence-grounded memory admission, a
+    bounded conversational input can produce a source-free Companion expression
+    without world acquisition, and a bounded world question enters the existing
+    recovery-safe checked response path.
     """
 
     def __init__(
@@ -203,6 +213,11 @@ class ConfiguredFoundationRuntime:
         )
         self.interaction_gate = F4InteractionPurposeGate(services)
         self.memory_admission = F4CounterpartMemoryAdmission(services)
+        self.conversational_coordinator = FoundationConversationalResponseCoordinator(
+            services,
+            clock=self.clock,
+            ids=self.ids,
+        )
         self.coordinator = FoundationResponseCoordinator(
             services,
             clock=self.clock,
@@ -234,6 +249,21 @@ class ConfiguredFoundationRuntime:
                 interaction_purpose=classification.purpose,
                 memory_admission=memory,
             )
+        if classification.purpose == "CONVERSATIONAL_RESPONSE":
+            response = self.conversational_coordinator.respond(
+                relationship_id=relationship_id,
+                current_input_event_id=current_input_event_id,
+                surface_binding_id=surface_binding_id,
+                channel_binding_id=channel_binding_id,
+                model_adapter=self.model_adapter,
+                presentation_adapter=self.presentation_adapter,
+                after_process_loss=after_process_loss,
+                checkpoint=checkpoint,
+            )
+            return FoundationInteractionRunResult(
+                interaction_purpose=classification.purpose,
+                response=response,
+            )
         if classification.purpose == "WORLD_QUESTION":
             response = self.respond(
                 relationship_id=relationship_id,
@@ -262,6 +292,17 @@ class ConfiguredFoundationRuntime:
         after_process_loss: bool = False,
         checkpoint: RuntimeCheckpoint | None = None,
     ) -> FoundationResponseRunResult:
+        classification = self.interaction_gate.classify_event(
+            current_input_event_id,
+            expected_relationship_id=relationship_id,
+            expected_surface_binding_id=surface_binding_id,
+            expected_channel_binding_id=channel_binding_id,
+        )
+        if classification.purpose != "WORLD_QUESTION":
+            fail(
+                "RESPONSE_PATH_PURPOSE_MISMATCH",
+                "lower-level checked response execution requires a WORLD_QUESTION input",
+            )
         return self.coordinator.respond(
             relationship_id=relationship_id,
             current_input_event_id=current_input_event_id,
@@ -288,7 +329,7 @@ class ConfiguredFoundationRuntime:
 
         This is not CompanionPerson cognition and writes no ModelInvocation,
         GeneratedOutput, memory, or Timeline state. It verifies only that the
-        configured endpoint can satisfy the current F4 wire contract.
+        configured endpoint can satisfy the current checked-response wire contract.
         """
 
         context = _synthetic_provider_context()
