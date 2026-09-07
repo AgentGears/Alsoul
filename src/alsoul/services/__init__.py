@@ -1,5 +1,5 @@
 from .bootstrap import FoundationBootstrapper
-from .configured_runtime import (
+from .configured_runtime_v2 import (
     ConfiguredFoundationRuntime,
     FoundationInteractionRunResult,
     FoundationRuntimeConfig,
