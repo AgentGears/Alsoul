@@ -10,14 +10,15 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "SQLAlchemy>=2.0,<3",
+  "alembic>=1.13,<2",
 ]
 
 [project.scripts]
+alsoul-admin = "alsoul.admin.__main__:main"
 alsoul-host = "alsoul.host.__main__:main"
 
 [project.optional-dependencies]
 dev = [
-  "alembic>=1.13,<2",
   "pytest>=8,<10",
 ]
 
