@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from alsoul.host.config import FoundationHostConfig
 from alsoul.storage import create_sqlite_engine, schema
 
-EXPECTED_SCHEMA_ID = "f4-v2"
+EXPECTED_SCHEMA_ID = "f4-v3"
 
 
 @dataclass(frozen=True, slots=True)
