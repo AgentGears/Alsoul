@@ -138,7 +138,7 @@ def test_runtime_host_never_bootstraps_missing_identity(tmp_path, now):
     )
     assert ingest.returncode == 4
     error = json.loads(ingest.stderr)["error"]
-    assert error["code"] == "IDENTITY_BINDING_NOT_FOUND"
+    assert error["code"] == "INGRESS_CHANNEL_BINDING_NOT_FOUND"
 
     after = admin.status(database)
     assert after.foundation_state == "EMPTY"
