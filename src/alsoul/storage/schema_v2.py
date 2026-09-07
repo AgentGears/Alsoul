@@ -6,8 +6,10 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Table,
+    UniqueConstraint,
     Uuid,
 )
 
@@ -50,6 +52,7 @@ conversation_open_loop_closure = Table(
         "source_event_id",
         Uuid(as_uuid=True),
         ForeignKey("interaction_event.event_id"),
+        unique=True,
     ),
     Column(
         "superseding_open_loop_id",
@@ -65,6 +68,30 @@ conversation_open_loop_closure = Table(
         "((closure_kind = 'SUPERSEDED' AND superseding_open_loop_id IS NOT NULL) "
         "OR (closure_kind <> 'SUPERSEDED' AND superseding_open_loop_id IS NULL))",
         name="ck_conversation_open_loop_supersession_ref_f4",
+    ),
+)
+
+context_projection_open_loop_item = Table(
+    "context_projection_open_loop_item",
+    metadata,
+    Column(
+        "projection_id",
+        Uuid(as_uuid=True),
+        ForeignKey("context_projection.projection_id"),
+        primary_key=True,
+    ),
+    Column("ordinal", Integer, primary_key=True),
+    Column(
+        "open_loop_id",
+        Uuid(as_uuid=True),
+        ForeignKey("conversation_open_loop.open_loop_id"),
+        nullable=False,
+    ),
+    Column("selection_basis", String(64), nullable=False),
+    UniqueConstraint("projection_id", "open_loop_id", name="uq_projection_open_loop"),
+    CheckConstraint(
+        "selection_basis IN ('CURRENT_OPEN_DECISION_LOOP')",
+        name="ck_projection_open_loop_basis_f4",
     ),
 )
 
