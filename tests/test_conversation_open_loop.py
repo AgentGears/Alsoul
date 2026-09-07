@@ -221,12 +221,19 @@ def test_resume_uses_relationship_scoped_open_loop_after_intervening_exchange(
                 == result.context_projection_id
             )
         ).mappings().one()
+        invocation = conn.execute(
+            select(schema.model_invocation).where(
+                schema.model_invocation.c.context_projection_id
+                == result.context_projection_id
+            )
+        ).mappings().one()
         investigation_count = conn.execute(
             select(func.count()).select_from(schema.investigation)
         ).scalar_one()
 
     assert [row["event_id"] for row in selected] == [opening.event_id, current.event_id]
     assert loop_item["selection_basis"] == "CURRENT_OPEN_DECISION_LOOP"
+    assert invocation["renderer_version"] == "f4-renderer-v3"
     assert investigation_count == 0
 
 
