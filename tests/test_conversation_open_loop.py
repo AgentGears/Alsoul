@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import func, select
 
 from alsoul.adapters import FakePresentationAdapter
-from alsoul.domain.commands import AppendCounterpartInputCommand
+from alsoul.domain.commands import AppendCounterpartInputCommand, BuildContextProjectionCommand
 from alsoul.domain.errors import DomainError
 from alsoul.domain.models import FoundationResponseDraft, FoundationResponseSegment
 from alsoul.services import (
@@ -336,6 +336,80 @@ def test_multiple_open_decision_loops_fail_closed_instead_of_latest_wins(
         key="resume-ambiguous",
         text="Back to that decision.",
     )
+    model = OpenLoopConversationModel()
+    with pytest.raises(DomainError) as excinfo:
+        FoundationConversationalResponseCoordinator(services).respond(
+            relationship_id=ids.relationship_id,
+            current_input_event_id=current.event_id,
+            surface_binding_id=ids.surface_binding_id,
+            channel_binding_id=ids.channel_binding_id,
+            model_adapter=model,
+            presentation_adapter=FakePresentationAdapter(),
+        )
+    assert excinfo.value.code == "CONVERSATION_OPEN_LOOP_AMBIGUOUS"
+    assert model.calls == 0
+
+
+def test_projection_reuse_rechecks_active_loop_uniqueness_before_provider_execution(
+    services, bootstrapper, now
+):
+    ids = bootstrapper.bootstrap(
+        identity_namespace="open-loop-reuse-ambiguity",
+        external_subject=str(uuid4()),
+    )
+    lifecycle = F4ConversationOpenLoopService(services)
+
+    first = _append_input(
+        services,
+        ids,
+        now,
+        key="decision-one",
+        text="I need to decide between A and B.",
+    )
+    lifecycle.consider_event(first.event_id)
+
+    # This opening is already durable Timeline history but has not yet been admitted
+    # as an open loop. It can therefore become loop state after the current-input
+    # frontier and projection are already fixed, without advancing the Timeline.
+    second = _append_input(
+        services,
+        ids,
+        now,
+        key="decision-two",
+        text="I need to decide between C and D.",
+    )
+    current = _append_input(
+        services,
+        ids,
+        now,
+        key="resume-one",
+        text="Back to that decision.",
+    )
+
+    projection = services.build_context_projection(
+        BuildContextProjectionCommand(
+            operation_id=uuid4(),
+            companion_person_id=ids.companion_person_id,
+            relationship_id=ids.relationship_id,
+            current_input_event_id=current.event_id,
+            required_personal_predicates=(),
+            required_world_result_ids=(),
+        )
+    )
+
+    with services.engine.connect() as conn:
+        timeline_frontier = conn.execute(
+            select(schema.relationship_timeline_head.c.last_timeline_seq).where(
+                schema.relationship_timeline_head.c.relationship_id == ids.relationship_id
+            )
+        ).scalar_one()
+    assert projection.source_timeline_frontier == timeline_frontier
+
+    lifecycle.consider_event(second.event_id)
+
+    # Recovery sees the old projection, but provider execution must not reuse it now
+    # that the relationship has two unresolved decision loops. Rebuilding under the
+    # current contract fails closed as ambiguous, and the model is never called.
     model = OpenLoopConversationModel()
     with pytest.raises(DomainError) as excinfo:
         FoundationConversationalResponseCoordinator(services).respond(
