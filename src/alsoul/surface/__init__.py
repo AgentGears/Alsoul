@@ -5,6 +5,7 @@ from .application import (
 )
 from .server import LocalSurfaceServer
 from .store import (
+    LocalSurfaceInputReservation,
     LocalSurfacePresentation,
     LocalSurfacePresentationTransport,
     LocalSurfaceStore,
@@ -13,6 +14,7 @@ from .store import (
 __all__ = [
     "LocalFirstPartySurfaceApplication",
     "LocalSurfaceIdentity",
+    "LocalSurfaceInputReservation",
     "LocalSurfaceInteractionResult",
     "LocalSurfacePresentation",
     "LocalSurfacePresentationTransport",
