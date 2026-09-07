@@ -7,13 +7,27 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    MetaData,
     String,
     Table,
     UniqueConstraint,
     Uuid,
 )
 
-from .schema_v1 import *  # noqa: F401,F403
+from . import schema_v1 as _schema_v1
+
+# Compose the current runtime metadata from a clone of the frozen v1 schema. The v1
+# MetaData object is also imported directly by migration 0001; mutating it here would
+# make a fresh migration run create later-version tables during revision 0001.
+metadata = MetaData()
+for _table in _schema_v1.metadata.sorted_tables:
+    _table.to_metadata(metadata)
+
+# Preserve the stable table-symbol API used by services while pointing those symbols
+# at the cloned current metadata rather than at the frozen v1 Table objects.
+for _name, _value in vars(_schema_v1).items():
+    if isinstance(_value, Table):
+        globals()[_name] = metadata.tables[_value.name]
 
 
 conversation_open_loop = Table(
