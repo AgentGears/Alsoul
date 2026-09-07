@@ -325,12 +325,12 @@ class FoundationServices(_FoundationServices):
                 "prior Timeline event is not a presented Companion response to the adjacent counterpart input",
             )
 
+        if prior_input["conversation_id"] != current_input["conversation_id"]:
+            fail(
+                "CONVERSATIONAL_CONTEXT_BOUNDARY_MISMATCH",
+                "bounded contextual reference does not cross conversation boundaries",
+            )
         for event in (prior_input, prior_output):
-            if event["conversation_id"] != current_input["conversation_id"]:
-                fail(
-                    "CONVERSATIONAL_CONTEXT_BOUNDARY_MISMATCH",
-                    "bounded contextual reference does not cross conversation boundaries",
-                )
             if (
                 event["surface_binding_id"] != current_input["surface_binding_id"]
                 or event["channel_binding_id"]
