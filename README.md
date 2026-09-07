@@ -4,25 +4,13 @@
 
 Alsoul is a persistent personal companion architecture designed to remain one continuous person across model, process, thread, surface, channel, and provider changes.
 
-The project is in **foundation implementation**. The semantic backbone is converged through identity, history, memory, fresh-world access, cognition/output, authority/effects, durable delegated work, proactivity, presence/modality, presentation policy, conversational open loops, recovery, and the F4 persistence/application-service boundary. The executable F4 slice is intentionally narrower than the full architecture.
+The project is in **foundation implementation**. The semantic backbone is converged through identity, history, memory, fresh-world access, cognition/output, authority/effects, durable delegated work, proactivity, presence/modality, presentation policy, conversational continuity, recovery, and the F4 persistence/application-service boundary. The executable F4 slice remains intentionally narrower than the full architecture.
 
 ## Product thesis
 
 Alsoul should feel like someone who knows you, lives in your world, and knows the limits of what they know and can do.
 
 The primary trust quality is **felt honesty**. When Alsoul says it remembers, checked, observed, inferred, acted, scheduled, produced, delivered, presented, or is uncertain, those words should correspond to real internal state.
-
-```text
-                    Alsoul
-                      │
-       ┌──────────────┼──────────────┐
-       │              │              │
-   knows me       has a world      can help me
-       │              │              │
-   remembers        can check      can act
-   understands      can observe    can work
-   our history      can notice     can follow up
-```
 
 ## Foundation principles
 
@@ -52,6 +40,7 @@ background work ≠ proactive contact
 PresentationProfile ≠ SelfModel
 AffectState ≠ stable personality
 ConversationOpenLoop ≠ MemoryClaim ≠ DelegatedTask ≠ Commitment ≠ Trigger
+open_loop_id ≠ open_loop_reference_id ≠ reference key ≠ selector
 persistence ≠ recoverability ≠ hydration
 schema initialization ≠ identity bootstrap ≠ runtime recovery
 surface operational state ≠ canonical companion state
@@ -64,6 +53,7 @@ Timeline history ≠ MemoryClaim
 prior Timeline context ≠ factual source authority
 open conversational matter ≠ background-work authority
 reference resolution ≠ unrestricted transcript injection
+exact open-loop addressing ≠ semantic history search
 source-free expression ≠ evidence-backed proposition
 surface notice ≠ CompanionOutput
 ```
@@ -82,6 +72,7 @@ CompanionPerson
             │                     └── PersonClaim / PersonModel
             │
             ├── ConversationOpenLoop
+            │       └── ConversationOpenLoopReference
             │
             └── Canonical Timeline
                     │
@@ -92,27 +83,18 @@ CompanionPerson
 Fresh world question
     │
     └── Investigation
-            │
             └── Observation
-                    │
                     └── WorldSourceCapture
-                            │
                             └── EvidenceItem
-                                    │
                                     └── WorldResult
 
 Canonical state selected for cognition
     │
     └── ContextProjection
-            │
             └── ModelInvocation
-                    │
                     └── GeneratedOutput
-                            │
                             └── CompanionOutput
-                                    │
                                     └── presentation acceptance
-                                            │
                                             └── presented Timeline event
 ```
 
@@ -120,7 +102,7 @@ The wider architecture also defines capability/credential/permission/action/effe
 
 ## Executable F4 interaction paths
 
-Trusted first-party input is always admitted to canonical history before semantic routing:
+Trusted first-party input is admitted to canonical history before semantic routing:
 
 ```text
 trusted first-party ingress
@@ -140,11 +122,12 @@ F4InteractionPurposeGate
 │   ↓
 │   optional bounded ConversationOpenLoop transition
 │   ↓
+│   deterministic context selection
+│       self-contained current input
+│       OR immediately-prior presented exchange
+│       OR one host-resolved DECISION ConversationOpenLoop
+│   ↓
 │   ContextProjection
-│       Self + Relationship + current input
-│       optional one bounded immediately-prior presented exchange
-│       or one selected unresolved DECISION ConversationOpenLoop
-│       no projected personal/world proposition
 │   ↓
 │   ModelInvocation
 │   ↓
@@ -175,9 +158,9 @@ F4InteractionPurposeGate
     COMPANION_PRESENTED_OUTPUT
 ```
 
-Everything outside the bounded implemented grammar remains `UNSUPPORTED` after canonical ingress. The model does not decide which branch runs.
+Everything outside the bounded implemented grammar remains `UNSUPPORTED` after canonical ingress. The model does not decide which branch runs or which durable open loop a reference means.
 
-The checked path is mechanically capable of meaning:
+The checked path can mechanically support distinctions such as:
 
 ```text
 "You told me ..."
@@ -185,9 +168,52 @@ The checked path is mechanically capable of meaning:
 "My take is ..."
 ```
 
-without those distinctions being prompt conventions.
+without relying on prompt convention.
 
-The conversational path supports bounded self-contained social forms, exact immediately-prior presented-exchange context, and one durable relationship-scoped `DECISION` open-loop resume after intervening dialogue or thread changes. Broader pronoun/coreference resolution, generic transcript windows, semantic Timeline search, and arbitrary cross-thread/channel history resolution remain unsupported.
+## Conversational continuity
+
+The source-free conversational path supports bounded self-contained social forms, exact immediately-prior presented-exchange context, and durable relationship-scoped `DECISION` open loops.
+
+Decision-loop opening is durable:
+
+```text
+"I need to decide between A and B."
+↓
+ConversationOpenLoop OL1
++
+ConversationOpenLoopReference LR1
+```
+
+Unqualified reference remains fail-closed when more than one decision is active:
+
+```text
+"Back to that decision."
+↓
+0 active loops  → unavailable
+1 active loop   → select it
+>1 active loops → ambiguous
+```
+
+Decision 13.B adds deterministic explicit addressing:
+
+```text
+OL1 → ["a","b"]
+OL2 → ["c","d"]
+
+"Back to the decision between B and A."
+↓
+exact mechanical reference match
+↓
+OL1
+```
+
+The option-pair contract uses only Unicode normalization, whitespace normalization, case folding, and order-independent pair canonicalization. It does not use embeddings, synonyms, paraphrase inference, recency, semantic ranking, or model choice. Different loops may share the same reference key; such a collision is ambiguous rather than an identity merge.
+
+Qualified references can govern bounded resume, resolve, and cancel operations. They do not create memory, work, permission, scheduling, or proactive-contact authority.
+
+Successful loop selection is pinned into immutable `ContextProjection` provenance. Recovery reuses that exact selection rather than searching history again. Unqualified reuse requires continued global active-loop uniqueness; explicit reuse requires continued uniqueness only among loops matching the pinned reference, so unrelated loops do not invalidate it.
+
+Broader pronoun/coreference resolution, generic transcript windows, semantic Timeline search, and arbitrary history resolution remain unsupported.
 
 ## Implementation boundaries
 
@@ -218,7 +244,7 @@ package installation
 ≠ ordinary runtime
 ```
 
-`initialize-store` creates a new schema store, `migrate-store` advances an existing store, `status` derives administration state, and `bootstrap-foundation` creates the initial F4 identity graph. Ordinary runtime never silently recreates missing identity roots.
+Ordinary runtime never silently recreates missing identity roots.
 
 ### Trusted ingress
 
@@ -226,7 +252,7 @@ package installation
 
 ### Evidence-grounded memory
 
-`F4CounterpartMemoryAdmission` currently recognizes only the bounded `primary_machine.memory_gb` predicate. It separates:
+`F4CounterpartMemoryAdmission` currently recognizes only the bounded `primary_machine.memory_gb` predicate and preserves:
 
 ```text
 counterpart statement
@@ -239,29 +265,19 @@ Correction is append-only through explicit supersession. Concurrent admission is
 
 ### Interaction-purpose routing
 
-`F4InteractionPurposeGate` classifies only canonical input and is deterministic/provider-independent. It currently selects `MEMORY_STATEMENT`, `CONVERSATIONAL_RESPONSE`, `WORLD_QUESTION`, or `UNSUPPORTED`.
+`F4InteractionPurposeGate` is deterministic/provider-independent and currently selects `MEMORY_STATEMENT`, `CONVERSATIONAL_RESPONSE`, `WORLD_QUESTION`, or `UNSUPPORTED`.
 
-`ConfiguredFoundationRuntime.interact` is the high-level semantic boundary. `ConfiguredFoundationRuntime.respond` remains a lower-level checked-response primitive and rejects any canonical input that is not a `WORLD_QUESTION` before provider work.
+`ConfiguredFoundationRuntime.interact` is the high-level semantic boundary. The lower-level checked `respond` primitive rejects canonical input that is not a `WORLD_QUESTION` before provider work.
 
-### Conversational response
+### Provider execution and recovery
 
-`FoundationConversationalResponseCoordinator` handles the bounded source-free conversational path. Self-contained forms project canonical Self/Relationship/current-input state. The narrow immediate-context grammar may additionally project exactly the immediately preceding completed presented exchange. A separate bounded decision-resume grammar may project the exact opening event of one unresolved relationship-scoped `ConversationOpenLoop` together with the current input. None of these paths performs Investigation or memory admission, and each requires exactly one unsourced `COMPANION_EXPRESSION` before explicit conversational adoption.
+Model execution is replaceable. `ModelInvocation` is committed before dispatch. Provider failure, unknown outcome, retry, and replacement do not redefine CompanionPerson.
 
-```text
-conversation context ≠ canonical history
-Timeline context ≠ admitted memory
-ConversationOpenLoop ≠ MemoryClaim
-prior Companion speech ≠ factual source authority
-provider session ≠ Relationship continuity
-source-free expression ≠ memory/world claim
-GeneratedOutput ≠ CompanionOutput
-```
+`RecoveryCoordinator` derives progress from canonical rows rather than mutable turn status. Orphaned in-progress provider work is reconciled explicitly; retry creates a new attempt rather than mutating historical execution.
 
-Immediate-prior selection is persisted as exact `context_projection_event` membership. Durable decision-loop resume additionally persists `context_projection_open_loop_item` so the immutable projection records the exact open-loop lineage selected before provider execution. The model never searches for or chooses the loop. Missing, closed, or ambiguous matching loops fail closed.
+Provider rendering is versioned. Existing prior-Timeline and unqualified open-loop provider-context contracts use `f4-renderer-v3`. An explicit Decision 13.B open-loop reference changes the provider-context shape and therefore records `f4-renderer-v4`.
 
 ### Fresh-world checked response
-
-`FoundationResponseCoordinator` preserves the F4 checked chain:
 
 ```text
 Investigation
@@ -276,19 +292,9 @@ Investigation
 → presentation
 ```
 
-`WorldAcquisitionRunner` persists an Observation before external acquisition. Raw returned bytes become a recoverable capture first; a bounded extractor only proposes a WorldResult, and semantic admission independently validates lineage.
-
-### Provider execution and recovery
-
-Model execution is replaceable. `ModelInvocation` is committed before dispatch. Provider failure, unknown outcome, retry, and replacement do not redefine CompanionPerson.
-
-`RecoveryCoordinator` derives progress from canonical rows instead of a mutable turn-status aggregate. Orphaned in-progress provider work is reconciled explicitly; retry creates a new attempt rather than mutating historical execution.
-
-Provider rendering is versioned. The current renderer identity is `f4-renderer-v3`: it preserves the earlier `prior_timeline_context` contract and adds the dedicated `conversation_open_loop_context` field for valid open-loop-aware projections. A change in provider-context structure therefore changes renderer identity rather than pretending the wire contract is unchanged.
+Raw returned bytes become a recoverable capture before a bounded extractor proposes a WorldResult; semantic admission independently validates lineage.
 
 ### First-party presentation
-
-A generated candidate is not automatically Companion speech. Both conversational and checked responses follow:
 
 ```text
 GeneratedOutput
@@ -298,13 +304,13 @@ GeneratedOutput
 → COMPANION_PRESENTED_OUTPUT
 ```
 
-The presentation key is restart-stable for the exact adopted output and route. A sink may deduplicate transport replay while Alsoul commits one logical Timeline presentation. Presented still does not mean read, heard, or understood.
+Presentation is restart-idempotent and remains distinct from read, heard, or understood.
 
-### Configured runtime and host
+### Configured runtime and local surface
 
 `ConfiguredFoundationRuntime` composes world/model/presentation routes with canonical semantic services. Configuration and credentials remain outside companion identity and memory.
 
-The process-facing runtime is exposed through `alsoul-host` / `python -m alsoul.host` with:
+The process-facing host exposes:
 
 ```text
 ready
@@ -315,19 +321,9 @@ probe-model-contract
 respond
 ```
 
-`interact` uses the same semantic purpose gate as the local surface. `respond` is intentionally limited to the checked `WORLD_QUESTION` path.
-
-### Local first-party surface
-
-`alsoul-surface` / `python -m alsoul.surface` provides a loopback-only browser surface over the same trusted ingress and runtime boundaries. The browser does not decide identity, memory, purpose, contextual selection, cognition, or canonical persistence.
-
-A separate local operational store owns only inbound transport replay and first-party presentation acceptance. It is not a second Timeline or memory system.
-
-Memory-only acknowledgement appears as operational UI status rather than a Companion message. Conversational and checked responses appear as Companion messages only after presentation acceptance and canonical presentation succeed.
+`alsoul-surface` provides a loopback-only browser surface over the same ingress/runtime boundaries. A separate local operational store owns transport replay and first-party presentation acceptance only; it is not a second Timeline or memory system.
 
 ## Recovery guarantees exercised by F4
-
-The executable suite exercises complete process/surface replacement and preserves the furthest durable semantic stage.
 
 ```text
 Observation STARTED + process loss
@@ -337,12 +333,15 @@ ModelInvocation IN_PROGRESS + process loss
 → reconcile old attempt to UNKNOWN
 → retry creates a new ModelInvocation
 
-ContextProjection with selected prior Timeline events committed
+ContextProjection with selected prior Timeline events
 → recover exact selection; do not search history again
 
-ContextProjection with selected ConversationOpenLoop committed
-→ recover exact loop/event lineage
-→ reuse only while the selected loop remains the sole active matching loop
+ContextProjection with unqualified ConversationOpenLoop selection
+→ reuse only while selected loop remains the sole active DECISION loop
+
+ContextProjection with explicit open-loop reference selection
+→ reuse while selected loop remains the sole active loop matching the pinned reference
+→ unrelated active loops do not invalidate it
 
 GeneratedOutput committed
 → recover candidate; do not regenerate
@@ -353,8 +352,6 @@ CompanionOutput adopted
 presentation already committed
 → return existing Timeline event; do not present again
 ```
-
-The same response recovery graph is used by source-free conversational responses and evidence-bearing checked responses; only the projection/output contract differs.
 
 ## Documentation
 
@@ -384,6 +381,7 @@ Executable F4 checkpoints:
 - [F4 Conversational Response Path](docs/F4_CONVERSATIONAL_RESPONSE.md)
 - [F4 Prior-Timeline Context Selection](docs/F4_PRIOR_TIMELINE_CONTEXT.md)
 - [F4 Conversation Open Loop](docs/F4_CONVERSATION_OPEN_LOOP.md)
+- [F4 Targetable Conversation Open Loop](docs/F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md)
 
 Architecture decision records:
 
@@ -396,8 +394,8 @@ Architecture decision records:
 
 ## Status
 
-The canonical foundation now supports explicit first-run initialization, durable identity, trusted first-party ingress, evidence-grounded bounded memory, deterministic semantic routing, bounded source-free conversational response, mechanically bounded immediate-prior Timeline context, one durable relationship-scoped `DECISION` ConversationOpenLoop with explicit opening/closure/resume semantics, fresh-world checked response, provider execution/recovery, explicit output adoption, restart-safe first-party presentation, and a loopback browser surface.
+The canonical foundation supports explicit first-run initialization, durable identity, trusted first-party ingress, evidence-grounded bounded memory, deterministic semantic routing, bounded source-free conversation, mechanically bounded immediate-prior Timeline context, durable relationship-scoped `DECISION` ConversationOpenLoops, exact source-grounded option-pair addressing, fresh-world checked response, provider execution/recovery, explicit output adoption, restart-safe first-party presentation, and a loopback browser surface.
 
-F4 deliberately does **not** yet implement general conversational routing, arbitrary prior-history reference resolution, generic transcript windows, semantic Timeline search, general question answering, arbitrary fresh-world questions, broad memory extraction, automatic open-loop expiry/supersession, effectful Actions, durable delegated work, scheduling, proactivity, multi-channel fallback, read/heard receipts, or rich embodiment.
+F4 deliberately does **not** yet implement general conversational routing, arbitrary prior-history resolution, generic transcript windows, semantic Timeline search, semantic open-loop reference matching, general question answering, arbitrary fresh-world questions, broad memory extraction, automatic open-loop expiry/supersession, effectful Actions, durable delegated work, scheduling, proactivity, multi-channel fallback, read/heard receipts, or rich embodiment.
 
 The next implementation work should widen only one semantic boundary at a time without collapsing the distinctions above.
