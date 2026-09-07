@@ -67,7 +67,8 @@ class LocalFirstPartySurfaceApplication:
 
     The surface owns local transport routing and operational presentation acceptance
     only. Semantic interaction-purpose routing lives in ConfiguredFoundationRuntime,
-    so the browser cannot decide whether an input becomes memory or fresh-world work.
+    so the browser cannot decide whether an input becomes memory, conversational
+    cognition, or fresh-world work.
     """
 
     def __init__(
@@ -175,7 +176,7 @@ class LocalFirstPartySurfaceApplication:
 
         response = interaction.response
         if response is None:
-            raise RuntimeError("world-question interaction completed without response")
+            raise RuntimeError("response-producing interaction completed without response")
         presentation = self.surface_store.get_by_companion_output_id(
             response.companion_output_id
         )
