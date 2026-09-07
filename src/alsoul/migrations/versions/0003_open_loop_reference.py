@@ -165,10 +165,13 @@ def upgrade() -> None:
         match = _DECISION_OPEN.fullmatch(row["content_text"])
         if match is None:
             continue
+        # Reflected SQLite UUID columns expose their database representation directly.
+        # Existing F4 UUIDs are stored as 32-character hex strings, so use the same
+        # representation for deterministic migration-generated reference identities.
         open_loop_reference_id = uuid5(
             _REFERENCE_NAMESPACE,
             f"{row['open_loop_id']}|DECISION_OPTION_PAIR_V1",
-        )
+        ).hex
         bind.execute(
             reference.insert().values(
                 open_loop_reference_id=open_loop_reference_id,
