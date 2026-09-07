@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, func, insert, select
 
+from alsoul.domain.errors import fail
 from alsoul.domain.models import FoundationIds
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
 from alsoul.storage import schema
@@ -45,6 +46,20 @@ class FoundationBootstrapper:
         channel_binding_id = self.ids.new()
 
         with self.engine.begin() as conn:
+            existing_identity_roots = sum(
+                int(conn.execute(select(func.count()).select_from(table)).scalar_one())
+                for table in (
+                    schema.companion_person,
+                    schema.counterpart_person,
+                    schema.relationship_identity,
+                )
+            )
+            if existing_identity_roots:
+                fail(
+                    "FOUNDATION_ALREADY_BOOTSTRAPPED",
+                    "foundation bootstrap requires an empty canonical identity graph",
+                )
+
             conn.execute(
                 insert(schema.companion_person).values(
                     person_id=person_id,
