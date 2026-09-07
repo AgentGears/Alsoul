@@ -7,12 +7,14 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from alsoul.adapters import HttpTransport, JsonHttpTransport
+from alsoul.domain.errors import fail
 from alsoul.domain.types import Clock, SystemClock
 from alsoul.host.config import FoundationHostConfig
 from alsoul.host.readiness import HostReadiness, require_host_readiness
 from alsoul.services import (
     ConfiguredFoundationRuntime,
     F4CounterpartMemoryAdmission,
+    F4InteractionPurposeGate,
     FirstPartyIngress,
     FoundationServices,
     RuntimeSecrets,
@@ -51,22 +53,25 @@ class LocalSurfaceInteractionResult:
     counterpart_id: UUID
     relationship_id: UUID
     input_event_id: UUID
-    presented_event_id: UUID
-    companion_output_id: UUID
-    content_text: str
+    presented_event_id: UUID | None
+    companion_output_id: UUID | None
+    content_text: str | None
     transport_event_id: str
     idempotent_input_replay: bool
+    interaction_purpose: str = "WORLD_QUESTION"
+    surface_notice: str | None = None
     memory_disposition: str = "NO_CANDIDATE"
     memory_claim_id: UUID | None = None
     memory_corrected_claim_id: UUID | None = None
 
 
 class LocalFirstPartySurfaceApplication:
-    """Local first-party UI composition over the existing trusted F4 boundaries.
+    """Local first-party UI composition over the trusted F4 boundaries.
 
-    The surface owns only local interaction routing and operational presentation
-    acceptance state. Canonical identity, Timeline, evidence, memory admission,
-    cognition, adoption, and presentation history remain owned by semantic services.
+    The surface owns local routing and operational presentation acceptance only.
+    Canonical identity, Timeline, evidence, memory admission, cognition, adoption,
+    and presentation history remain owned by semantic services. The bounded purpose
+    gate prevents a memory-only statement from being routed into fresh-world work.
     """
 
     def __init__(
@@ -87,6 +92,7 @@ class LocalFirstPartySurfaceApplication:
         self.engine = create_sqlite_engine(config.database_path)
         self.services = FoundationServices(self.engine, clock=self.clock)
         self.ingress = FirstPartyIngress(self.services)
+        self.interaction_gate = F4InteractionPurposeGate(self.services)
         self.memory_admission = F4CounterpartMemoryAdmission(self.services)
         self.surface_store = LocalSurfaceStore(surface_state_path)
         self._transport_events_seen_this_process: set[str] = set()
@@ -144,11 +150,35 @@ class LocalFirstPartySurfaceApplication:
             conversation_id=conversation_id,
         )
         admitted = self.ingress.admit(envelope)
+        classification = self.interaction_gate.classify_event(admitted.event_id)
 
-        # Memory admission is a distinct governed boundary after canonical input
-        # persistence and before ContextProjection. A statement can therefore become
-        # usable in the same response only after Claim/Evidence admission commits.
-        memory = self.memory_admission.consider_event(admitted.event_id)
+        if classification.purpose == "MEMORY_STATEMENT":
+            # Memory admission is governed state transition after canonical input.
+            # It does not require a world Investigation, model invocation, adopted
+            # CompanionOutput, or presented Timeline event.
+            memory = self.memory_admission.consider_event(admitted.event_id)
+            return LocalSurfaceInteractionResult(
+                companion_person_id=admitted.companion_person_id,
+                counterpart_id=admitted.counterpart_id,
+                relationship_id=admitted.relationship_id,
+                input_event_id=admitted.event_id,
+                presented_event_id=None,
+                companion_output_id=None,
+                content_text=None,
+                transport_event_id=event_key,
+                idempotent_input_replay=admitted.idempotent_replay,
+                interaction_purpose=classification.purpose,
+                surface_notice=_memory_surface_notice(memory.disposition),
+                memory_disposition=memory.disposition,
+                memory_claim_id=memory.claim_id,
+                memory_corrected_claim_id=memory.corrected_claim_id,
+            )
+
+        if classification.purpose != "WORLD_QUESTION":
+            fail(
+                "INTERACTION_PURPOSE_UNSUPPORTED",
+                "input is outside the bounded F4 interaction-purpose contract",
+            )
 
         response = self.runtime.respond(
             relationship_id=admitted.relationship_id,
@@ -185,9 +215,7 @@ class LocalFirstPartySurfaceApplication:
             content_text=content,
             transport_event_id=event_key,
             idempotent_input_replay=admitted.idempotent_replay,
-            memory_disposition=memory.disposition,
-            memory_claim_id=memory.claim_id,
-            memory_corrected_claim_id=memory.corrected_claim_id,
+            interaction_purpose=classification.purpose,
         )
 
     def close(self) -> None:
@@ -198,6 +226,16 @@ class LocalFirstPartySurfaceApplication:
 
     def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
         self.close()
+
+
+def _memory_surface_notice(disposition: str) -> str:
+    """Return operational UI status, never CompanionPerson conversational content."""
+
+    if disposition == "CORRECTED":
+        return "Memory corrected"
+    if disposition == "UNCHANGED":
+        return "Memory already current"
+    return "Memory updated"
 
 
 __all__ = [
