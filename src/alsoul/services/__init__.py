@@ -20,7 +20,7 @@ from .conversational_runtime import (
     FoundationConversationalResponseRunResult,
 )
 from .diagnostics import FoundationRuntimeDiagnostic, FoundationRuntimeDiagnostics
-from .foundation_v2 import FoundationServices
+from .foundation_v3 import FoundationServices
 from .ingress import (
     AdmitTrustedCounterpartInputResult,
     FirstPartyIngress,
