@@ -18,8 +18,11 @@ from .ingress import (
 from .memory_admission import (
     F4CounterpartMemoryAdmission,
     F4MemoryAdmissionResult,
+    F4MemoryCandidate,
     F4MemoryProposal,
+    extract_f4_memory_candidate,
     extract_f4_memory_proposal,
+    propose_f4_memory,
 )
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
@@ -30,6 +33,7 @@ __all__ = [
     "ConfiguredFoundationRuntime",
     "F4CounterpartMemoryAdmission",
     "F4MemoryAdmissionResult",
+    "F4MemoryCandidate",
     "F4MemoryProposal",
     "FirstPartyIngress",
     "FoundationBootstrapper",
@@ -47,5 +51,7 @@ __all__ = [
     "TrustedCounterpartInputEnvelope",
     "WorldAcquisitionRunner",
     "WorldRuntimeConfig",
+    "extract_f4_memory_candidate",
     "extract_f4_memory_proposal",
+    "propose_f4_memory",
 ]
