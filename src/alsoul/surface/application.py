@@ -12,6 +12,7 @@ from alsoul.host.config import FoundationHostConfig
 from alsoul.host.readiness import HostReadiness, require_host_readiness
 from alsoul.services import (
     ConfiguredFoundationRuntime,
+    F4CounterpartMemoryAdmission,
     FirstPartyIngress,
     FoundationServices,
     RuntimeSecrets,
@@ -55,14 +56,17 @@ class LocalSurfaceInteractionResult:
     content_text: str
     transport_event_id: str
     idempotent_input_replay: bool
+    memory_disposition: str = "NO_CANDIDATE"
+    memory_claim_id: UUID | None = None
+    memory_corrected_claim_id: UUID | None = None
 
 
 class LocalFirstPartySurfaceApplication:
     """Local first-party UI composition over the existing trusted F4 boundaries.
 
     The surface owns only local interaction routing and operational presentation
-    acceptance state. Canonical identity, Timeline, evidence, cognition, adoption,
-    and presentation history remain owned by the existing semantic services.
+    acceptance state. Canonical identity, Timeline, evidence, memory admission,
+    cognition, adoption, and presentation history remain owned by semantic services.
     """
 
     def __init__(
@@ -83,6 +87,7 @@ class LocalFirstPartySurfaceApplication:
         self.engine = create_sqlite_engine(config.database_path)
         self.services = FoundationServices(self.engine, clock=self.clock)
         self.ingress = FirstPartyIngress(self.services)
+        self.memory_admission = F4CounterpartMemoryAdmission(self.services)
         self.surface_store = LocalSurfaceStore(surface_state_path)
         self._transport_events_seen_this_process: set[str] = set()
         self.runtime = ConfiguredFoundationRuntime(
@@ -139,6 +144,12 @@ class LocalFirstPartySurfaceApplication:
             conversation_id=conversation_id,
         )
         admitted = self.ingress.admit(envelope)
+
+        # Memory admission is a distinct governed boundary after canonical input
+        # persistence and before ContextProjection. A statement can therefore become
+        # usable in the same response only after Claim/Evidence admission commits.
+        memory = self.memory_admission.consider_event(admitted.event_id)
+
         response = self.runtime.respond(
             relationship_id=admitted.relationship_id,
             current_input_event_id=admitted.event_id,
@@ -174,6 +185,9 @@ class LocalFirstPartySurfaceApplication:
             content_text=content,
             transport_event_id=event_key,
             idempotent_input_replay=admitted.idempotent_replay,
+            memory_disposition=memory.disposition,
+            memory_claim_id=memory.claim_id,
+            memory_corrected_claim_id=memory.corrected_claim_id,
         )
 
     def close(self) -> None:
