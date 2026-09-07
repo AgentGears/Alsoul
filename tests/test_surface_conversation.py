@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from sqlalchemy import func, select
@@ -38,6 +38,7 @@ class NoWorldTransport:
 @dataclass(slots=True)
 class ConversationModelTransport:
     calls: int = 0
+    contexts: list[dict[str, Any]] = field(default_factory=list)
 
     def post_json(
         self,
@@ -49,11 +50,18 @@ class ConversationModelTransport:
     ) -> JsonHttpResponse:
         del timeout_seconds, headers
         self.calls += 1
+        context = body["provider_context"]
+        self.contexts.append(context)
         assert body["response_contract"]["required_epistemic_kinds"] == [
             "COMPANION_EXPRESSION"
         ]
-        assert body["provider_context"]["personal_context"] == []
-        assert body["provider_context"]["world_context"] == []
+        assert context["personal_context"] == []
+        assert context["world_context"] == []
+        text = (
+            "I think that exchange was clear."
+            if "prior_timeline_context" in context
+            else "Hello. I'm here."
+        )
         return JsonHttpResponse(
             status_code=200,
             resolved_endpoint=endpoint,
@@ -62,7 +70,7 @@ class ConversationModelTransport:
                     "segments": [
                         {
                             "epistemic_kind": "COMPANION_EXPRESSION",
-                            "text": "Hello. I'm here.",
+                            "text": text,
                             "source_ref": None,
                         }
                     ]
@@ -178,3 +186,84 @@ def test_local_surface_conversation_survives_complete_recomposition_without_worl
     assert invocations == 1
     assert outputs == 1
     assert presentations == 1
+
+
+def test_local_surface_contextual_conversation_uses_prior_exchange_after_recomposition(
+    services, bootstrapper, db_path, now
+):
+    ids = bootstrapper.bootstrap(
+        identity_namespace="surface-contextual-conversation",
+        external_subject="u1",
+    )
+    services.engine.dispose()
+    state_path = db_path.with_name("surface-contextual-state.db")
+    identity = LocalSurfaceIdentity(
+        identity_namespace="surface-contextual-conversation",
+        external_subject="u1",
+    )
+
+    world1 = NoWorldTransport()
+    model1 = ConversationModelTransport()
+    with LocalFirstPartySurfaceApplication(
+        config=_config(db_path),
+        identity=identity,
+        surface_state_path=state_path,
+        clock=FixedClock(now),
+        world_transport=world1,
+        model_transport=model1,
+    ) as app1:
+        first = app1.interact(
+            "Hello.",
+            transport_event_id="surface-contextual-1",
+        )
+
+    assert first.content_text == "Hello. I'm here."
+    assert world1.calls == 0
+    assert model1.calls == 1
+
+    world2 = NoWorldTransport()
+    model2 = ConversationModelTransport()
+    with LocalFirstPartySurfaceApplication(
+        config=_config(db_path),
+        identity=identity,
+        surface_state_path=state_path,
+        clock=FixedClock(now),
+        world_transport=world2,
+        model_transport=model2,
+    ) as app2:
+        contextual = app2.interact(
+            "What do you think about that?",
+            transport_event_id="surface-contextual-2",
+        )
+        with app2.engine.connect() as conn:
+            projections = conn.execute(
+                select(schema.context_projection)
+                .order_by(schema.context_projection.c.created_at)
+            ).mappings().all()
+            selected = conn.execute(
+                select(schema.context_projection_event)
+                .where(
+                    schema.context_projection_event.c.projection_id
+                    == contextual.companion_output_id
+                )
+            ).mappings().all()
+            del selected
+            investigation_count = conn.execute(
+                select(func.count()).select_from(schema.investigation)
+            ).scalar_one()
+
+    assert contextual.companion_person_id == ids.companion_person_id
+    assert contextual.relationship_id == ids.relationship_id
+    assert contextual.interaction_purpose == "CONVERSATIONAL_RESPONSE"
+    assert contextual.content_text == "I think that exchange was clear."
+    assert contextual.presented_event_id is not None
+    assert world2.calls == 0
+    assert model2.calls == 1
+    assert len(projections) == 2
+    context = model2.contexts[0]["prior_timeline_context"]
+    assert context["selection_policy"] == "IMMEDIATE_PREVIOUS_PRESENTED_EXCHANGE"
+    assert [event["content_text"] for event in context["events"]] == [
+        "Hello.",
+        "Hello. I'm here.",
+    ]
+    assert investigation_count == 0
