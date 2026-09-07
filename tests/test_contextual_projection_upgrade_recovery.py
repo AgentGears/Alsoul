@@ -193,7 +193,6 @@ def test_recovery_rejects_legacy_one_event_projection_for_contextual_input(
     assert model.calls == 1
     assert recovered.context_projection_id != legacy_projection.projection_id
     assert recovered.generated_output_id != legacy_generated.generated_output_id
-    assert recovered.content_text == "I think that exchange was clear."
 
     with services.engine.connect() as conn:
         selected = conn.execute(
@@ -216,5 +215,6 @@ def test_recovery_rejects_legacy_one_event_projection_for_contextual_input(
         first.presented_event_id,
         current.event_id,
     ]
+    assert adopted["content_text"] == "I think that exchange was clear."
     assert adopted["source_generated_output_id"] == recovered.generated_output_id
     assert adopted["source_generated_output_id"] != legacy_generated.generated_output_id
