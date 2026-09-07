@@ -7,14 +7,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from alsoul.adapters import HttpTransport, JsonHttpTransport
-from alsoul.domain.errors import fail
 from alsoul.domain.types import Clock, SystemClock
 from alsoul.host.config import FoundationHostConfig
 from alsoul.host.readiness import HostReadiness, require_host_readiness
 from alsoul.services import (
     ConfiguredFoundationRuntime,
-    F4CounterpartMemoryAdmission,
-    F4InteractionPurposeGate,
     FirstPartyIngress,
     FoundationServices,
     RuntimeSecrets,
@@ -68,10 +65,9 @@ class LocalSurfaceInteractionResult:
 class LocalFirstPartySurfaceApplication:
     """Local first-party UI composition over the trusted F4 boundaries.
 
-    The surface owns local routing and operational presentation acceptance only.
-    Canonical identity, Timeline, evidence, memory admission, cognition, adoption,
-    and presentation history remain owned by semantic services. The bounded purpose
-    gate prevents a memory-only statement from being routed into fresh-world work.
+    The surface owns local transport routing and operational presentation acceptance
+    only. Semantic interaction-purpose routing lives in ConfiguredFoundationRuntime,
+    so the browser cannot decide whether an input becomes memory or fresh-world work.
     """
 
     def __init__(
@@ -92,8 +88,6 @@ class LocalFirstPartySurfaceApplication:
         self.engine = create_sqlite_engine(config.database_path)
         self.services = FoundationServices(self.engine, clock=self.clock)
         self.ingress = FirstPartyIngress(self.services)
-        self.interaction_gate = F4InteractionPurposeGate(self.services)
-        self.memory_admission = F4CounterpartMemoryAdmission(self.services)
         self.surface_store = LocalSurfaceStore(surface_state_path)
         self._transport_events_seen_this_process: set[str] = set()
         self.runtime = ConfiguredFoundationRuntime(
@@ -150,13 +144,18 @@ class LocalFirstPartySurfaceApplication:
             conversation_id=conversation_id,
         )
         admitted = self.ingress.admit(envelope)
-        classification = self.interaction_gate.classify_event(admitted.event_id)
+        interaction = self.runtime.interact(
+            relationship_id=admitted.relationship_id,
+            current_input_event_id=admitted.event_id,
+            surface_binding_id=admitted.surface_binding_id,
+            channel_binding_id=admitted.channel_binding_id,
+            after_process_loss=replay_from_prior_process,
+        )
 
-        if classification.purpose == "MEMORY_STATEMENT":
-            # Memory admission is governed state transition after canonical input.
-            # It does not require a world Investigation, model invocation, adopted
-            # CompanionOutput, or presented Timeline event.
-            memory = self.memory_admission.consider_event(admitted.event_id)
+        if interaction.interaction_purpose == "MEMORY_STATEMENT":
+            memory = interaction.memory_admission
+            if memory is None:
+                raise RuntimeError("memory interaction completed without admission result")
             return LocalSurfaceInteractionResult(
                 companion_person_id=admitted.companion_person_id,
                 counterpart_id=admitted.counterpart_id,
@@ -167,27 +166,16 @@ class LocalFirstPartySurfaceApplication:
                 content_text=None,
                 transport_event_id=event_key,
                 idempotent_input_replay=admitted.idempotent_replay,
-                interaction_purpose=classification.purpose,
+                interaction_purpose=interaction.interaction_purpose,
                 surface_notice=_memory_surface_notice(memory.disposition),
                 memory_disposition=memory.disposition,
                 memory_claim_id=memory.claim_id,
                 memory_corrected_claim_id=memory.corrected_claim_id,
             )
 
-        if classification.purpose != "WORLD_QUESTION":
-            fail(
-                "INTERACTION_PURPOSE_UNSUPPORTED",
-                "input is outside the bounded F4 interaction-purpose contract",
-            )
-
-        response = self.runtime.respond(
-            relationship_id=admitted.relationship_id,
-            current_input_event_id=admitted.event_id,
-            surface_binding_id=admitted.surface_binding_id,
-            channel_binding_id=admitted.channel_binding_id,
-            after_process_loss=replay_from_prior_process,
-        )
-
+        response = interaction.response
+        if response is None:
+            raise RuntimeError("world-question interaction completed without response")
         presentation = self.surface_store.get_by_companion_output_id(
             response.companion_output_id
         )
@@ -215,7 +203,7 @@ class LocalFirstPartySurfaceApplication:
             content_text=content,
             transport_event_id=event_key,
             idempotent_input_replay=admitted.idempotent_replay,
-            interaction_purpose=classification.purpose,
+            interaction_purpose=interaction.interaction_purpose,
         )
 
     def close(self) -> None:
