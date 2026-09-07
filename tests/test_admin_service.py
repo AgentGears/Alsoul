@@ -95,7 +95,7 @@ def test_admin_bootstrap_refuses_nonempty_foundation(tmp_path):
     assert excinfo.value.code == "ADMIN_FOUNDATION_NOT_EMPTY"
 
 
-def test_foundation_bootstrapper_itself_is_one_time(tmp_path):
+def test_foundation_bootstrapper_supports_explicit_empty_store_fence(tmp_path):
     database = tmp_path / "alsoul.db"
     admin = FoundationAdministrator()
     admin.initialize_store(database)
@@ -106,11 +106,13 @@ def test_foundation_bootstrapper_itself_is_one_time(tmp_path):
         bootstrapper.bootstrap(
             identity_namespace="direct-test",
             external_subject="counterpart-a",
+            require_empty=True,
         )
         with pytest.raises(DomainError) as excinfo:
             bootstrapper.bootstrap(
                 identity_namespace="direct-test",
                 external_subject="counterpart-b",
+                require_empty=True,
             )
     finally:
         engine.dispose()
