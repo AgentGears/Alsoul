@@ -22,7 +22,7 @@ MemoryAdmissionDisposition = Literal[
 ]
 
 _CORRECTION_SIGNAL = re.compile(
-    r"\b(?:actually|correction|to correct that|i was wrong|instead)\b",
+    r"\b(?:actually|correction|to correct that|i was wrong)\b",
     flags=re.IGNORECASE,
 )
 
@@ -49,8 +49,17 @@ _PRIMARY_MACHINE_RAM_PATTERNS = (
 
 
 @dataclass(frozen=True, slots=True)
+class F4MemoryCandidate:
+    """Non-authoritative semantic candidate extracted from statement text."""
+
+    predicate: str
+    value: int
+    explicit_correction: bool
+
+
+@dataclass(frozen=True, slots=True)
 class F4MemoryProposal:
-    """Non-authoritative candidate extracted from one counterpart statement."""
+    """Non-authoritative proposal binding one candidate to canonical evidence."""
 
     source_event_id: UUID
     predicate: str
@@ -107,7 +116,13 @@ class F4CounterpartMemoryAdmission:
                     "memory admission accepts only counterpart input in its bound relationship",
                 )
 
-            existing = self._claim_from_source_event(conn, source_event_id)
+            existing = self._claim_from_source_event(
+                conn,
+                source_event_id=source_event_id,
+                companion_person_id=relationship["companion_person_id"],
+                counterpart_id=relationship["counterpart_id"],
+                relationship_id=relationship["relationship_id"],
+            )
             if existing is not None:
                 correction = conn.execute(
                     select(schema.claim_supersession).where(
@@ -127,15 +142,16 @@ class F4CounterpartMemoryAdmission:
                     ),
                 )
 
-        proposal = extract_f4_memory_proposal(
-            source_event_id=source_event_id,
-            content_text=event["content_text"],
-        )
-        if proposal is None:
+        candidate = extract_f4_memory_candidate(event["content_text"])
+        if candidate is None:
             return F4MemoryAdmissionResult(
                 source_event_id=source_event_id,
                 disposition="NO_CANDIDATE",
             )
+        proposal = propose_f4_memory(
+            source_event_id=source_event_id,
+            candidate=candidate,
+        )
 
         current = self.services.get_current_memory_claim(
             companion_person_id=relationship["companion_person_id"],
@@ -188,7 +204,15 @@ class F4CounterpartMemoryAdmission:
             corrected_claim_id=result.corrected_claim_id,
         )
 
-    def _claim_from_source_event(self, conn, source_event_id: UUID):
+    def _claim_from_source_event(
+        self,
+        conn,
+        *,
+        source_event_id: UUID,
+        companion_person_id: UUID,
+        counterpart_id: UUID,
+        relationship_id: UUID,
+    ):
         rows = conn.execute(
             select(schema.claim)
             .select_from(
@@ -202,6 +226,10 @@ class F4CounterpartMemoryAdmission:
                 )
             )
             .where(
+                schema.claim.c.holder_companion_person_id == companion_person_id,
+                schema.claim.c.subject_counterpart_id == counterpart_id,
+                schema.claim.c.memory_scope_kind == "RELATIONSHIP",
+                schema.claim.c.memory_scope_ref == relationship_id,
                 schema.claim.c.predicate == RAM_PREDICATE,
                 schema.claim_evidence.c.relation == "SUPPORTS",
                 schema.evidence_item.c.origin_kind == "COUNTERPART_STATEMENT",
@@ -217,15 +245,13 @@ class F4CounterpartMemoryAdmission:
         return rows[0] if rows else None
 
 
-def extract_f4_memory_proposal(
-    *, source_event_id: UUID, content_text: str
-) -> F4MemoryProposal | None:
-    """Extract only an explicit primary-machine RAM assertion.
+def extract_f4_memory_candidate(content_text: str) -> F4MemoryCandidate | None:
+    """Extract only an explicit primary-machine RAM semantic candidate.
 
     A number followed by ``GB`` is intentionally insufficient. The statement must
     explicitly bind the value to the counterpart's primary machine/computer memory.
     Questions, storage capacity, third-party machines, and unrelated quantities do
-    not become proposals.
+    not become candidates.
     """
 
     for pattern in _PRIMARY_MACHINE_RAM_PATTERNS:
@@ -235,8 +261,7 @@ def extract_f4_memory_proposal(
         value = int(match.group("value"))
         if value <= 0:
             return None
-        return F4MemoryProposal(
-            source_event_id=source_event_id,
+        return F4MemoryCandidate(
             predicate=RAM_PREDICATE,
             value=value,
             explicit_correction=bool(_CORRECTION_SIGNAL.search(content_text)),
@@ -244,10 +269,37 @@ def extract_f4_memory_proposal(
     return None
 
 
+def propose_f4_memory(
+    *, source_event_id: UUID, candidate: F4MemoryCandidate
+) -> F4MemoryProposal:
+    """Bind a non-authoritative extracted candidate to one canonical source event."""
+
+    return F4MemoryProposal(
+        source_event_id=source_event_id,
+        predicate=candidate.predicate,
+        value=candidate.value,
+        explicit_correction=candidate.explicit_correction,
+    )
+
+
+def extract_f4_memory_proposal(
+    *, source_event_id: UUID, content_text: str
+) -> F4MemoryProposal | None:
+    """Compatibility helper that still crosses candidate and proposal explicitly."""
+
+    candidate = extract_f4_memory_candidate(content_text)
+    if candidate is None:
+        return None
+    return propose_f4_memory(source_event_id=source_event_id, candidate=candidate)
+
+
 __all__ = [
     "F4CounterpartMemoryAdmission",
     "F4MemoryAdmissionResult",
+    "F4MemoryCandidate",
     "F4MemoryProposal",
     "MemoryAdmissionDisposition",
+    "extract_f4_memory_candidate",
     "extract_f4_memory_proposal",
+    "propose_f4_memory",
 ]
