@@ -240,14 +240,6 @@ def test_local_surface_contextual_conversation_uses_prior_exchange_after_recompo
                 select(schema.context_projection)
                 .order_by(schema.context_projection.c.created_at)
             ).mappings().all()
-            selected = conn.execute(
-                select(schema.context_projection_event)
-                .where(
-                    schema.context_projection_event.c.projection_id
-                    == contextual.companion_output_id
-                )
-            ).mappings().all()
-            del selected
             investigation_count = conn.execute(
                 select(func.count()).select_from(schema.investigation)
             ).scalar_one()
