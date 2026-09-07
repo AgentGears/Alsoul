@@ -84,6 +84,7 @@ class LocalFirstPartySurfaceApplication:
         self.services = FoundationServices(self.engine, clock=self.clock)
         self.ingress = FirstPartyIngress(self.services)
         self.surface_store = LocalSurfaceStore(surface_state_path)
+        self._transport_events_seen_this_process: set[str] = set()
         self.runtime = ConfiguredFoundationRuntime(
             self.services,
             config=config.runtime,
@@ -107,7 +108,7 @@ class LocalFirstPartySurfaceApplication:
         if not event_key:
             raise ValueError("transport_event_id must be non-empty when supplied")
 
-        occurred_at = self.surface_store.reserve_input(
+        reservation = self.surface_store.reserve_input(
             transport_event_id=event_key,
             identity_namespace=self.identity.identity_namespace,
             external_subject=self.identity.external_subject,
@@ -119,6 +120,12 @@ class LocalFirstPartySurfaceApplication:
             conversation_id=conversation_id,
             occurred_at=self.clock.now(),
         )
+        replay_from_prior_process = (
+            reservation.existing
+            and event_key not in self._transport_events_seen_this_process
+        )
+        self._transport_events_seen_this_process.add(event_key)
+
         envelope = TrustedCounterpartInputEnvelope(
             identity_namespace=self.identity.identity_namespace,
             external_subject=self.identity.external_subject,
@@ -128,7 +135,7 @@ class LocalFirstPartySurfaceApplication:
             channel_ref=self.identity.channel_ref,
             transport_event_id=event_key,
             content_text=content_text,
-            occurred_at=occurred_at,
+            occurred_at=reservation.occurred_at,
             conversation_id=conversation_id,
         )
         admitted = self.ingress.admit(envelope)
@@ -137,7 +144,7 @@ class LocalFirstPartySurfaceApplication:
             current_input_event_id=admitted.event_id,
             surface_binding_id=admitted.surface_binding_id,
             channel_binding_id=admitted.channel_binding_id,
-            after_process_loss=admitted.idempotent_replay,
+            after_process_loss=replay_from_prior_process,
         )
 
         presentation = self.surface_store.get_by_companion_output_id(
