@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from alsoul.domain.errors import fail
+from alsoul.services.conversation_context import requires_prior_timeline_context
 from alsoul.services.foundation import FoundationServices
 from alsoul.services.memory_admission import extract_f4_memory_candidate
 from alsoul.storage import schema
@@ -148,6 +149,8 @@ def classify_f4_interaction_text(content_text: str) -> F4InteractionPurpose:
         return "MEMORY_STATEMENT"
     if any(pattern.fullmatch(content_text) for pattern in _WORLD_QUESTION_PATTERNS):
         return "WORLD_QUESTION"
+    if requires_prior_timeline_context(content_text):
+        return "CONVERSATIONAL_RESPONSE"
     if any(pattern.fullmatch(content_text) for pattern in _CONVERSATIONAL_PATTERNS):
         return "CONVERSATIONAL_RESPONSE"
     return "UNSUPPORTED"
