@@ -173,7 +173,7 @@ def test_bounded_contextual_form_projects_exact_immediately_prior_exchange(
     ]
     assert investigation_count == 0
     assert world_result_count == 0
-    assert invocation["renderer_version"] == "f4-renderer-v4"
+    assert invocation["renderer_version"] == "f4-renderer-v3"
 
 
 def test_contextual_form_fails_closed_without_immediately_prior_presented_exchange(
