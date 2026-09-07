@@ -76,6 +76,21 @@ def _provider_context() -> dict[str, Any]:
     }
 
 
+def _conversational_context() -> dict[str, Any]:
+    return {
+        "person": {
+            "person_id": str(uuid4()),
+            "role": "PERSONAL_COMPANION",
+            "preferred_name": "Alsoul",
+            "self_revision": 1,
+        },
+        "relationship_id": str(uuid4()),
+        "current_input": "How are you?",
+        "personal_context": [],
+        "world_context": [],
+    }
+
+
 def _draft_json(context: dict[str, Any]) -> str:
     return json.dumps(
         {
@@ -95,6 +110,21 @@ def _draft_json(context: dict[str, Any]) -> str:
                     "text": "My take is that this machine does not meet that requirement.",
                     "source_ref": None,
                 },
+            ]
+        },
+        sort_keys=True,
+    )
+
+
+def _conversational_draft_json(*, source_ref: str | None = None) -> str:
+    return json.dumps(
+        {
+            "segments": [
+                {
+                    "epistemic_kind": "COMPANION_EXPRESSION",
+                    "text": "I'm here and ready to talk with you.",
+                    "source_ref": source_ref,
+                }
             ]
         },
         sort_keys=True,
@@ -138,6 +168,56 @@ def test_json_model_adapter_sends_context_without_persistable_credential_materia
     assert "secret-token" not in json.dumps(transport.last_body)
     assert transport.last_headers is not None
     assert transport.last_headers["Authorization"] == "Bearer secret-token"
+
+
+def test_json_model_adapter_selects_source_free_conversational_contract():
+    context = _conversational_context()
+    transport = StubJsonTransport(
+        response=JsonHttpResponse(
+            status_code=200,
+            resolved_endpoint="https://model.invalid/invoke",
+            content=_conversational_draft_json(),
+            headers={"content-type": "application/json"},
+        )
+    )
+    adapter = JsonModelProviderAdapter(
+        endpoint="https://model.invalid/invoke",
+        provider_binding_ref="conversation-route",
+        model_ref="conversation-model-v1",
+        transport=transport,
+    )
+
+    draft = adapter.generate(context)
+
+    assert tuple(segment.epistemic_kind for segment in draft.segments) == (
+        "COMPANION_EXPRESSION",
+    )
+    assert draft.segments[0].source_ref is None
+    assert transport.last_body is not None
+    assert transport.last_body["provider_context"] == context
+    assert transport.last_body["response_contract"]["required_epistemic_kinds"] == [
+        "COMPANION_EXPRESSION"
+    ]
+
+
+def test_json_model_adapter_rejects_conversational_source_attribution():
+    context = _conversational_context()
+    adapter = JsonModelProviderAdapter(
+        endpoint="https://model.invalid/invoke",
+        provider_binding_ref="conversation-route",
+        model_ref="conversation-model-v1",
+        transport=StubJsonTransport(
+            response=JsonHttpResponse(
+                status_code=200,
+                resolved_endpoint="https://model.invalid/invoke",
+                content=_conversational_draft_json(source_ref=str(uuid4())),
+                headers={},
+            )
+        ),
+    )
+
+    with pytest.raises(AdapterRejected):
+        adapter.generate(context)
 
 
 def test_json_model_adapter_requires_https_endpoint():
