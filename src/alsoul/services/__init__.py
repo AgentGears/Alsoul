@@ -9,13 +9,18 @@ from .configured_runtime import (
     RuntimeSecrets,
     WorldRuntimeConfig,
 )
+from .conversation_open_loop import (
+    F4ConversationOpenLoopResult,
+    F4ConversationOpenLoopSelection,
+    F4ConversationOpenLoopService,
+)
 from .conversational_runtime import (
     F4ConversationalOutputAdoption,
     FoundationConversationalResponseCoordinator,
     FoundationConversationalResponseRunResult,
 )
 from .diagnostics import FoundationRuntimeDiagnostic, FoundationRuntimeDiagnostics
-from .foundation import FoundationServices
+from .foundation_v2 import FoundationServices
 from .ingress import (
     AdmitTrustedCounterpartInputResult,
     FirstPartyIngress,
@@ -44,6 +49,9 @@ __all__ = [
     "AdmitTrustedCounterpartInputResult",
     "ConfiguredFoundationRuntime",
     "F4ConversationalOutputAdoption",
+    "F4ConversationOpenLoopResult",
+    "F4ConversationOpenLoopSelection",
+    "F4ConversationOpenLoopService",
     "F4CounterpartMemoryAdmission",
     "F4InteractionClassification",
     "F4InteractionPurpose",
