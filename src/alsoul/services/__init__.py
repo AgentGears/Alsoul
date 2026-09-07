@@ -15,6 +15,12 @@ from .ingress import (
     FirstPartyIngress,
     TrustedCounterpartInputEnvelope,
 )
+from .interaction_routing import (
+    F4InteractionClassification,
+    F4InteractionPurpose,
+    F4InteractionPurposeGate,
+    classify_f4_interaction_text,
+)
 from .memory_admission import (
     F4CounterpartMemoryAdmission,
     F4MemoryAdmissionResult,
@@ -32,6 +38,9 @@ __all__ = [
     "AdmitTrustedCounterpartInputResult",
     "ConfiguredFoundationRuntime",
     "F4CounterpartMemoryAdmission",
+    "F4InteractionClassification",
+    "F4InteractionPurpose",
+    "F4InteractionPurposeGate",
     "F4MemoryAdmissionResult",
     "F4MemoryCandidate",
     "F4MemoryProposal",
@@ -51,6 +60,7 @@ __all__ = [
     "TrustedCounterpartInputEnvelope",
     "WorldAcquisitionRunner",
     "WorldRuntimeConfig",
+    "classify_f4_interaction_text",
     "extract_f4_memory_candidate",
     "extract_f4_memory_proposal",
     "propose_f4_memory",
