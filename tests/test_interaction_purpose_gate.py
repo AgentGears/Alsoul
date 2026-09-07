@@ -29,13 +29,10 @@ def test_f4_interaction_text_classification_is_bounded_and_deterministic():
     assert classify_f4_interaction_text("Hello.") == "CONVERSATIONAL_RESPONSE"
     assert classify_f4_interaction_text("Thanks.") == "CONVERSATIONAL_RESPONSE"
     assert classify_f4_interaction_text("How are you?") == "CONVERSATIONAL_RESPONSE"
-    assert (
-        classify_f4_interaction_text("Tell me what you think about this.")
-        == "CONVERSATIONAL_RESPONSE"
-    )
 
     assert classify_f4_interaction_text("Tell me a joke.") == "UNSUPPORTED"
     assert classify_f4_interaction_text("What is the weather?") == "UNSUPPORTED"
+    assert classify_f4_interaction_text("Tell me what you think about this.") == "UNSUPPORTED"
     assert classify_f4_interaction_text("My machine has 16 GB RAM; would it run?") == "UNSUPPORTED"
 
 
