@@ -104,7 +104,7 @@ database existence/accessibility
 schema revision
 packaged head revision
 whether schema is at head
-missing table names, if any
+missing table/column names, if any
 foundation identity state
 root object counts
 ```
@@ -157,9 +157,11 @@ P1
 └── ChannelBinding
 ```
 
-`FoundationBootstrapper` now checks the canonical identity roots inside the bootstrap transaction and refuses to run when a foundation graph already exists. It therefore remains a one-time creation boundary rather than a general-purpose GetOrCreate service.
+`bootstrap-foundation` invokes `FoundationBootstrapper` with `require_empty=True`, so all canonical foundation root tables are re-checked inside the same bootstrap transaction. If any root already exists, the first-run bootstrap fails rather than creating a second or replacement identity graph.
 
-A partially existing graph also blocks bootstrap. Administration does not silently repair or replace canonical identity.
+The lower-level `FoundationBootstrapper` remains an explicit graph-creation boundary and can be used without the empty-store fence in controlled tests or future administration workflows that deliberately create more than one graph. The first-run `alsoul-admin` command is intentionally stricter.
+
+A partially existing graph also blocks first-run bootstrap. Administration does not silently repair or replace canonical identity.
 
 ## Runtime fail-closed rule
 
@@ -176,9 +178,9 @@ no CompanionPerson / CounterpartPerson / RelationshipState exists
 ↓
 alsoul-host ready succeeds structurally
 ↓
-trusted ingress for an unknown identity arrives
+trusted ingress arrives
 ↓
-identity resolution fails
+first missing route/identity binding fails closed
 ↓
 no identity object is created
 ↓
