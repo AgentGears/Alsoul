@@ -51,7 +51,7 @@ WorldSignal ≠ Observation
 background work ≠ proactive contact
 PresentationProfile ≠ SelfModel
 AffectState ≠ stable personality
-ConversationOpenLoop ≠ DelegatedTask ≠ Commitment
+ConversationOpenLoop ≠ MemoryClaim ≠ DelegatedTask ≠ Commitment ≠ Trigger
 persistence ≠ recoverability ≠ hydration
 schema initialization ≠ identity bootstrap ≠ runtime recovery
 surface operational state ≠ canonical companion state
@@ -62,6 +62,7 @@ conversation ≠ fresh-world investigation
 conversation ≠ memory admission
 Timeline history ≠ MemoryClaim
 prior Timeline context ≠ factual source authority
+open conversational matter ≠ background-work authority
 reference resolution ≠ unrestricted transcript injection
 source-free expression ≠ evidence-backed proposition
 surface notice ≠ CompanionOutput
@@ -79,6 +80,8 @@ CompanionPerson
     └── RelationshipState ─── CounterpartPerson
             │                     │
             │                     └── PersonClaim / PersonModel
+            │
+            ├── ConversationOpenLoop
             │
             └── Canonical Timeline
                     │
@@ -113,7 +116,7 @@ Canonical state selected for cognition
                                             └── presented Timeline event
 ```
 
-The wider architecture also defines capability/credential/permission/action/effect semantics, delegated work, commitments, triggers, WorkRuns, WorkProducts, WorldSignals, proactivity, modality, presentation policy, conversational open loops, and whole-system recovery. Those are not all implemented in F4.
+The wider architecture also defines capability/credential/permission/action/effect semantics, delegated work, commitments, triggers, WorkRuns, WorkProducts, WorldSignals, proactivity, modality, presentation policy, richer conversational continuity, and whole-system recovery. Those are not all implemented in F4.
 
 ## Executable F4 interaction paths
 
@@ -135,9 +138,12 @@ F4InteractionPurposeGate
 │
 ├── CONVERSATIONAL_RESPONSE
 │   ↓
+│   optional bounded ConversationOpenLoop transition
+│   ↓
 │   ContextProjection
 │       Self + Relationship + current input
 │       optional one bounded immediately-prior presented exchange
+│       or one selected unresolved DECISION ConversationOpenLoop
 │       no projected personal/world proposition
 │   ↓
 │   ModelInvocation
@@ -181,7 +187,7 @@ The checked path is mechanically capable of meaning:
 
 without those distinctions being prompt conventions.
 
-The conversational path supports bounded self-contained social forms and a narrow contextual grammar that can reference exactly the immediately preceding presented exchange. Broader pronoun/coreference resolution, generic transcript windows, semantic Timeline search, and cross-thread/channel references remain unsupported.
+The conversational path supports bounded self-contained social forms, exact immediately-prior presented-exchange context, and one durable relationship-scoped `DECISION` open-loop resume after intervening dialogue or thread changes. Broader pronoun/coreference resolution, generic transcript windows, semantic Timeline search, and arbitrary cross-thread/channel history resolution remain unsupported.
 
 ## Implementation boundaries
 
@@ -239,18 +245,19 @@ Correction is append-only through explicit supersession. Concurrent admission is
 
 ### Conversational response
 
-`FoundationConversationalResponseCoordinator` handles the bounded source-free conversational path. Self-contained forms project canonical Self/Relationship/current-input state. The narrow contextual grammar may additionally project exactly the immediately preceding completed presented exchange as historical interaction context. Neither path performs Investigation or memory admission, and both require exactly one unsourced `COMPANION_EXPRESSION` before explicit conversational adoption.
+`FoundationConversationalResponseCoordinator` handles the bounded source-free conversational path. Self-contained forms project canonical Self/Relationship/current-input state. The narrow immediate-context grammar may additionally project exactly the immediately preceding completed presented exchange. A separate bounded decision-resume grammar may project the exact opening event of one unresolved relationship-scoped `ConversationOpenLoop` together with the current input. None of these paths performs Investigation or memory admission, and each requires exactly one unsourced `COMPANION_EXPRESSION` before explicit conversational adoption.
 
 ```text
 conversation context ≠ canonical history
 Timeline context ≠ admitted memory
+ConversationOpenLoop ≠ MemoryClaim
 prior Companion speech ≠ factual source authority
 provider session ≠ Relationship continuity
 source-free expression ≠ memory/world claim
 GeneratedOutput ≠ CompanionOutput
 ```
 
-The selected prior exchange is persisted as exact `context_projection_event` membership. Once the projection commits, recovery reuses those exact events rather than searching history again.
+Immediate-prior selection is persisted as exact `context_projection_event` membership. Durable decision-loop resume additionally persists `context_projection_open_loop_item` so the immutable projection records the exact open-loop lineage selected before provider execution. The model never searches for or chooses the loop. Missing, closed, or ambiguous matching loops fail closed.
 
 ### Fresh-world checked response
 
@@ -277,7 +284,7 @@ Model execution is replaceable. `ModelInvocation` is committed before dispatch. 
 
 `RecoveryCoordinator` derives progress from canonical rows instead of a mutable turn-status aggregate. Orphaned in-progress provider work is reconciled explicitly; retry creates a new attempt rather than mutating historical execution.
 
-Provider rendering is versioned. The bounded prior-Timeline context checkpoint advances the renderer identity because contextual projections may now render a separate `prior_timeline_context` field while self-contained and checked projections retain their existing semantic contents.
+Provider rendering is versioned. The current renderer identity is `f4-renderer-v3`: it preserves the earlier `prior_timeline_context` contract and adds the dedicated `conversation_open_loop_context` field for valid open-loop-aware projections. A change in provider-context structure therefore changes renderer identity rather than pretending the wire contract is unchanged.
 
 ### First-party presentation
 
@@ -333,6 +340,10 @@ ModelInvocation IN_PROGRESS + process loss
 ContextProjection with selected prior Timeline events committed
 → recover exact selection; do not search history again
 
+ContextProjection with selected ConversationOpenLoop committed
+→ recover exact loop/event lineage
+→ reuse only while the selected loop remains the sole active matching loop
+
 GeneratedOutput committed
 → recover candidate; do not regenerate
 
@@ -343,7 +354,7 @@ presentation already committed
 → return existing Timeline event; do not present again
 ```
 
-The same response recovery graph is used by both source-free conversational responses and evidence-bearing checked responses; only the projection/output contract differs.
+The same response recovery graph is used by source-free conversational responses and evidence-bearing checked responses; only the projection/output contract differs.
 
 ## Documentation
 
@@ -372,6 +383,7 @@ Executable F4 checkpoints:
 - [F4 Interaction Purpose Gate](docs/F4_INTERACTION_PURPOSE_GATE.md)
 - [F4 Conversational Response Path](docs/F4_CONVERSATIONAL_RESPONSE.md)
 - [F4 Prior-Timeline Context Selection](docs/F4_PRIOR_TIMELINE_CONTEXT.md)
+- [F4 Conversation Open Loop](docs/F4_CONVERSATION_OPEN_LOOP.md)
 
 Architecture decision records:
 
@@ -384,8 +396,8 @@ Architecture decision records:
 
 ## Status
 
-The canonical foundation now supports explicit first-run initialization, durable identity, trusted first-party ingress, evidence-grounded bounded memory, deterministic semantic routing, bounded source-free conversational response, mechanically bounded immediate-prior Timeline context, fresh-world checked response, provider execution/recovery, explicit output adoption, restart-safe first-party presentation, and a loopback browser surface.
+The canonical foundation now supports explicit first-run initialization, durable identity, trusted first-party ingress, evidence-grounded bounded memory, deterministic semantic routing, bounded source-free conversational response, mechanically bounded immediate-prior Timeline context, one durable relationship-scoped `DECISION` ConversationOpenLoop with explicit opening/closure/resume semantics, fresh-world checked response, provider execution/recovery, explicit output adoption, restart-safe first-party presentation, and a loopback browser surface.
 
-F4 deliberately does **not** yet implement general conversational routing, arbitrary prior-history reference resolution, generic transcript windows, semantic Timeline search, general question answering, arbitrary fresh-world questions, broad memory extraction, effectful Actions, durable delegated work, scheduling, proactivity, multi-channel fallback, read/heard receipts, or rich embodiment.
+F4 deliberately does **not** yet implement general conversational routing, arbitrary prior-history reference resolution, generic transcript windows, semantic Timeline search, general question answering, arbitrary fresh-world questions, broad memory extraction, automatic open-loop expiry/supersession, effectful Actions, durable delegated work, scheduling, proactivity, multi-channel fallback, read/heard receipts, or rich embodiment.
 
 The next implementation work should widen only one semantic boundary at a time without collapsing the distinctions above.
