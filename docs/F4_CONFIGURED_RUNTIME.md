@@ -16,6 +16,7 @@ bounded interaction-purpose gate
     │
     ├── CONVERSATIONAL_RESPONSE
     │       → source-free ContextProjection
+    │       → optional bounded prior-Timeline context
     │       → model generation
     │       → conversational adoption
     │       → first-party presentation
@@ -76,7 +77,7 @@ The gate validates that the current input belongs to the supplied relationship, 
 
 For `MEMORY_STATEMENT`, the runtime invokes `F4CounterpartMemoryAdmission` and returns the memory outcome without fresh-world or cognition work.
 
-For `CONVERSATIONAL_RESPONSE`, the runtime invokes `FoundationConversationalResponseCoordinator`. That path builds a minimal ContextProjection with no projected personal or world propositions, performs one model invocation under the source-free `COMPANION_EXPRESSION` contract, adopts the candidate through a typed conversational output boundary, and uses the normal first-party presentation gate. It creates no Investigation or WorldResult.
+For `CONVERSATIONAL_RESPONSE`, the runtime invokes `FoundationConversationalResponseCoordinator`. A self-contained form builds a ContextProjection over pinned Self/Relationship/current-input state. A bounded contextual `that`/`it` form may additionally select exactly the immediately preceding completed presented exchange through the semantic projection service. Neither form projects personal/world propositions, starts an Investigation, or admits memory.
 
 For `WORLD_QUESTION`, the runtime delegates to the checked `FoundationResponseCoordinator`, which performs fresh acquisition and evidence-backed world-result admission before cognition.
 
@@ -86,10 +87,12 @@ Unsupported input fails closed before provider work.
 interaction classification ≠ model authority
 memory admission ≠ response obligation
 conversation ≠ fresh-world investigation
+prior Timeline context ≠ admitted memory
+reference resolution ≠ model-selected history
 unsupported input ≠ inferred route
 ```
 
-See [F4 Interaction Purpose Gate](F4_INTERACTION_PURPOSE_GATE.md) and [F4 Conversational Response Path](F4_CONVERSATIONAL_RESPONSE.md).
+See [F4 Interaction Purpose Gate](F4_INTERACTION_PURPOSE_GATE.md), [F4 Conversational Response Path](F4_CONVERSATIONAL_RESPONSE.md), and [F4 Prior-Timeline Context Selection](F4_PRIOR_TIMELINE_CONTEXT.md).
 
 ## Checked source-specific interpretation
 
@@ -125,6 +128,35 @@ The extractor only returns an `ExtractedWorldResult` proposal. `FoundationServic
 
 The conversational path does not invoke this acquisition/interpretation chain.
 
+## Conversational prior-Timeline rendering
+
+For the narrow contextual grammar, the semantic service may persist exact projection membership:
+
+```text
+prior COUNTERPART_INPUT
+prior COMPANION_PRESENTED_OUTPUT replying to it
+current contextual COUNTERPART_INPUT
+```
+
+Only the two prior events are rendered into the optional provider field:
+
+```text
+prior_timeline_context {
+    selection_policy: IMMEDIATE_PREVIOUS_PRESENTED_EXCHANGE
+    events: [...]
+}
+```
+
+The current input remains the normal `current_input` field. Personal and world context arrays remain empty.
+
+```text
+prior_timeline_context ≠ MemoryClaim
+prior_timeline_context ≠ WorldResult
+prior presented Companion output ≠ factual source authority
+```
+
+The rendering contract is versioned. New model invocations use the current renderer identity; already-durable ModelInvocations retain the renderer version that actually produced their request.
+
 ## Model response contracts
 
 The JSON model adapter derives its bounded response contract from the Alsoul-owned provider context shape rather than asking the model to choose the semantic path.
@@ -137,7 +169,7 @@ CURRENT_CHECKED_WORLD
 COMPANION_INTERPRETATION
 ```
 
-For the current conversational projection:
+For both self-contained and bounded contextual conversational projections:
 
 ```text
 personal_context = []
@@ -155,6 +187,8 @@ with:
 ```text
 source_ref = null
 ```
+
+A contextual projection may contain `prior_timeline_context`; that does not transform the expression into an evidence-backed proposition.
 
 Other provider-context shapes are outside the current F4 model wire contract and fail closed.
 
@@ -204,7 +238,7 @@ CONVERSATIONAL_RESPONSE → respond
     = no model provider work
 ```
 
-This prevents a lower-level caller from bypassing the high-level purpose boundary and forcing a social utterance through fresh-world work.
+This prevents a lower-level caller from bypassing the high-level purpose boundary and forcing a social or contextual utterance through fresh-world work.
 
 ## Recovery
 
@@ -221,7 +255,7 @@ PRESENTED
 
 Checked response recovery may additionally recover Investigation, capture, and WorldResult stages before projection.
 
-Conversational recovery begins at the input/projection boundary because no world work exists. A committed conversational GeneratedOutput is recovered rather than regenerated, and adopted output is re-presented idempotently when needed.
+Conversational recovery begins at the input/projection boundary because no world work exists. For a contextual interaction, a committed ContextProjection already contains the exact prior-event selection. Recovery reuses that selection rather than searching Timeline history again. A committed GeneratedOutput is recovered rather than regenerated, and adopted output is re-presented idempotently when needed.
 
 Reconfiguration or process replacement therefore does not recreate history or convert provider state into companion state.
 
@@ -255,7 +289,7 @@ No user message, memory, world result, or relationship state is used by the prob
 
 `FoundationRuntimeDiagnostics` derives a content-free response view from canonical rows. Its detailed world-stage `next_action` values are designed for the checked response path; response-level recovery stages remain valid for conversational output as well.
 
-Diagnostics intentionally exclude user message text, captured source content, generated response text, credentials, and authorization headers. They remain derived and non-authoritative.
+Diagnostics intentionally exclude user message text, selected prior Timeline content, captured source content, generated response text, credentials, and authorization headers. They remain derived and non-authoritative.
 
 ## Failure semantics
 
@@ -264,6 +298,8 @@ A checked cross-origin source response may preserve a successful Observation/Cap
 An invalid model contract response remains a rejected provider attempt. It does not become CompanionOutput or shared-history presentation.
 
 A conversational GeneratedOutput that violates the source-free expression contract can remain durable provider-return history while adoption fails; it does not become CompanionOutput.
+
+A bounded contextual form with no eligible immediately preceding exchange fails before provider execution. The current input remains canonical Timeline history; Alsoul does not guess a referent or inject a fallback transcript window.
 
 An unsupported high-level interaction may already exist in canonical counterpart history, but the purpose gate stops before provider execution.
 
@@ -275,6 +311,6 @@ Provider routes are deployment/runtime configuration rather than Person or Relat
 
 ## Acceptance coverage
 
-The executable suite verifies configured HTTPS world/model/presentation routes; source-origin-pinned checked interpretation; transport credential separation; the synthetic checked model probe; memory-only interaction without provider work; route fencing; bounded conversational classification and execution without Investigation/WorldResult; the source-free conversational model contract; rejection of conversational source attribution; recovery of committed conversational generation without regeneration; checked-response rejection of conversational input; local surface conversational replay across complete recomposition; and the existing evidence-backed checked-response path.
+The executable suite verifies configured HTTPS world/model/presentation routes; source-origin-pinned checked interpretation; transport credential separation; the synthetic checked model probe; memory-only interaction without provider work; route fencing; bounded conversational classification and execution without Investigation/WorldResult; the source-free conversational model contract; rejection of conversational source attribution; exact immediate-prior Timeline selection for the contextual grammar; fail-closed behavior when prior context is unavailable or crosses a conversation boundary; recovery of committed contextual generation without history reselection or regeneration; checked-response rejection of conversational input; local surface conversational replay across complete recomposition; and the existing evidence-backed checked-response path.
 
-The configured runtime remains the bounded F4 slice. It does not introduce general conversational routing, deictic prior-history resolution, external Actions, durable delegated work, triggers, schedules, proactive contact, multi-channel fallback, or rich embodiment.
+The configured runtime remains the bounded F4 slice. It does not introduce general conversational routing, arbitrary coreference resolution, generic transcript windows, semantic Timeline search, cross-thread contextual resolution, external Actions, durable delegated work, triggers, schedules, proactive contact, multi-channel fallback, or rich embodiment.
