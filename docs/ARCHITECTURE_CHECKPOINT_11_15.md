@@ -62,6 +62,8 @@ ConversationOpenLoop
 
 Loop lifecycle is append-oriented and distinguishes resolved, cancelled, superseded, and expired. An unfinished conversational loop does not authorize background work or proactive follow-up.
 
+The executable F4 implementation now includes one deliberately bounded `DECISION` open-loop kind. Its opening and terminal closure are durable append-oriented records; later bounded reference resolution may select exactly one unresolved decision loop by relationship. Ambiguity fails closed rather than using latest-wins selection. See [F4 Conversation Open Loop](F4_CONVERSATION_OPEN_LOOP.md).
+
 ## Decision 14.A — Whole-system hydration and recovery
 
 Recovery is deterministic reconstruction from Alsoul-owned durable state, not restoration of model/provider runtime.
@@ -92,7 +94,7 @@ Response recovery state is derived from canonical rows rather than stored as an 
 
 ## Implementation boundary
 
-The first executable slice intentionally implements only:
+The executable slice currently implements:
 
 ```text
 persistent Person/Self/Relationship
@@ -103,7 +105,10 @@ immutable ContextProjection
 ModelInvocation / GeneratedOutput
 CompanionOutput adoption
 first-party text presentation
+bounded conversational response
+bounded immediate-prior Timeline context
+bounded relationship-scoped ConversationOpenLoop
 complete runtime reconstruction
 ```
 
-Effectful Actions, durable Tasks, proactivity, rich modality, affect, and open-loop persistence remain outside the F4 code path even though their semantic boundaries are fixed above.
+Effectful Actions, durable Tasks, proactivity, rich modality, and affect remain outside the F4 code path. ConversationOpenLoop is implemented only for a narrow decision-loop grammar; generic semantic history retrieval, automatic expiry/supersession, background work, and proactive contact remain outside the slice.

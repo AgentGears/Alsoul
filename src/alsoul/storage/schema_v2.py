@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    UniqueConstraint,
+    Uuid,
+)
+
+from . import schema_v1 as _schema_v1
+
+# Compose the current runtime metadata from a clone of the frozen v1 schema. The v1
+# MetaData object is also imported directly by migration 0001; mutating it here would
+# make a fresh migration run create later-version tables during revision 0001.
+metadata = MetaData()
+for _table in _schema_v1.metadata.sorted_tables:
+    _table.to_metadata(metadata)
+
+# Preserve the stable table-symbol API used by services while pointing those symbols
+# at the cloned current metadata rather than at the frozen v1 Table objects.
+for _name, _value in vars(_schema_v1).items():
+    if isinstance(_value, Table):
+        globals()[_name] = metadata.tables[_value.name]
+
+
+conversation_open_loop = Table(
+    "conversation_open_loop",
+    metadata,
+    Column("open_loop_id", Uuid(as_uuid=True), primary_key=True),
+    Column(
+        "relationship_id",
+        Uuid(as_uuid=True),
+        ForeignKey("relationship_identity.relationship_id"),
+        nullable=False,
+    ),
+    Column("loop_kind", String(64), nullable=False),
+    Column(
+        "opened_by_event_id",
+        Uuid(as_uuid=True),
+        ForeignKey("interaction_event.event_id"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("opened_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint("loop_kind IN ('DECISION')", name="ck_conversation_open_loop_kind_f4"),
+)
+
+conversation_open_loop_closure = Table(
+    "conversation_open_loop_closure",
+    metadata,
+    Column(
+        "open_loop_id",
+        Uuid(as_uuid=True),
+        ForeignKey("conversation_open_loop.open_loop_id"),
+        primary_key=True,
+    ),
+    Column("closure_kind", String(32), nullable=False),
+    Column(
+        "source_event_id",
+        Uuid(as_uuid=True),
+        ForeignKey("interaction_event.event_id"),
+        unique=True,
+    ),
+    Column(
+        "superseding_open_loop_id",
+        Uuid(as_uuid=True),
+        ForeignKey("conversation_open_loop.open_loop_id"),
+    ),
+    Column("closed_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint(
+        "closure_kind IN ('RESOLVED', 'CANCELLED', 'SUPERSEDED', 'EXPIRED')",
+        name="ck_conversation_open_loop_closure_kind_f4",
+    ),
+    CheckConstraint(
+        "((closure_kind = 'SUPERSEDED' AND superseding_open_loop_id IS NOT NULL) "
+        "OR (closure_kind <> 'SUPERSEDED' AND superseding_open_loop_id IS NULL))",
+        name="ck_conversation_open_loop_supersession_ref_f4",
+    ),
+)
+
+context_projection_open_loop_item = Table(
+    "context_projection_open_loop_item",
+    metadata,
+    Column(
+        "projection_id",
+        Uuid(as_uuid=True),
+        ForeignKey("context_projection.projection_id"),
+        primary_key=True,
+    ),
+    Column("ordinal", Integer, primary_key=True),
+    Column(
+        "open_loop_id",
+        Uuid(as_uuid=True),
+        ForeignKey("conversation_open_loop.open_loop_id"),
+        nullable=False,
+    ),
+    Column("selection_basis", String(64), nullable=False),
+    UniqueConstraint("projection_id", "open_loop_id", name="uq_projection_open_loop"),
+    CheckConstraint(
+        "selection_basis IN ('CURRENT_OPEN_DECISION_LOOP')",
+        name="ck_projection_open_loop_basis_f4",
+    ),
+)
+
+Index(
+    "ix_conversation_open_loop_relationship_kind",
+    conversation_open_loop.c.relationship_id,
+    conversation_open_loop.c.loop_kind,
+    conversation_open_loop.c.opened_at,
+)

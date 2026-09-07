@@ -5,6 +5,9 @@ from typing import Any
 from sqlalchemy import select
 
 from alsoul.services.conversation_context import requires_prior_timeline_context
+from alsoul.services.conversation_open_loop_context import (
+    requires_conversation_open_loop_context,
+)
 from alsoul.storage import schema
 
 
@@ -12,14 +15,9 @@ def projection_reuse_blocker(conn, projection: dict[str, Any]) -> str | None:
     """Return why one reactive ContextProjection must not be reused.
 
     F4 retries may reuse an immutable projection only while the canonical state it
-    fenced is still current. A stale projection remains durable history; it simply
-    stops being eligible for another provider invocation.
-
-    Contextual conversation adds a stronger compatibility fence: if the immutable
-    current input now requires bounded prior-Timeline context, a legacy projection
-    containing only that input is historical but not reusable. Recovery must build
-    a new projection under the current exact-selection contract rather than silently
-    treating the legacy provider context as equivalent.
+    fenced is still current. Context-dependent inputs additionally require the exact
+    durable selection contract now associated with their grammar; legacy projections
+    are history, not silently reusable cognition context.
     """
 
     if projection["purpose"] != "RESPOND_TO_INTERACTION":
@@ -54,14 +52,22 @@ def projection_reuse_blocker(conn, projection: dict[str, Any]) -> str | None:
     if projected_input is None:
         return "CURRENT_INPUT_NOT_PROJECTED"
 
-    if requires_prior_timeline_context(current_input["content_text"]):
-        contextual_blocker = _contextual_selection_blocker(
+    if requires_conversation_open_loop_context(current_input["content_text"]):
+        blocker = _open_loop_selection_blocker(
             conn,
             projection=projection,
             current_input=dict(current_input),
         )
-        if contextual_blocker is not None:
-            return contextual_blocker
+        if blocker is not None:
+            return blocker
+    elif requires_prior_timeline_context(current_input["content_text"]):
+        blocker = _contextual_selection_blocker(
+            conn,
+            projection=projection,
+            current_input=dict(current_input),
+        )
+        if blocker is not None:
+            return blocker
 
     self_head = conn.execute(
         select(schema.self_head).where(
@@ -102,13 +108,118 @@ def projection_reuse_blocker(conn, projection: dict[str, Any]) -> str | None:
     return None
 
 
+def _open_loop_selection_blocker(
+    conn,
+    *,
+    projection: dict[str, Any],
+    current_input: dict[str, Any],
+) -> str | None:
+    relationship = conn.execute(
+        select(schema.relationship_identity).where(
+            schema.relationship_identity.c.relationship_id
+            == projection["relationship_id"]
+        )
+    ).mappings().one_or_none()
+    if relationship is None:
+        return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+
+    items = conn.execute(
+        select(
+            schema.context_projection_open_loop_item,
+            schema.conversation_open_loop.c.relationship_id,
+            schema.conversation_open_loop.c.loop_kind,
+            schema.conversation_open_loop.c.opened_by_event_id,
+        )
+        .join(
+            schema.conversation_open_loop,
+            schema.context_projection_open_loop_item.c.open_loop_id
+            == schema.conversation_open_loop.c.open_loop_id,
+        )
+        .where(
+            schema.context_projection_open_loop_item.c.projection_id
+            == projection["projection_id"]
+        )
+    ).mappings().all()
+    if len(items) != 1:
+        return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+    item = items[0]
+    if (
+        int(item["ordinal"]) != 0
+        or item["selection_basis"] != "CURRENT_OPEN_DECISION_LOOP"
+        or item["relationship_id"] != projection["relationship_id"]
+        or item["loop_kind"] != "DECISION"
+    ):
+        return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+
+    # Reuse must preserve the same uniqueness condition that fresh selection used.
+    # Open-loop admission can occur for an already-admitted Timeline event without
+    # advancing the Timeline frontier, so frontier equality alone cannot fence this
+    # derived relationship state. The selected loop must still be the one and only
+    # unresolved DECISION loop at provider-execution time.
+    active_loop_ids = conn.execute(
+        select(schema.conversation_open_loop.c.open_loop_id)
+        .outerjoin(
+            schema.conversation_open_loop_closure,
+            schema.conversation_open_loop_closure.c.open_loop_id
+            == schema.conversation_open_loop.c.open_loop_id,
+        )
+        .where(
+            schema.conversation_open_loop.c.relationship_id
+            == projection["relationship_id"],
+            schema.conversation_open_loop.c.loop_kind == "DECISION",
+            schema.conversation_open_loop_closure.c.open_loop_id.is_(None),
+        )
+    ).scalars().all()
+    if item["open_loop_id"] not in active_loop_ids:
+        return "CONVERSATION_OPEN_LOOP_NO_LONGER_ACTIVE"
+    if len(active_loop_ids) != 1:
+        return "CONVERSATION_OPEN_LOOP_SELECTION_AMBIGUOUS"
+
+    selected = conn.execute(
+        select(
+            schema.context_projection_event.c.ordinal,
+            schema.interaction_event,
+        )
+        .join(
+            schema.interaction_event,
+            schema.context_projection_event.c.event_id
+            == schema.interaction_event.c.event_id,
+        )
+        .where(
+            schema.context_projection_event.c.projection_id == projection["projection_id"]
+        )
+        .order_by(schema.context_projection_event.c.ordinal)
+    ).mappings().all()
+    if len(selected) != 2 or [int(row["ordinal"]) for row in selected] != [0, 1]:
+        return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+
+    opening, selected_current = selected
+    if (
+        opening["event_id"] != item["opened_by_event_id"]
+        or selected_current["event_id"] != current_input["event_id"]
+    ):
+        return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+    if (
+        opening["relationship_id"] != projection["relationship_id"]
+        or opening["event_kind"] != "COUNTERPART_INPUT"
+        or opening["actor_kind"] != "COUNTERPART"
+        or opening["actor_ref"] != relationship["counterpart_id"]
+    ):
+        return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+
+    # ConversationOpenLoop is relationship-scoped. Its source may legitimately come
+    # from another thread/surface/channel; the durable relationship identity is the
+    # continuity boundary rather than transport adjacency.
+    return None
+
+
 def _contextual_selection_blocker(
     conn,
     *,
     projection: dict[str, Any],
     current_input: dict[str, Any],
 ) -> str | None:
-    """Validate the exact F4 contextual event set for projection reuse."""
+    """Validate the exact F4 immediate-prior contextual event set for reuse."""
 
     relationship = conn.execute(
         select(schema.relationship_identity).where(
@@ -168,9 +279,6 @@ def _contextual_selection_blocker(
     ):
         return "CONTEXTUAL_HISTORY_SELECTION_INVALID"
 
-    # Conversation identity is carried by the triggering counterpart input. The
-    # presented output is causally bound to that input through reply_to_event_id;
-    # F4 presentation rows do not duplicate conversation_id.
     if prior_input["conversation_id"] != current_input["conversation_id"]:
         return "CONTEXTUAL_HISTORY_BOUNDARY_MISMATCH"
 

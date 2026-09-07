@@ -74,7 +74,7 @@ The manifest also records the bounded selection policy:
 IMMEDIATE_PREVIOUS_PRESENTED_EXCHANGE
 ```
 
-The existing `context_projection_event` relation is sufficient; no schema migration or mutable conversation-context aggregate is introduced.
+The existing `context_projection_event` relation is sufficient; no mutable conversation-context aggregate is introduced.
 
 ## Provider rendering
 
@@ -101,6 +101,8 @@ COMPANION_EXPRESSION
 with `source_ref = null`.
 
 `source-free` here means that the response is not asserting Claim/WorldResult provenance. It does not mean the invocation had no selected conversational history.
+
+Provider rendering is versioned. The current executable renderer identity is `f4-renderer-v3`; it retains this `prior_timeline_context` contract while also supporting the later bounded ConversationOpenLoop rendering contract. Renderer identity changes whenever the provider-context structure changes.
 
 ## Recovery
 
@@ -156,7 +158,7 @@ The executable suite must prove at least:
 8. surface/channel-boundary mismatch fails closed;
 9. the current contextual input must be the Timeline frontier;
 10. process loss after durable generation recovers the same projection without reselection or regeneration; and
-11. renderer identity changes when the provider context rendering contract changes.
+11. the current model invocation records the renderer identity required by the provider-context contract.
 
 ## Scope boundary
 
@@ -167,9 +169,10 @@ This checkpoint does not implement:
 - semantic search over Timeline history;
 - memory inference from prior conversational text;
 - using prior Companion speech as factual evidence;
-- cross-thread contextual reference resolution;
+- cross-thread contextual reference resolution for this immediate-prior mechanism;
 - cross-channel contextual fallback;
-- long-horizon ConversationOpenLoop resolution; or
 - model-selected context retrieval.
 
-The checkpoint exists to establish one mechanically honest bridge from a current conversational reference to exact canonical prior interaction before widening conversational continuity further.
+A later bounded relationship-scoped ConversationOpenLoop mechanism may resume an explicitly admitted unresolved conversational dependency across a thread change. That capability does not widen this immediate-prior selection contract into generic history retrieval.
+
+This checkpoint exists to establish one mechanically honest bridge from a current conversational reference to exact canonical prior interaction before widening conversational continuity further.
