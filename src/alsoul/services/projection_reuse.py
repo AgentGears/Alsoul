@@ -151,13 +151,29 @@ def _open_loop_selection_blocker(
     ):
         return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
 
-    closure = conn.execute(
-        select(schema.conversation_open_loop_closure.c.open_loop_id).where(
-            schema.conversation_open_loop_closure.c.open_loop_id == item["open_loop_id"]
+    # Reuse must preserve the same uniqueness condition that fresh selection used.
+    # Open-loop admission can occur for an already-admitted Timeline event without
+    # advancing the Timeline frontier, so frontier equality alone cannot fence this
+    # derived relationship state. The selected loop must still be the one and only
+    # unresolved DECISION loop at provider-execution time.
+    active_loop_ids = conn.execute(
+        select(schema.conversation_open_loop.c.open_loop_id)
+        .outerjoin(
+            schema.conversation_open_loop_closure,
+            schema.conversation_open_loop_closure.c.open_loop_id
+            == schema.conversation_open_loop.c.open_loop_id,
         )
-    ).scalar_one_or_none()
-    if closure is not None:
+        .where(
+            schema.conversation_open_loop.c.relationship_id
+            == projection["relationship_id"],
+            schema.conversation_open_loop.c.loop_kind == "DECISION",
+            schema.conversation_open_loop_closure.c.open_loop_id.is_(None),
+        )
+    ).scalars().all()
+    if item["open_loop_id"] not in active_loop_ids:
         return "CONVERSATION_OPEN_LOOP_NO_LONGER_ACTIVE"
+    if len(active_loop_ids) != 1:
+        return "CONVERSATION_OPEN_LOOP_SELECTION_AMBIGUOUS"
 
     selected = conn.execute(
         select(
