@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Mapping
 from urllib.request import Request, urlopen
@@ -213,6 +213,35 @@ def test_local_surface_survives_process_recomposition_without_duplicate_work(
     assert replay.relationship_id == first.relationship_id
     assert world2.calls == 0
     assert model2.calls == 0
+
+
+def test_local_surface_input_reservation_preserves_original_occurrence(now, tmp_path):
+    store = LocalSurfaceStore(tmp_path / "surface.db")
+    arguments = {
+        "transport_event_id": "event-1",
+        "identity_namespace": "local-surface",
+        "external_subject": "u1",
+        "surface_namespace": "alsoul.first_party",
+        "surface_ref": "primary-text-surface",
+        "channel_namespace": "alsoul.first_party",
+        "channel_ref": "primary-text-channel",
+        "content_text": "hello",
+        "conversation_id": "local-first-party",
+    }
+
+    first = store.reserve_input(**arguments, occurred_at=now)
+    replay = store.reserve_input(**arguments, occurred_at=now + timedelta(hours=1))
+
+    assert first.existing is False
+    assert first.occurred_at == now
+    assert replay.existing is True
+    assert replay.occurred_at == now
+
+    with pytest.raises(ValueError):
+        store.reserve_input(
+            **{**arguments, "content_text": "different"},
+            occurred_at=now + timedelta(hours=2),
+        )
 
 
 def test_local_surface_store_rejects_key_reuse_with_different_content(tmp_path):
