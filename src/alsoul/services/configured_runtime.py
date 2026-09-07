@@ -222,7 +222,12 @@ class ConfiguredFoundationRuntime:
     ) -> FoundationInteractionRunResult:
         """Run the bounded F4 purpose gate over one already-admitted input."""
 
-        classification = self.interaction_gate.classify_event(current_input_event_id)
+        classification = self.interaction_gate.classify_event(
+            current_input_event_id,
+            expected_relationship_id=relationship_id,
+            expected_surface_binding_id=surface_binding_id,
+            expected_channel_binding_id=channel_binding_id,
+        )
         if classification.purpose == "MEMORY_STATEMENT":
             memory = self.memory_admission.consider_event(current_input_event_id)
             return FoundationInteractionRunResult(
