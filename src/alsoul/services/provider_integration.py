@@ -141,7 +141,7 @@ class ModelGenerationRunner:
         *,
         clock: Clock | None = None,
         ids: IdGenerator | None = None,
-        renderer_version: str = "f4-renderer-v3",
+        renderer_version: str = "f4-renderer-v4",
     ) -> None:
         self.services = services
         self.clock = clock or SystemClock()
