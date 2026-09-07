@@ -12,7 +12,6 @@ from alsoul.host.config import FoundationHostConfig
 from alsoul.host.readiness import HostReadiness, require_host_readiness
 from alsoul.services import (
     ConfiguredFoundationRuntime,
-    F4CounterpartMemoryAdmission,
     FirstPartyIngress,
     FoundationServices,
     RuntimeSecrets,
@@ -51,22 +50,24 @@ class LocalSurfaceInteractionResult:
     counterpart_id: UUID
     relationship_id: UUID
     input_event_id: UUID
-    presented_event_id: UUID
-    companion_output_id: UUID
-    content_text: str
+    presented_event_id: UUID | None
+    companion_output_id: UUID | None
+    content_text: str | None
     transport_event_id: str
     idempotent_input_replay: bool
+    interaction_purpose: str = "WORLD_QUESTION"
+    surface_notice: str | None = None
     memory_disposition: str = "NO_CANDIDATE"
     memory_claim_id: UUID | None = None
     memory_corrected_claim_id: UUID | None = None
 
 
 class LocalFirstPartySurfaceApplication:
-    """Local first-party UI composition over the existing trusted F4 boundaries.
+    """Local first-party UI composition over the trusted F4 boundaries.
 
-    The surface owns only local interaction routing and operational presentation
-    acceptance state. Canonical identity, Timeline, evidence, memory admission,
-    cognition, adoption, and presentation history remain owned by semantic services.
+    The surface owns local transport routing and operational presentation acceptance
+    only. Semantic interaction-purpose routing lives in ConfiguredFoundationRuntime,
+    so the browser cannot decide whether an input becomes memory or fresh-world work.
     """
 
     def __init__(
@@ -87,7 +88,6 @@ class LocalFirstPartySurfaceApplication:
         self.engine = create_sqlite_engine(config.database_path)
         self.services = FoundationServices(self.engine, clock=self.clock)
         self.ingress = FirstPartyIngress(self.services)
-        self.memory_admission = F4CounterpartMemoryAdmission(self.services)
         self.surface_store = LocalSurfaceStore(surface_state_path)
         self._transport_events_seen_this_process: set[str] = set()
         self.runtime = ConfiguredFoundationRuntime(
@@ -144,13 +144,7 @@ class LocalFirstPartySurfaceApplication:
             conversation_id=conversation_id,
         )
         admitted = self.ingress.admit(envelope)
-
-        # Memory admission is a distinct governed boundary after canonical input
-        # persistence and before ContextProjection. A statement can therefore become
-        # usable in the same response only after Claim/Evidence admission commits.
-        memory = self.memory_admission.consider_event(admitted.event_id)
-
-        response = self.runtime.respond(
+        interaction = self.runtime.interact(
             relationship_id=admitted.relationship_id,
             current_input_event_id=admitted.event_id,
             surface_binding_id=admitted.surface_binding_id,
@@ -158,6 +152,30 @@ class LocalFirstPartySurfaceApplication:
             after_process_loss=replay_from_prior_process,
         )
 
+        if interaction.interaction_purpose == "MEMORY_STATEMENT":
+            memory = interaction.memory_admission
+            if memory is None:
+                raise RuntimeError("memory interaction completed without admission result")
+            return LocalSurfaceInteractionResult(
+                companion_person_id=admitted.companion_person_id,
+                counterpart_id=admitted.counterpart_id,
+                relationship_id=admitted.relationship_id,
+                input_event_id=admitted.event_id,
+                presented_event_id=None,
+                companion_output_id=None,
+                content_text=None,
+                transport_event_id=event_key,
+                idempotent_input_replay=admitted.idempotent_replay,
+                interaction_purpose=interaction.interaction_purpose,
+                surface_notice=_memory_surface_notice(memory.disposition),
+                memory_disposition=memory.disposition,
+                memory_claim_id=memory.claim_id,
+                memory_corrected_claim_id=memory.corrected_claim_id,
+            )
+
+        response = interaction.response
+        if response is None:
+            raise RuntimeError("world-question interaction completed without response")
         presentation = self.surface_store.get_by_companion_output_id(
             response.companion_output_id
         )
@@ -185,9 +203,7 @@ class LocalFirstPartySurfaceApplication:
             content_text=content,
             transport_event_id=event_key,
             idempotent_input_replay=admitted.idempotent_replay,
-            memory_disposition=memory.disposition,
-            memory_claim_id=memory.claim_id,
-            memory_corrected_claim_id=memory.corrected_claim_id,
+            interaction_purpose=interaction.interaction_purpose,
         )
 
     def close(self) -> None:
@@ -198,6 +214,16 @@ class LocalFirstPartySurfaceApplication:
 
     def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
         self.close()
+
+
+def _memory_surface_notice(disposition: str) -> str:
+    """Return operational UI status, never CompanionPerson conversational content."""
+
+    if disposition == "CORRECTED":
+        return "Memory corrected"
+    if disposition == "UNCHANGED":
+        return "Memory already current"
+    return "Memory updated"
 
 
 __all__ = [

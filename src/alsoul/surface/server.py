@@ -104,6 +104,8 @@ def _handler_factory(server: LocalSurfaceServer):
                         "ok": True,
                         "result": {
                             "content_text": result.content_text,
+                            "interaction_purpose": result.interaction_purpose,
+                            "surface_notice": result.surface_notice,
                             "transport_event_id": result.transport_event_id,
                             "idempotent_input_replay": result.idempotent_input_replay,
                         },
@@ -269,8 +271,12 @@ form.addEventListener('submit', async (event) => {{
     }});
     const payload = await response.json();
     if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || 'Interaction failed');
-    add('alsoul', payload.result.content_text);
-    status.textContent = 'Local first-party surface';
+    if (payload.result.content_text !== null) {{
+      add('alsoul', payload.result.content_text);
+      status.textContent = 'Local first-party surface';
+    }} else {{
+      status.textContent = payload.result.surface_notice || 'Local first-party surface';
+    }}
   }} catch (error) {{
     status.textContent = String(error.message || error);
   }} finally {{

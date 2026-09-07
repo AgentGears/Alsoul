@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Mapping
 
+from sqlalchemy import func, select
+
 from alsoul.adapters import HttpResponse, JsonHttpResponse
 from alsoul.domain.types import FixedClock
 from alsoul.host.config import FoundationHostConfig
@@ -14,6 +16,7 @@ from alsoul.services import (
     PresentationRuntimeConfig,
     WorldRuntimeConfig,
 )
+from alsoul.storage import schema
 from alsoul.surface import LocalFirstPartySurfaceApplication, LocalSurfaceIdentity
 
 
@@ -108,7 +111,7 @@ def _config(db_path) -> FoundationHostConfig:
     )
 
 
-def test_local_surface_admits_statement_before_projection_and_recovers_it_after_restart(
+def test_local_surface_routes_memory_only_then_recovers_it_for_later_world_question(
     services, bootstrapper, db_path, now
 ):
     ids = bootstrapper.bootstrap(
@@ -136,14 +139,41 @@ def test_local_surface_admits_statement_before_projection_and_recovers_it_after_
             "My machine has 16 GB RAM.",
             transport_event_id="surface-memory-1",
         )
+        assert app1.surface_store.count() == 0
+        with app1.engine.connect() as conn:
+            investigations = conn.execute(
+                select(func.count()).select_from(schema.investigation)
+            ).scalar_one()
+            invocations = conn.execute(
+                select(func.count()).select_from(schema.model_invocation)
+            ).scalar_one()
+            outputs = conn.execute(
+                select(func.count()).select_from(schema.companion_output)
+            ).scalar_one()
+            presentations = conn.execute(
+                select(func.count())
+                .select_from(schema.interaction_event)
+                .where(
+                    schema.interaction_event.c.event_kind
+                    == "COMPANION_PRESENTED_OUTPUT"
+                )
+            ).scalar_one()
 
     assert first.companion_person_id == ids.companion_person_id
     assert first.relationship_id == ids.relationship_id
+    assert first.interaction_purpose == "MEMORY_STATEMENT"
     assert first.memory_disposition == "ADMITTED"
     assert first.memory_claim_id is not None
-    assert "You told me your machine has 16 GB RAM." in first.content_text
-    assert world1.calls == 1
-    assert model1.calls == 1
+    assert first.presented_event_id is None
+    assert first.companion_output_id is None
+    assert first.content_text is None
+    assert first.surface_notice == "Memory updated"
+    assert world1.calls == 0
+    assert model1.calls == 0
+    assert investigations == 0
+    assert invocations == 0
+    assert outputs == 0
+    assert presentations == 0
 
     later = now + timedelta(hours=1)
     world2 = _WorldTransport()
@@ -163,7 +193,11 @@ def test_local_surface_admits_statement_before_projection_and_recovers_it_after_
 
     assert second.companion_person_id == first.companion_person_id
     assert second.relationship_id == first.relationship_id
+    assert second.interaction_purpose == "WORLD_QUESTION"
     assert second.memory_disposition == "NO_CANDIDATE"
+    assert second.presented_event_id is not None
+    assert second.companion_output_id is not None
+    assert second.content_text is not None
     assert "You told me your machine has 16 GB RAM." in second.content_text
     assert "I checked the current requirement; it is 24 GB RAM." in second.content_text
     assert world2.calls == 1

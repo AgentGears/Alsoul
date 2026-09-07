@@ -1,10 +1,24 @@
-# F4 Configured Reactive Runtime
+# F4 Configured Runtime
 
 ## Purpose
 
-This checkpoint closes the gap between deterministic acceptance fixtures and a configured reactive runtime without widening semantic authority.
+This checkpoint closes the gap between deterministic acceptance fixtures and a configured F4 runtime without widening semantic authority.
 
-The F4 chain remains:
+The runtime now exposes two distinct execution levels:
+
+```text
+ConfiguredFoundationRuntime.interact
+    ↓
+bounded interaction-purpose gate
+    ├── MEMORY_STATEMENT → evidence-grounded memory admission → stop
+    └── WORLD_QUESTION   → configured reactive response path
+
+ConfiguredFoundationRuntime.respond
+    ↓
+already-selected WORLD_QUESTION response/recovery path
+```
+
+The checked-response chain remains:
 
 ```text
 Counterpart input
@@ -21,7 +35,7 @@ Counterpart input
 → presented Timeline event
 ```
 
-The new runtime boundary adds configuration, source-specific interpretation, provider contract probing, and operator diagnostics around the existing semantic services. None of those concerns become CompanionPerson identity, memory, world truth, or shared-history authority.
+The configured runtime adds interaction routing, configuration, source-specific interpretation, provider contract probing, and operator diagnostics around the existing semantic services. None of those concerns become CompanionPerson identity, memory, world truth, or shared-history authority.
 
 ## Configuration boundary
 
@@ -37,6 +51,10 @@ ModelRuntimeConfig
     provider binding reference
     model reference
     timeout
+
+PresentationRuntimeConfig
+    HTTPS endpoint
+    timeout
 ```
 
 `RuntimeSecrets` is separate transport-only state. Model authorization material is supplied when adapters are constructed and is never written into ContextProjection, ModelInvocation identity fields, GeneratedOutput, diagnostics, or public configuration snapshots.
@@ -47,13 +65,40 @@ credential ≠ identity
 credential ≠ authority
 ```
 
-The configured runtime requires HTTPS for both world acquisition and model generation. Embedded URL credentials and fragments are rejected.
+The configured runtime requires HTTPS for world acquisition, model generation, and configured presentation. Embedded URL credentials and fragments are rejected.
+
+## Interaction-purpose boundary
+
+`ConfiguredFoundationRuntime.interact` is the high-level F4 interaction entry point after trusted ingress has already committed a canonical `COUNTERPART_INPUT`.
+
+It uses `F4InteractionPurposeGate` to derive one of the only two purposes implemented by F4:
+
+```text
+MEMORY_STATEMENT
+WORLD_QUESTION
+```
+
+The gate validates that the current input belongs to the supplied relationship, surface binding, and channel binding before the runtime continues. This prevents a high-level caller from pairing one canonical event with another route.
+
+For `MEMORY_STATEMENT`, the runtime invokes `F4CounterpartMemoryAdmission` and returns the memory outcome without creating fresh-world or cognition state.
+
+For `WORLD_QUESTION`, the runtime delegates to `respond` and the existing recovery-safe response coordinator.
+
+Unsupported input fails closed before provider work.
+
+```text
+interaction classification ≠ model authority
+memory admission ≠ response obligation
+unsupported input ≠ inferred route
+```
+
+See [F4 Interaction Purpose Gate](F4_INTERACTION_PURPOSE_GATE.md) for the bounded routing contract.
 
 ## Source-specific interpretation
 
 Raw provider return bytes do not become a WorldResult.
 
-The runtime first persists the acquisition as normal:
+The checked-response path first persists the acquisition as normal:
 
 ```text
 Observation
@@ -69,7 +114,7 @@ For the current F4 slice, `F4JsonMemoryRequirementExtractor` accepts one JSON se
 minimum_memory_gb: positive integer
 ```
 
-A configured production runtime also pins the expected HTTPS source origin. A capture from another origin is retained as historical acquisition evidence but is rejected for WorldResult derivation under that configured source contract.
+A configured runtime also pins the expected HTTPS source origin. A capture from another origin is retained as historical acquisition evidence but is rejected for WorldResult derivation under that configured source contract.
 
 ```text
 capture persisted
@@ -81,20 +126,23 @@ source contract satisfied
 
 The extractor only returns an `ExtractedWorldResult` proposal. `FoundationServices.admit_world_result` remains the authoritative admission boundary and independently validates evidence lineage and semantic support.
 
-## ConfiguredFoundationRuntime
+## ConfiguredFoundationRuntime composition
 
 `ConfiguredFoundationRuntime` composes:
 
 ```text
 FoundationServices
+F4InteractionPurposeGate
+F4CounterpartMemoryAdmission
 FoundationResponseCoordinator
 HttpWorldAdapter
 F4JsonMemoryRequirementExtractor
 JsonModelProviderAdapter
+JsonFirstPartyPresentationAdapter
 FoundationRuntimeDiagnostics
 ```
 
-The caller supplies only durable response identity and presentation-route references:
+The high-level caller supplies durable interaction identity and route references:
 
 ```text
 relationship_id
@@ -105,7 +153,7 @@ channel_binding_id
 
 Provider route configuration is constructed outside canonical companion state.
 
-The runtime still resumes from the furthest trustworthy durable stage. Reconfiguration or process replacement therefore does not recreate history or convert provider state into companion state.
+For an interaction already known to be on the checked-response path, lower-level `respond` keeps the existing recovery contract. It resumes from the furthest trustworthy durable stage. Reconfiguration or process replacement therefore does not recreate history or convert provider state into companion state.
 
 ## Model-provider contract probe
 
@@ -135,7 +183,7 @@ No user message, memory, world result, or relationship state is used by the prob
 
 ## Operator diagnostics
 
-`FoundationRuntimeDiagnostics` derives a content-free view of one response from canonical rows.
+`FoundationRuntimeDiagnostics` derives a content-free view of one checked response from canonical rows.
 
 It can expose:
 
@@ -178,7 +226,7 @@ PRESENT_ADOPTED_OUTPUT
 NONE
 ```
 
-These values describe what the operator/runtime may safely attempt next. They do not create new lifecycle authority.
+These values describe what the operator/runtime may safely attempt next on the checked-response path. They do not create new lifecycle authority.
 
 ## Failure semantics
 
@@ -196,6 +244,8 @@ This is intentional. Alsoul can truthfully retain what it acquired without claim
 
 Likewise, an invalid model contract response remains a rejected provider attempt. It does not become CompanionOutput or shared-history presentation.
 
+An unsupported high-level interaction is different: trusted ingress may already have preserved the canonical counterpart input, but the purpose gate stops before Investigation or provider execution.
+
 ## Configuration persistence rule
 
 This checkpoint does not add a canonical runtime-configuration table.
@@ -204,15 +254,19 @@ Provider routes are deployment/runtime configuration rather than Person or Relat
 
 ## Acceptance coverage
 
-The executable suite now verifies:
+The executable suite verifies:
 
-- configured HTTPS world and model routes;
+- configured HTTPS world, model, and presentation routes;
 - strict same-origin world interpretation;
 - capture retention without WorldResult admission when source policy rejects the capture;
 - transport credential separation from public configuration and canonical provider identity fields;
 - a configured model contract probe using synthetic context only;
 - no ModelInvocation or GeneratedOutput created by the operator probe;
-- operator diagnostics before and after a complete reactive response;
-- the configured network-adapter path through memory, fresh world evidence, model generation, adoption, and presentation.
+- operator diagnostics before and after a complete checked response;
+- a memory-only high-level interaction that creates admitted memory but no Investigation, ModelInvocation, CompanionOutput, or presented Timeline output;
+- exact memory-only replay without duplicate memory or provider work;
+- high-level route fencing to the canonical relationship/surface/channel event;
+- unsupported high-level interaction failing before provider work; and
+- the configured checked path through memory retrieval, fresh world evidence, model generation, adoption, and presentation.
 
-The configured path is still the F4 reactive slice. It does not introduce external Actions, durable delegated work, triggers, schedules, proactive contact, multi-channel fallback, or rich embodiment.
+The configured path is still the bounded F4 slice. It does not introduce general conversational routing, external Actions, durable delegated work, triggers, schedules, proactive contact, multi-channel fallback, or rich embodiment.

@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     interact = commands.add_parser(
         "interact",
-        help="Admit one trusted first-party input envelope and run the F4 response",
+        help="Admit one trusted first-party input envelope and run the bounded F4 interaction",
     )
     interact.add_argument("--after-process-loss", action="store_true")
     interact.set_defaults(reads_ingress=True)
@@ -90,7 +90,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.command == "interact":
                 assert envelope is not None
                 admitted = app.ingress.admit(envelope)
-                response = app.runtime.respond(
+                interaction = app.runtime.interact(
                     relationship_id=admitted.relationship_id,
                     current_input_event_id=admitted.event_id,
                     surface_binding_id=admitted.surface_binding_id,
@@ -99,7 +99,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 result = {
                     "ingress": _jsonable(admitted),
-                    "response": _jsonable(response),
+                    "interaction_purpose": interaction.interaction_purpose,
+                    "memory": _jsonable(interaction.memory_admission),
+                    "response": _jsonable(interaction.response),
                 }
             elif args.command == "diagnose":
                 result = app.runtime.diagnose(

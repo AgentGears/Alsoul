@@ -17,6 +17,7 @@ from alsoul.adapters import (
     UrllibJsonTransport,
     https_origin,
 )
+from alsoul.domain.errors import fail
 from alsoul.domain.models import FoundationResponseDraft
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
 from alsoul.services.diagnostics import (
@@ -26,6 +27,14 @@ from alsoul.services.diagnostics import (
 from alsoul.services.foundation import (
     FoundationServices,
     WORLD_MEMORY_REQUIREMENT_PREDICATE,
+)
+from alsoul.services.interaction_routing import (
+    F4InteractionPurpose,
+    F4InteractionPurposeGate,
+)
+from alsoul.services.memory_admission import (
+    F4CounterpartMemoryAdmission,
+    F4MemoryAdmissionResult,
 )
 from alsoul.services.runtime import (
     FoundationResponseCoordinator,
@@ -134,13 +143,22 @@ class ModelContractProbeResult:
     epistemic_kinds: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class FoundationInteractionRunResult:
+    """Outcome of the bounded F4 interaction-purpose gate."""
+
+    interaction_purpose: F4InteractionPurpose
+    memory_admission: F4MemoryAdmissionResult | None = None
+    response: FoundationResponseRunResult | None = None
+
+
 class ConfiguredFoundationRuntime:
-    """Configured F4 reactive runtime using controlled network adapters.
+    """Configured F4 runtime using controlled network adapters.
 
     Configuration and credentials remain outside canonical companion state. The
-    runtime composes a strict HTTPS world-source contract, bounded JSON extraction,
-    the configured model endpoint, a restart-idempotent first-party presentation
-    endpoint, recovery-safe response coordination, and derived operator diagnostics.
+    runtime first applies a provider-independent interaction-purpose gate. A bounded
+    memory statement can terminate after evidence-grounded memory admission, while a
+    bounded world question enters the existing recovery-safe reactive response path.
     """
 
     def __init__(
@@ -183,12 +201,56 @@ class ConfiguredFoundationRuntime:
             timeout_seconds=config.presentation.timeout_seconds,
             transport=presentation_transport or UrllibJsonTransport(),
         )
+        self.interaction_gate = F4InteractionPurposeGate(services)
+        self.memory_admission = F4CounterpartMemoryAdmission(services)
         self.coordinator = FoundationResponseCoordinator(
             services,
             clock=self.clock,
             ids=self.ids,
         )
         self.diagnostics = FoundationRuntimeDiagnostics(services.engine)
+
+    def interact(
+        self,
+        *,
+        relationship_id: UUID,
+        current_input_event_id: UUID,
+        surface_binding_id: UUID,
+        channel_binding_id: UUID,
+        after_process_loss: bool = False,
+        checkpoint: RuntimeCheckpoint | None = None,
+    ) -> FoundationInteractionRunResult:
+        """Run the bounded F4 purpose gate over one already-admitted input."""
+
+        classification = self.interaction_gate.classify_event(
+            current_input_event_id,
+            expected_relationship_id=relationship_id,
+            expected_surface_binding_id=surface_binding_id,
+            expected_channel_binding_id=channel_binding_id,
+        )
+        if classification.purpose == "MEMORY_STATEMENT":
+            memory = self.memory_admission.consider_event(current_input_event_id)
+            return FoundationInteractionRunResult(
+                interaction_purpose=classification.purpose,
+                memory_admission=memory,
+            )
+        if classification.purpose == "WORLD_QUESTION":
+            response = self.respond(
+                relationship_id=relationship_id,
+                current_input_event_id=current_input_event_id,
+                surface_binding_id=surface_binding_id,
+                channel_binding_id=channel_binding_id,
+                after_process_loss=after_process_loss,
+                checkpoint=checkpoint,
+            )
+            return FoundationInteractionRunResult(
+                interaction_purpose=classification.purpose,
+                response=response,
+            )
+        fail(
+            "INTERACTION_PURPOSE_UNSUPPORTED",
+            "input is outside the bounded F4 interaction-purpose contract",
+        )
 
     def respond(
         self,
@@ -302,6 +364,7 @@ def _validate_probe_sources(draft: FoundationResponseDraft) -> None:
 
 __all__ = [
     "ConfiguredFoundationRuntime",
+    "FoundationInteractionRunResult",
     "FoundationRuntimeConfig",
     "ModelContractProbeResult",
     "ModelRuntimeConfig",

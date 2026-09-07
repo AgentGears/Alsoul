@@ -12,6 +12,8 @@ primary_machine.memory_gb
 
 The purpose is not to implement general memory extraction. It is to prove that a trusted counterpart statement can become durable memory only through explicit evidence-grounded admission, and that correction remains an append-only claim transition rather than a rewrite of history.
 
+The later interaction-purpose gate preserves this admission boundary while allowing a pure memory statement to terminate successfully after durable admission rather than being forced through unrelated world/cognition work.
+
 ## Core invariant
 
 ```text
@@ -21,7 +23,7 @@ counterpart statement
 ≠ admitted memory
 ```
 
-The implemented path is:
+The implemented memory path is:
 
 ```text
 trusted first-party input
@@ -44,7 +46,7 @@ COUNTERPART_STATEMENT EvidenceItem
 +
 FACTUAL PersonClaim / relationship-scoped MemoryClaim semantics
 ↓
-future retrieval into ContextProjection
+future retrieval into ContextProjection when relevant
 ```
 
 A model is not asked to decide whether the statement is memory-worthy, which predicate it represents, who the statement is about, or whether an existing claim should be replaced.
@@ -117,7 +119,7 @@ ClaimEvidence(SUPPORTS)
 
 The claim remains scoped to the existing relationship.
 
-This checkpoint deliberately leaves the older lower-level claim-admission primitive available to existing foundation tests and internal callers. The new natural first-party memory path is the bounded path defined here; it does not imply that arbitrary callers or model output may create memory directly.
+This checkpoint deliberately leaves the older lower-level claim-admission primitive available to existing foundation tests and internal callers. The natural first-party memory path is the bounded path defined here; it does not imply that arbitrary callers or model output may create memory directly.
 
 ## Concurrent admission fencing
 
@@ -152,32 +154,49 @@ concurrent proposal A + proposal B
 
 One transaction establishes the current state first. A waiting transaction must then re-resolve that committed state and either remain unchanged, create an explicit correction, or fail closed.
 
-## Same-turn ordering
+## Admission ordering and interaction routing
 
-For the local first-party surface, memory admission occurs after trusted input persistence and before reactive ContextProjection construction:
+Memory admission occurs only after trusted input persistence:
 
 ```text
 COUNTERPART_INPUT committed
+↓
+interaction-purpose classification
+↓
+MEMORY_STATEMENT
 ↓
 extracted candidate
 ↓
 memory proposal
 ↓
 Claim/Evidence admission
-↓
-ContextProjection
-↓
-model invocation
 ```
 
-Therefore a statement can be used as remembered personal context in the same response only after the Claim/Evidence transaction has committed.
+For a pure bounded `MEMORY_STATEMENT`, that is a complete successful interaction. The runtime does not create a ContextProjection or invoke a model merely because memory was admitted.
 
 This preserves:
 
 ```text
 current context ≠ durable memory
 memory proposal ≠ memory admission
+memory admission ≠ response obligation
 ```
+
+When a later supported world question needs the personal fact, retrieval happens from admitted memory into that later cognition path:
+
+```text
+later WORLD_QUESTION
+↓
+recover current admitted memory
+↓
+fresh world Investigation
+↓
+ContextProjection
+↓
+model invocation
+```
+
+The remembered fact is therefore usable only because the durable Claim/Evidence transaction committed earlier; it is not carried forward by transcript convention.
 
 ## Correction and supersession
 
@@ -210,6 +229,8 @@ Two different repetition cases are distinct.
 If the same canonical source InteractionEvent is processed again after process loss, the memory admission service recovers the claim already supported by that event. It does not create another claim or another EvidenceItem.
 
 A write-capable worker also rechecks exact-source admission after acquiring the relationship fence, so two concurrent processors of the same source event cannot duplicate the admitted state.
+
+Under the high-level interaction-purpose gate, replaying the same memory-only transport event also remains provider-free: no fresh-world acquisition, model invocation, or CompanionOutput is introduced just because the process restarted.
 
 ### New statement with unchanged value
 
@@ -250,27 +271,46 @@ existing admitted claim recovered
 
 No transcript reconstruction or model inference is required.
 
+The recovered memory can then be used by a different later interaction after complete surface/runtime recomposition because retrieval follows the durable Claim/Evidence graph rather than process-local conversational state.
+
 ## First-party F4 behavior
 
-The local surface now composes:
+The first-party path now branches after canonical input admission:
 
 ```text
-browser input
+browser / host input
 ↓
 trusted ingress
 ↓
-canonical InteractionEvent
+canonical COUNTERPART_INPUT
 ↓
-F4CounterpartMemoryAdmission
-↓
-configured reactive runtime
-↓
-first-party presentation acceptance
-↓
-presented Timeline event
+F4InteractionPurposeGate
+├── MEMORY_STATEMENT
+│   ↓
+│   F4CounterpartMemoryAdmission
+│   ↓
+│   durable Claim/Evidence state
+│   ↓
+│   no CompanionOutput required
+│
+└── WORLD_QUESTION
+    ↓
+    recover admitted personal memory
+    ↓
+    configured reactive runtime
+    ↓
+    fresh world evidence + WorldResult
+    ↓
+    ContextProjection / model generation
+    ↓
+    CompanionOutput / presentation acceptance
+    ↓
+    presented Timeline event
 ```
 
-The current F4 response contract remains intentionally fixed and narrow. Broader conversational intent routing, general-purpose memory extraction, memory forgetting UI, temporal upgrade interpretation, and model-proposed memory are not introduced by this checkpoint.
+The local browser may show deterministic operational status such as `Memory updated` after the memory-only path. That status is not CompanionPerson speech, is not a CompanionOutput, and does not become a presented Timeline event.
+
+The current F4 contract remains intentionally fixed and narrow. General conversational routing, general-purpose memory extraction, memory forgetting UI, temporal upgrade interpretation, and model-proposed memory are not introduced by this checkpoint.
 
 ## Acceptance contract
 
@@ -287,8 +327,9 @@ The executable suite must prove at least:
 9. a different value without explicit correction fails closed;
 10. a repeated same value leaves one current claim;
 11. current-memory retrieval resolves the corrected claim rather than the historical one;
-12. local first-party response construction performs memory admission before ContextProjection so newly admitted memory is eligible only after commit;
-13. the admitted memory survives complete surface/runtime recomposition and is available to a later interaction.
+12. a pure memory statement completes without Investigation, ModelInvocation, CompanionOutput, or presented Timeline output;
+13. replaying the same memory-only transport event remains idempotent and performs no provider work; and
+14. after complete surface/runtime recomposition, a later supported world question retrieves the admitted memory into its ContextProjection and checked response path.
 
 ## Scope boundary
 
@@ -301,8 +342,10 @@ This checkpoint does not implement:
 - temporal hardware-upgrade classification;
 - memory forgetting or suppression UI;
 - cross-relationship memory scope;
+- general conversational intent routing;
+- mixed memory-and-question utterances;
 - external Actions;
-- delegated background work;
+- delegated background work; or
 - proactive monitoring.
 
 The checkpoint exists to make one statement-to-memory path mechanically honest before the implementation widens beyond F4.
