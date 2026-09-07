@@ -15,6 +15,7 @@ from alsoul.storage import schema
 F4InteractionPurpose = Literal[
     "MEMORY_STATEMENT",
     "WORLD_QUESTION",
+    "CONVERSATIONAL_RESPONSE",
     "UNSUPPORTED",
 ]
 
@@ -29,6 +30,29 @@ _WORLD_QUESTION_PATTERNS = (
         r"^\s*(?:does|do)\s+my\s+(?:machine|computer|laptop|pc|desktop)\s+"
         r"(?:meet|satisfy)\s+(?:the\s+)?current\s+"
         r"(?:software|application|program)\s+(?:memory\s+)?requirements?\s*\?\s*$",
+        flags=re.IGNORECASE,
+    ),
+)
+
+_CONVERSATIONAL_PATTERNS = (
+    re.compile(
+        r"^\s*(?:hi|hello|hey)(?:\s+there)?\s*[.!]?\s*$",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:thanks|thank\s+you)(?:\s+very\s+much)?\s*[.!]?\s*$",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*how\s+(?:are\s+you|is\s+it\s+going|are\s+things)(?:\s+today)?\s*\?\s*$",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*(?:bye|goodbye|good\s+night|see\s+you(?:\s+later)?)\s*[.!]?\s*$",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*tell\s+me\s+what\s+you\s+think\s+about\s+this\s*[.!?]?\s*$",
         flags=re.IGNORECASE,
     ),
 )
@@ -122,12 +146,14 @@ class F4InteractionPurposeGate:
 
 
 def classify_f4_interaction_text(content_text: str) -> F4InteractionPurpose:
-    """Classify only the two interaction purposes implemented by the F4 surface."""
+    """Classify only interaction purposes explicitly implemented by the F4 surface."""
 
     if extract_f4_memory_candidate(content_text) is not None:
         return "MEMORY_STATEMENT"
     if any(pattern.fullmatch(content_text) for pattern in _WORLD_QUESTION_PATTERNS):
         return "WORLD_QUESTION"
+    if any(pattern.fullmatch(content_text) for pattern in _CONVERSATIONAL_PATTERNS):
+        return "CONVERSATIONAL_RESPONSE"
     return "UNSUPPORTED"
 
 
