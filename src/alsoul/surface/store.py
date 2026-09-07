@@ -25,11 +25,11 @@ class LocalSurfacePresentation:
 
 
 class LocalSurfaceStore:
-    """Durable operational state for one local first-party presentation sink.
+    """Durable operational state for one local first-party surface.
 
-    This store is not canonical companion state. It records only what the local
-    surface has accepted under the existing semantic presentation key so process
-    restart cannot cause duplicate logical presentation acceptance.
+    This store is not canonical companion state. It preserves transport replay
+    identity and first-party sink acceptance so local process restart cannot mutate
+    the semantic request or duplicate logical presentation acceptance.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -43,6 +43,76 @@ class LocalSurfaceStore:
                 os.chmod(self.path, 0o600)
             except OSError:
                 pass
+
+    def reserve_input(
+        self,
+        *,
+        transport_event_id: str,
+        identity_namespace: str,
+        external_subject: str,
+        surface_namespace: str,
+        surface_ref: str,
+        channel_namespace: str,
+        channel_ref: str,
+        content_text: str,
+        conversation_id: str | None,
+        occurred_at: datetime,
+    ) -> datetime:
+        values = (
+            transport_event_id,
+            identity_namespace,
+            external_subject,
+            surface_namespace,
+            surface_ref,
+            channel_namespace,
+            channel_ref,
+            content_text,
+            conversation_id,
+        )
+        with sqlite3.connect(self.path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT * FROM inbound_transport_event WHERE transport_event_id = ?",
+                (transport_event_id,),
+            ).fetchone()
+            if existing is not None:
+                existing_values = (
+                    str(existing["transport_event_id"]),
+                    str(existing["identity_namespace"]),
+                    str(existing["external_subject"]),
+                    str(existing["surface_namespace"]),
+                    str(existing["surface_ref"]),
+                    str(existing["channel_namespace"]),
+                    str(existing["channel_ref"]),
+                    str(existing["content_text"]),
+                    existing["conversation_id"],
+                )
+                if existing_values != values:
+                    raise ValueError(
+                        "transport_event_id was replayed with different local input semantics"
+                    )
+                return datetime.fromisoformat(str(existing["occurred_at"]))
+
+            conn.execute(
+                """
+                INSERT INTO inbound_transport_event (
+                    transport_event_id,
+                    identity_namespace,
+                    external_subject,
+                    surface_namespace,
+                    surface_ref,
+                    channel_namespace,
+                    channel_ref,
+                    content_text,
+                    conversation_id,
+                    occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (*values, occurred_at.isoformat()),
+            )
+            conn.commit()
+        return occurred_at
 
     def accept_transport_request(
         self,
@@ -179,6 +249,22 @@ class LocalSurfaceStore:
 
     def _initialize(self) -> None:
         with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS inbound_transport_event (
+                    transport_event_id TEXT PRIMARY KEY,
+                    identity_namespace TEXT NOT NULL,
+                    external_subject TEXT NOT NULL,
+                    surface_namespace TEXT NOT NULL,
+                    surface_ref TEXT NOT NULL,
+                    channel_namespace TEXT NOT NULL,
+                    channel_ref TEXT NOT NULL,
+                    content_text TEXT NOT NULL,
+                    conversation_id TEXT,
+                    occurred_at TEXT NOT NULL
+                )
+                """
+            )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS presentation_acceptance (
