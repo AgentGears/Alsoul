@@ -2,15 +2,14 @@
 
 ## Status
 
-This checkpoint closes the forced-response discontinuity in the first-party F4 interaction slice.
+This checkpoint prevents canonical counterpart input from being forced through a semantic path that the input does not justify.
 
-Before this boundary existed, a counterpart statement could be admitted correctly as durable memory and then still fall through into the fixed fresh-world response pipeline. The result was persistence-correct but interaction-semantically wrong: remembering a fact did not itself justify starting an Investigation, invoking a model, adopting a CompanionOutput, or presenting a conversational response.
-
-F4 now distinguishes the two interaction purposes it actually implements:
+F4 now distinguishes three bounded implemented purposes:
 
 ```text
 MEMORY_STATEMENT
 WORLD_QUESTION
+CONVERSATIONAL_RESPONSE
 ```
 
 Everything else is `UNSUPPORTED` and fails closed after trusted ingress has preserved the input in canonical history.
@@ -20,8 +19,10 @@ Everything else is `UNSUPPORTED` and fails closed after trusted ingress has pres
 ```text
 canonical input ≠ interaction-purpose classification
 interaction classification ≠ model authority
-memory statement ≠ fresh-world question
+memory statement ≠ fresh-world question ≠ conversational response
 memory admission ≠ response obligation
+conversation ≠ fresh-world investigation
+conversation ≠ memory admission
 no CompanionOutput ≠ failed interaction
 surface notice ≠ CompanionOutput
 surface notice ≠ presented Timeline event
@@ -42,13 +43,23 @@ COUNTERPART_INPUT InteractionEvent
 F4InteractionPurposeGate
 ├── MEMORY_STATEMENT
 │   ↓
-│   F4MemoryCandidate
-│   ↓
-│   F4MemoryProposal
-│   ↓
 │   evidence-grounded memory admission
 │   ↓
 │   stop
+│
+├── CONVERSATIONAL_RESPONSE
+│   ↓
+│   source-free ContextProjection
+│   ↓
+│   ModelInvocation / GeneratedOutput
+│   ↓
+│   conversational adoption
+│   ↓
+│   CompanionOutput
+│   ↓
+│   first-party presentation acceptance
+│   ↓
+│   COMPANION_PRESENTED_OUTPUT
 │
 └── WORLD_QUESTION
     ↓
@@ -75,7 +86,7 @@ This ordering matters. The transport or browser does not classify raw input befo
 
 ## Deterministic bounded classification
 
-`F4InteractionPurposeGate` is provider-independent and read-only. It loads one immutable canonical `COUNTERPART_INPUT`, validates that the event belongs to the expected counterpart/relationship, and classifies only the event's canonical text.
+`F4InteractionPurposeGate` is provider-independent and read-only. It loads one immutable canonical `COUNTERPART_INPUT`, validates that the event belongs to the expected counterpart/relationship and exact surface/channel route, and classifies only the event's canonical text.
 
 The current classifier recognizes a deliberately small grammar.
 
@@ -94,17 +105,27 @@ Would the current software run on my machine?
 Does my computer meet the current software memory requirements?
 ```
 
+A supported conversational response includes self-contained social forms such as:
+
+```text
+Hello.
+Thanks.
+How are you?
+Goodbye.
+```
+
 Inputs outside those contracts are not handed to a model to guess intent. For example:
 
 ```text
 Tell me a joke.
 What is the weather?
+Tell me what you think about this.
 My machine has 16 GB RAM; would it run?
 ```
 
 remain canonical counterpart history but produce `INTERACTION_PURPOSE_UNSUPPORTED` at the high-level F4 interaction boundary.
 
-This preserves:
+The contextual phrase `this` remains unsupported because this checkpoint does not yet define a bounded prior-history selection policy for conversational reference resolution.
 
 ```text
 unknown purpose ≠ model-selected purpose
@@ -130,26 +151,43 @@ EvidenceItem + Claim admission
 return memory outcome
 ```
 
-A successful memory-only interaction does not create:
+A successful memory-only interaction does not create an Investigation, ContextProjection, ModelInvocation, GeneratedOutput, CompanionOutput, or `COMPANION_PRESENTED_OUTPUT` event. The durable semantic result is the admitted memory itself.
 
-- an Investigation;
-- an Observation;
-- a WorldResult;
-- a ContextProjection;
-- a ModelInvocation;
-- a GeneratedOutput;
-- a CompanionOutput; or
-- a `COMPANION_PRESENTED_OUTPUT` Timeline event.
+Exact transport/source replay recovers the same canonical input and admitted Claim/Evidence state without provider work or duplicate memory admission.
 
-The absence of those objects is intentional success, not an incomplete response.
+## Conversational interaction
 
-The durable semantic result is the admitted memory itself. Exact transport/source replay recovers the same canonical input and admitted Claim/Evidence state without provider work or duplicate memory admission.
+For `CONVERSATIONAL_RESPONSE`, the high-level runtime builds a minimal response projection containing the pinned Self revision, Relationship revision, Timeline frontier, and current input while selecting no personal Claim or WorldResult proposition.
+
+```text
+CONVERSATIONAL_RESPONSE
+↓
+ContextProjection
+    personal_context_items = []
+    world_context_items = []
+↓
+ModelInvocation
+↓
+GeneratedOutput
+    exactly one COMPANION_EXPRESSION
+    source_ref = null
+↓
+explicit conversational adoption
+↓
+CompanionOutput
+↓
+presentation acceptance
+↓
+presented Timeline event
+```
+
+This path performs no fresh-world acquisition and no memory admission. A source-free expression is Companion-owned wording, not evidence-backed world or memory provenance.
+
+See [F4 Conversational Response Path](F4_CONVERSATIONAL_RESPONSE.md) for the complete contract.
 
 ## World-question interaction
 
-For `WORLD_QUESTION`, the gate delegates to the existing recovery-safe response coordinator.
-
-The question path remains the F4 walking skeleton:
+For `WORLD_QUESTION`, the gate delegates to the recovery-safe checked response coordinator.
 
 ```text
 WORLD_QUESTION
@@ -169,60 +207,46 @@ presentation acceptance
 presented Timeline event
 ```
 
-A prior memory-only interaction can therefore establish the remembered personal fact without forcing a reply, and a later world question can recover that fact after complete process replacement and use it as eligible personal context.
+A prior memory-only interaction can establish the remembered personal fact without forcing a reply, and a later world question can recover that fact after complete process replacement and use it as eligible personal context.
 
 ## High-level and low-level runtime boundaries
 
-`ConfiguredFoundationRuntime.interact` is the high-level F4 interaction boundary. Both the process-facing host and the local first-party surface use this boundary, so interaction-purpose semantics do not belong to a particular UI.
+`ConfiguredFoundationRuntime.interact` is the high-level F4 interaction boundary. Both the process-facing host and local first-party surface use this boundary.
 
-The older `ConfiguredFoundationRuntime.respond` and `FoundationResponseCoordinator.respond` remain lower-level response/recovery primitives. They resume an interaction that has already been selected for the world-question response path. They are not general intent routers and do not independently reinterpret the input.
-
-This distinction is deliberate:
+`ConfiguredFoundationRuntime.respond` remains the lower-level checked `WORLD_QUESTION` response/recovery primitive. It now verifies the canonical input purpose and rejects a memory or conversational input before provider work.
 
 ```text
-interact = decide which implemented F4 semantic path applies
-respond  = execute/resume the already-selected reactive response path
+interact = select and execute one implemented F4 semantic path
+respond  = execute/resume an already-selected checked WORLD_QUESTION path
 ```
 
 ## Surface acknowledgement is not CompanionPerson speech
 
-A memory-only interaction may benefit from lightweight UI feedback so the person can see that the local operation completed. The local surface therefore exposes an operational `surface_notice`, such as:
+A memory-only interaction may use a deterministic operational `surface_notice`, such as:
 
 ```text
 Memory updated
 ```
 
-That notice is not adopted conversational content. It does not create a `CompanionOutput`, does not pass through the presentation boundary, and does not enter the canonical Timeline as `COMPANION_PRESENTED_OUTPUT`.
+That notice is not adopted conversational content. It does not create a `CompanionOutput`, pass through presentation, or enter canonical Timeline history as `COMPANION_PRESENTED_OUTPUT`.
 
-The browser renders the notice in surface status rather than an Alsoul message bubble.
-
-This preserves:
+A conversational response is different: it must cross model-generation, adoption, and first-party presentation boundaries before the browser renders it as Companion speech.
 
 ```text
 surface acknowledgement ≠ CompanionPerson utterance
 ```
 
-If Alsoul later needs to conversationally acknowledge remembering something, that will require an explicit cognition/adoption/presentation path rather than reclassifying operational UI text as speech.
-
 ## Unsupported interaction
 
 `UNSUPPORTED` means only that the current F4 executable slice does not implement a semantic path for the input.
 
-Trusted ingress still happens first, so the counterpart statement remains historical Timeline evidence. The high-level interaction then fails closed before world acquisition, model generation, or presentation.
+Trusted ingress still happens first, so the counterpart input remains historical Timeline evidence. The high-level interaction then fails closed before provider work.
 
-The implementation does not:
-
-- guess a nearby supported intent;
-- send the input to a model for route selection;
-- silently start fresh-world work;
-- admit unsupported text as memory; or
-- manufacture a CompanionOutput merely to hide the limitation.
+The implementation does not guess a nearby supported intent, send the input to a model for route selection, silently start fresh-world work, admit unsupported text as memory, or manufacture a CompanionOutput to hide the limitation.
 
 ## Recovery and idempotency
 
 The purpose gate introduces no mutable interaction-status aggregate. Classification is a deterministic derivation from immutable canonical input.
-
-Therefore after process replacement:
 
 ```text
 same canonical input
@@ -230,21 +254,7 @@ same canonical input
 same bounded classification
 ```
 
-For memory-only replay:
-
-```text
-same transport event
-↓
-same InteractionEvent
-↓
-MEMORY_STATEMENT
-↓
-recover same admitted memory
-↓
-no provider work
-```
-
-For a world question, the existing response recovery machinery still resumes from the furthest durable trustworthy stage and preserves the established acquisition/generation/presentation idempotency contracts.
+Memory replay remains provider-free. Conversational replay and checked-response replay use the existing canonical response recovery graph so committed projection, generation, adoption, and presentation stages are recovered rather than duplicated.
 
 ## Acceptance contract
 
@@ -252,28 +262,20 @@ The executable suite must prove at least:
 
 1. supported memory statements classify as `MEMORY_STATEMENT`;
 2. supported current-world questions classify as `WORLD_QUESTION`;
-3. unsupported and mixed utterances classify as `UNSUPPORTED`;
-4. classification is derived from a canonical counterpart Timeline event and writes no semantic state;
-5. a memory-only interaction admits one evidence-grounded memory without Investigation, ModelInvocation, CompanionOutput, or presented Timeline output;
-6. replaying the same memory-only transport event does not duplicate input, Claim, or Evidence state and still performs no provider work;
-7. after complete runtime/surface recomposition, a later world question can recover the admitted memory and use it in the checked response path;
-8. the process-facing host uses the same high-level purpose gate rather than bypassing it;
-9. unsupported high-level interaction fails before provider work while preserving the canonical input event; and
-10. local surface acknowledgement is represented as operational UI status rather than CompanionPerson output.
+3. bounded self-contained social inputs classify as `CONVERSATIONAL_RESPONSE`;
+4. contextual/deictic, arbitrary-world, mixed, and otherwise unsupported utterances remain `UNSUPPORTED`;
+5. classification is derived from canonical counterpart Timeline state and writes no semantic state;
+6. route mismatch fails closed before semantic continuation;
+7. a memory-only interaction admits one evidence-grounded memory without unrelated provider work;
+8. a conversational interaction produces one source-free Companion expression without Investigation or WorldResult;
+9. conversational replay does not duplicate model generation, adoption, presentation, or Timeline output;
+10. a later world question can recover previously admitted memory after complete runtime/surface recomposition;
+11. the process-facing host and local surface use the same high-level purpose gate;
+12. the lower-level checked-response path rejects non-world-question input before provider work; and
+13. memory surface acknowledgement remains operational UI status rather than CompanionPerson output.
 
 ## Scope boundary
 
-This checkpoint does not implement:
+This checkpoint does not implement general conversational intent classification, model-selected routing, mixed memory-and-question utterances, arbitrary small talk, deictic prior-turn resolution, general question answering, arbitrary fresh-world questions, general memory extraction, external Actions, delegated work, or proactive initiation.
 
-- general conversational intent classification;
-- model-selected routing;
-- mixed memory-and-question utterances;
-- small talk;
-- general question answering;
-- arbitrary fresh-world questions;
-- general memory extraction;
-- external Actions;
-- delegated work; or
-- proactive initiation.
-
-The gate is intentionally as narrow as the F4 implementation itself. Its purpose is to prevent implemented semantic paths from being invoked when the input does not justify them.
+The gate remains intentionally as narrow as the F4 implementation itself.
