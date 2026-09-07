@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import secrets
-from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
@@ -99,18 +98,17 @@ def _handler_factory(server: LocalSurfaceServer):
                     content_text,
                     transport_event_id=transport_event_id,
                 )
-                response = asdict(result)
-                response.update(
+                self._send_json(
+                    HTTPStatus.OK,
                     {
-                        "companion_person_id": str(result.companion_person_id),
-                        "counterpart_id": str(result.counterpart_id),
-                        "relationship_id": str(result.relationship_id),
-                        "input_event_id": str(result.input_event_id),
-                        "presented_event_id": str(result.presented_event_id),
-                        "companion_output_id": str(result.companion_output_id),
-                    }
+                        "ok": True,
+                        "result": {
+                            "content_text": result.content_text,
+                            "transport_event_id": result.transport_event_id,
+                            "idempotent_input_replay": result.idempotent_input_replay,
+                        },
+                    },
                 )
-                self._send_json(HTTPStatus.OK, {"ok": True, "result": response})
             except ValueError as exc:
                 self._send_json(
                     HTTPStatus.BAD_REQUEST,
@@ -185,7 +183,6 @@ def _handler_factory(server: LocalSurfaceServer):
                 payload,
                 sort_keys=True,
                 separators=(",", ":"),
-                default=str,
             ).encode("utf-8")
             self.send_response(status)
             self._security_headers(content_type="application/json; charset=utf-8")
