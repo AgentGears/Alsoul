@@ -46,15 +46,23 @@ class FoundationBootstrapper:
         channel_binding_id = self.ids.new()
 
         with self.engine.begin() as conn:
-            existing_identity_roots = sum(
-                int(conn.execute(select(func.count()).select_from(table)).scalar_one())
-                for table in (
-                    schema.companion_person,
-                    schema.counterpart_person,
-                    schema.relationship_identity,
-                )
+            foundation_tables = (
+                schema.companion_person,
+                schema.self_revision,
+                schema.self_head,
+                schema.counterpart_person,
+                schema.counterpart_identity_binding,
+                schema.relationship_identity,
+                schema.relationship_revision,
+                schema.relationship_head,
+                schema.relationship_timeline_head,
+                schema.surface_binding,
+                schema.channel_binding,
             )
-            if existing_identity_roots:
+            if any(
+                conn.execute(select(func.count()).select_from(table)).scalar_one()
+                for table in foundation_tables
+            ):
                 fail(
                     "FOUNDATION_ALREADY_BOOTSTRAPPED",
                     "foundation bootstrap requires an empty canonical identity graph",
