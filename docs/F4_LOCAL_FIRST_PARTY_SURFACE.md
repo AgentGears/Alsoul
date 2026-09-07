@@ -2,7 +2,7 @@
 
 **Status:** Implemented foundation checkpoint
 
-The reactive F4 slice now has a minimal local first-party web surface. It provides an actual user-facing interaction boundary while preserving the existing separation between presence, trusted identity resolution, canonical runtime state, cognition, and presentation acceptance.
+The F4 slice has a minimal loopback first-party web surface. It provides an actual user-facing interaction boundary while preserving separation between presence, trusted identity resolution, canonical runtime state, interaction-purpose routing, cognition, and presentation acceptance.
 
 ## Core boundary
 
@@ -17,17 +17,26 @@ existing CounterpartIdentityBinding / RelationshipState
     ↓
 COUNTERPART_INPUT
     ↓
-ConfiguredFoundationRuntime
+ConfiguredFoundationRuntime.interact
     ↓
-world acquisition / model generation
-    ↓
-CompanionOutput
-    ↓
-local first-party presentation acceptance
-    ↓
-COMPANION_PRESENTED_OUTPUT
-    ↓
-local browser renders accepted content
+F4InteractionPurposeGate
+    ├── MEMORY_STATEMENT
+    │   ↓
+    │   evidence-grounded memory admission
+    │   ↓
+    │   operational surface notice only
+    │
+    └── WORLD_QUESTION
+        ↓
+        world acquisition / model generation
+        ↓
+        CompanionOutput
+        ↓
+        local first-party presentation acceptance
+        ↓
+        COMPANION_PRESENTED_OUTPUT
+        ↓
+        browser renders accepted content
 ```
 
 Permanent distinctions:
@@ -36,10 +45,13 @@ Permanent distinctions:
 Surface ≠ CompanionPerson
 Surface ≠ CounterpartPerson identity authority
 Surface ≠ RelationshipState
+Surface ≠ interaction-purpose authority
 Surface ≠ cognition
 Surface ≠ canonical persistence authority
 surface operational state ≠ canonical companion state
 browser request ≠ identity inference
+surface notice ≠ CompanionOutput
+surface notice ≠ presented Timeline event
 presentation sink acceptance ≠ read/heard/understood
 surface startup ≠ schema initialization ≠ identity bootstrap
 ```
@@ -65,36 +77,15 @@ alsoul-surface \
   --port 8765
 ```
 
-The process binds only to:
-
-```text
-127.0.0.1
-```
-
-It refuses non-loopback bind addresses. The default browser URL is therefore:
-
-```text
-http://127.0.0.1:8765/
-```
-
-The local HTTP listener is a first-party process boundary, not a public network API. Public authentication, remote access, reverse-proxy deployment, and multi-user hosting remain outside F4.
+The process binds only to `127.0.0.1`. The local listener is a first-party process boundary, not a public network API. Public authentication, remote access, reverse-proxy deployment, and multi-user hosting remain outside F4.
 
 ## Existing host configuration
 
-The local surface consumes the existing host configuration for:
+The surface consumes the existing host configuration for the canonical database plus configured world/model runtime routes. Model authorization remains environment-only runtime-secret state.
 
-```text
-database path
-world route
-model route
-runtime timeouts
-```
+The surface replaces only the first-party presentation transport with an in-process durable local sink while preserving the existing presentation-acceptance contract. It does not bypass CompanionOutput adoption or Timeline presentation.
 
-Model authorization continues to come only from the process environment through the existing runtime-secret boundary.
-
-The local surface replaces only the first-party presentation transport with an in-process durable local sink while preserving the same `JsonFirstPartyPresentationAdapter` acceptance contract. It does not bypass CompanionOutput adoption or Timeline presentation.
-
-## Trusted identity
+## Trusted identity and route
 
 The local process receives the intended counterpart identity and presence route from operator arguments:
 
@@ -105,29 +96,71 @@ surface_namespace / surface_ref
 channel_namespace / channel_ref
 ```
 
-Those values are not inferred from browser content. Every interaction still passes through `FirstPartyIngress`, which resolves only pre-existing bindings.
+Those values are not inferred from browser content. Every interaction passes through `FirstPartyIngress`, which resolves only pre-existing bindings.
 
-Therefore:
+After ingress, `ConfiguredFoundationRuntime.interact` fences purpose classification to the exact admitted relationship, surface binding, and channel binding. A canonical event cannot be paired with a different route merely because a caller supplies different IDs.
 
 ```text
-configured external subject
-    ≠ automatically created CounterpartPerson
-
-configured surface/channel refs
-    ≠ automatically created presence bindings
+external subject assertion ≠ CounterpartPerson creation
+route configuration ≠ presence creation
+canonical input on route A ≠ valid continuation on route B
 ```
 
-If the configured identity or route does not exist, interaction fails closed.
+If identity or route resolution fails, interaction fails closed.
+
+## Bounded interaction-purpose behavior
+
+The browser does not classify intent. The semantic runtime does so from the already-canonical input through `F4InteractionPurposeGate`.
+
+For the bounded memory form:
+
+```text
+My machine has 16 GB RAM.
+```
+
+the successful path is:
+
+```text
+COUNTERPART_INPUT
+↓
+MEMORY_STATEMENT
+↓
+F4MemoryCandidate
+↓
+F4MemoryProposal
+↓
+EvidenceItem + admitted Claim
+↓
+return
+```
+
+No Investigation, WorldResult, ContextProjection, ModelInvocation, GeneratedOutput, CompanionOutput, or `COMPANION_PRESENTED_OUTPUT` is created solely because the memory was admitted.
+
+The browser may display deterministic operational status such as:
+
+```text
+Memory updated
+Memory corrected
+Memory already current
+```
+
+That status is surface UI, not Alsoul speech. It is rendered as status rather than as an Alsoul message bubble.
+
+For the bounded checked question:
+
+```text
+Would the current software run on my machine?
+```
+
+the existing checked-response chain executes and can recover previously admitted memory.
+
+Unsupported or mixed interactions fail closed at the high-level F4 purpose gate after trusted ingress has preserved the canonical input. They are not sent to a model to guess a route.
 
 ## Surface session request fencing
 
-At process start the local surface generates an ephemeral high-entropy session token. The token is embedded only in the served first-party page and is required on interaction requests through:
+At process start the surface generates an ephemeral high-entropy session token. The token is embedded only in the served first-party page and is required on interaction requests through `X-Alsoul-Surface-Token`.
 
-```text
-X-Alsoul-Surface-Token
-```
-
-This is local request fencing, not counterpart identity authority. The durable counterpart identity remains the existing `CounterpartIdentityBinding` selected by the operator configuration.
+This is local request fencing, not counterpart identity authority.
 
 The browser API accepts only:
 
@@ -136,22 +169,18 @@ content_text
 transport_event_id?
 ```
 
-The browser response exposes only surface-level response content and transport replay state rather than internal Person, Relationship, claim, evidence, or cognition identifiers.
+The browser response exposes surface-level content/status, bounded purpose, and transport replay state rather than internal Person, Relationship, evidence, memory, or cognition identifiers.
 
 ## Durable local operational state
 
-The surface uses a separate SQLite file supplied by `--state`.
-
-This file is deliberately not part of the canonical Alsoul schema. It contains two operational concerns only:
+The surface uses a separate SQLite file supplied by `--state`. It is deliberately not part of the canonical Alsoul schema and owns only:
 
 ```text
 inbound transport replay identity
 first-party presentation acceptance
 ```
 
-It may contain local input/output text because exact replay and exact presentation acceptance must be checked semantically. It therefore belongs with local user data and should be protected accordingly.
-
-Canonical distinctions remain:
+It may contain local input/output text because exact replay and exact presentation acceptance require semantic equality checks. It belongs with local user data and should be protected accordingly.
 
 ```text
 local surface state
@@ -163,116 +192,71 @@ local surface state
     ≠ CompanionOutput authority
 ```
 
-Deleting the local surface state does not delete canonical Timeline or companion identity, although it can remove local transport/presentation replay knowledge needed for the strongest restart-idempotency guarantees of that surface.
+## Input replay across restart
 
-## Input replay across process restart
-
-A browser interaction has one `transport_event_id`. Before semantic ingress, the local surface durably reserves the exact transport semantics:
+Before semantic ingress, the surface durably reserves the exact transport occurrence, including identity/route assertion, content, conversation binding, and original occurrence time.
 
 ```text
-transport_event_id
-identity / route assertion
-content
-conversation binding
-occurred_at
-```
-
-If the same transport ID is retried after process restart, the surface reuses the original `occurred_at` instead of generating a new one. That allows the existing ingress idempotency contract to see an exact semantic replay.
-
-If the same transport ID is reused with different content, identity, route, or conversation semantics, the local surface rejects it before canonical ingress.
-
-Therefore:
-
-```text
-same transport_event_id + same request
+same transport_event_id + same semantics
     → same canonical COUNTERPART_INPUT
 
-same transport_event_id + different request
+same transport_event_id + different semantics
     → conflict
 ```
 
-## Presentation acceptance across process restart
+For a memory-only replay, the same input and admitted memory are recovered without provider work. For a checked response replay, the existing runtime recovery rules continue from the furthest trustworthy durable stage.
 
-The local presentation sink persists acceptance under the same restart-stable presentation key already used by the runtime:
+## Presentation acceptance across restart
 
-```text
-CompanionOutput
-+ SurfaceBinding
-+ ChannelBinding
-    ↓
-presentation key
-```
+For checked responses, the local presentation sink persists acceptance under the same restart-stable presentation key derived from exact CompanionOutput and surface/channel route.
 
-On first acceptance the local sink stores:
+Exact replay returns the existing acceptance receipt; semantic key reuse with different content is rejected. The runtime commits `COMPANION_PRESENTED_OUTPUT` only after a valid acceptance receipt.
 
-```text
-presentation key
-CompanionOutput identity
-surface/channel route
-exact content
-content digest
-acceptance receipt
-acceptance time
-```
+Memory-only interactions do not cross this boundary because they create no CompanionOutput.
 
-An exact replay returns the existing acceptance receipt. Reusing the key with different semantic content is rejected.
+## Complete surface/runtime recomposition
 
-The runtime still commits `COMPANION_PRESENTED_OUTPUT` only after the local sink returns a valid acceptance receipt.
+The acceptance suite proves two complementary paths.
 
-## Complete surface-process recomposition
-
-The acceptance suite proves this sequence:
+Memory then checked question:
 
 ```text
-existing F4 Person / counterpart / relationship / memory
+start surface/runtime composition
 ↓
-start local surface application
+"My machine has 16 GB RAM."
 ↓
-admit current input
+admit one durable memory
 ↓
-perform world acquisition
+no world/model/output/presentation work
 ↓
-perform model generation
+close entire composition
 ↓
-adopt CompanionOutput
+construct new composition over same canonical + surface stores
 ↓
-local sink accepts exact output
+"Would the current software run on my machine?"
 ↓
-commit presented Timeline event
+recover same Person / counterpart / RelationshipState / memory
 ↓
-close entire surface/runtime composition
-↓
-construct a new surface/runtime composition
-↓
-replay exact transport_event_id
-↓
-same input event
-same Person
-same counterpart
-same RelationshipState
-same CompanionOutput
-same presented Timeline event
-no second world acquisition
-no second model generation
-one local presentation acceptance
+perform fresh checked response
 ```
 
-This makes browser/surface process replacement a presence/runtime event rather than a Person or Relationship replacement.
+Completed checked-response replay still preserves the same input event, CompanionOutput, and presented Timeline event without duplicate acquisition, generation, or local presentation acceptance.
 
 ## Browser UI
 
-The page is intentionally small and dependency-free. It:
+The dependency-free page:
 
-- renders a text conversation surface;
-- generates a transport event ID for each submitted message;
+- renders user messages and actual CompanionOutput text;
+- keeps memory-only operational acknowledgement in surface status rather than a companion message bubble;
+- generates a transport-event ID for each submitted message;
 - sends only to the same loopback process;
-- includes no external assets or remote script dependencies;
-- renders returned content using text nodes rather than HTML injection;
-- exposes a small local health endpoint;
-- suppresses request logging by default;
+- includes no remote assets;
+- renders returned strings as text rather than HTML;
+- exposes a small health endpoint;
+- suppresses request logging; and
 - sends restrictive browser security headers.
 
-The UI does not directly write the canonical database. All semantic writes still occur through existing ingress/runtime services.
+The UI performs no direct canonical semantic writes.
 
 ## First-run sequence
 
@@ -282,13 +266,14 @@ The local surface starts only after explicit administration:
 1. alsoul-admin initialize-store ...
 2. alsoul-admin bootstrap-foundation ...
 3. create host configuration
-4. establish the narrow F4 personal-memory prerequisite through the existing semantic path
-5. alsoul-host --config ./host.json ready
-6. alsoul-surface --config ./host.json --state ./surface-state.db ...
-7. open the printed loopback URL
+4. alsoul-host --config ./host.json ready
+5. alsoul-surface --config ./host.json --state ./surface-state.db ...
+6. open the printed loopback URL
+7. establish the bounded F4 personal memory naturally through a supported memory statement
+8. ask the supported current-world question when needed
 ```
 
-The current F4 response coordinator still requires the walking-skeleton personal-memory predicate used by the foundation acceptance scenario. Natural-language memory extraction/admission from arbitrary new conversation is not added by this surface checkpoint.
+No manual pre-seeding of the F4 memory claim is required for the natural local path.
 
 ## Deliberate exclusions
 
@@ -297,15 +282,16 @@ This checkpoint does not add:
 - public network access;
 - remote user authentication;
 - multi-user or multi-relationship surface routing;
-- automatic identity bootstrap;
-- schema migration during surface startup;
-- model-based identity matching;
-- general natural-language memory admission;
+- automatic identity bootstrap or schema migration;
+- model-based identity or purpose selection;
+- general conversational routing;
+- mixed memory-and-question utterances;
+- general-purpose memory admission;
 - read/heard/understood receipts;
 - multi-channel fallback;
 - voice or rich embodiment;
 - external Actions;
-- delegated work;
-- schedules or proactivity.
+- delegated work; or
+- schedules/proactivity.
 
-The purpose is narrow: put a real local first-party interaction surface in front of the already-converged reactive F4 runtime while keeping one durable companion and relationship authoritative underneath surface and process replacement.
+The purpose remains narrow: expose the bounded F4 interaction through a real local surface without turning the surface into a second identity, routing, cognition, memory, or persistence authority.
