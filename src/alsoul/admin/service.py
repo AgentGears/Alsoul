@@ -35,6 +35,7 @@ class StoreStatus:
     schema_head_revision: str
     schema_at_head: bool
     missing_tables: tuple[str, ...]
+    missing_columns: tuple[str, ...]
     foundation_state: FoundationState
     companion_person_count: int = 0
     counterpart_person_count: int = 0
@@ -207,6 +208,7 @@ class FoundationAdministrator:
                 schema_head_revision=head,
                 schema_at_head=False,
                 missing_tables=tuple(sorted(schema.metadata.tables)),
+                missing_columns=(),
                 foundation_state="NOT_READY",
             )
 
@@ -219,8 +221,21 @@ class FoundationAdministrator:
                     actual_tables = set(inspector.get_table_names())
                     expected_tables = set(schema.metadata.tables)
                     missing_tables = tuple(sorted(expected_tables - actual_tables))
+                    missing_columns: list[str] = []
+                    for table_name in sorted(expected_tables & actual_tables):
+                        expected_columns = set(schema.metadata.tables[table_name].c.keys())
+                        actual_columns = {
+                            column["name"] for column in inspector.get_columns(table_name)
+                        }
+                        missing_columns.extend(
+                            f"{table_name}.{column}"
+                            for column in sorted(expected_columns - actual_columns)
+                        )
+                    missing_columns_tuple = tuple(missing_columns)
                     revision = _read_schema_revision(conn, actual_tables)
-                    if missing_tables:
+                    structurally_compatible = not missing_tables and not missing_columns_tuple
+                    schema_at_head = structurally_compatible and revision == head
+                    if not structurally_compatible:
                         return StoreStatus(
                             database_path=path,
                             database_exists=True,
@@ -229,6 +244,7 @@ class FoundationAdministrator:
                             schema_head_revision=head,
                             schema_at_head=False,
                             missing_tables=missing_tables,
+                            missing_columns=missing_columns_tuple,
                             foundation_state="NOT_READY",
                         )
                     companion_count = conn.execute(
@@ -255,6 +271,7 @@ class FoundationAdministrator:
                     schema_head_revision=head,
                     schema_at_head=False,
                     missing_tables=(),
+                    missing_columns=(),
                     foundation_state="NOT_READY",
                 )
         finally:
@@ -266,9 +283,10 @@ class FoundationAdministrator:
             database_accessible=True,
             schema_revision=revision,
             schema_head_revision=head,
-            schema_at_head=revision == head,
+            schema_at_head=schema_at_head,
             missing_tables=(),
-            foundation_state=foundation_state if revision == head else "NOT_READY",
+            missing_columns=(),
+            foundation_state=foundation_state if schema_at_head else "NOT_READY",
             companion_person_count=int(companion_count),
             counterpart_person_count=int(counterpart_count),
             relationship_count=int(relationship_count),
@@ -323,33 +341,30 @@ def _foundation_state(
     counterpart_count: int,
     relationship_count: int,
 ) -> FoundationState:
-    identity_binding_count = conn.execute(
-        select(func.count()).select_from(schema.counterpart_identity_binding)
-    ).scalar_one()
-    self_head_count = conn.execute(select(func.count()).select_from(schema.self_head)).scalar_one()
-    relationship_head_count = conn.execute(
-        select(func.count()).select_from(schema.relationship_head)
-    ).scalar_one()
-    timeline_head_count = conn.execute(
-        select(func.count()).select_from(schema.relationship_timeline_head)
-    ).scalar_one()
-    surface_count = conn.execute(
-        select(func.count()).select_from(schema.surface_binding)
-    ).scalar_one()
-    channel_count = conn.execute(
-        select(func.count()).select_from(schema.channel_binding)
-    ).scalar_one()
-
     counts = (
         int(companion_count),
+        int(conn.execute(select(func.count()).select_from(schema.self_revision)).scalar_one()),
+        int(conn.execute(select(func.count()).select_from(schema.self_head)).scalar_one()),
         int(counterpart_count),
+        int(
+            conn.execute(
+                select(func.count()).select_from(schema.counterpart_identity_binding)
+            ).scalar_one()
+        ),
         int(relationship_count),
-        int(identity_binding_count),
-        int(self_head_count),
-        int(relationship_head_count),
-        int(timeline_head_count),
-        int(surface_count),
-        int(channel_count),
+        int(
+            conn.execute(
+                select(func.count()).select_from(schema.relationship_revision)
+            ).scalar_one()
+        ),
+        int(conn.execute(select(func.count()).select_from(schema.relationship_head)).scalar_one()),
+        int(
+            conn.execute(
+                select(func.count()).select_from(schema.relationship_timeline_head)
+            ).scalar_one()
+        ),
+        int(conn.execute(select(func.count()).select_from(schema.surface_binding)).scalar_one()),
+        int(conn.execute(select(func.count()).select_from(schema.channel_binding)).scalar_one()),
     )
     if all(count == 0 for count in counts):
         return "EMPTY"
