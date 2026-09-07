@@ -36,9 +36,9 @@ source binding
 ↓
 F4MemoryProposal
 ↓
-relationship/current-claim validation
+relationship/current-claim validation under admission fence
 ↓
-AdmitPersonMemoryClaim
+F4CounterpartMemoryAdmission transaction
 ↓
 COUNTERPART_STATEMENT EvidenceItem
 +
@@ -63,6 +63,7 @@ An explicit correction can be expressed with bounded correction language, for ex
 
 ```text
 Actually, my machine has 32 GB RAM.
+Instead, my machine has 32 GB RAM.
 ```
 
 The extractor does not produce a candidate for questions, unrelated storage quantities, third-party machines, or generic `GB` mentions. Examples that do not become candidates include:
@@ -104,7 +105,7 @@ This boundary makes provenance explicit: the same semantic candidate is not yet 
 
 `F4MemoryProposal` remains non-authoritative. It does not itself create an EvidenceItem, Claim, memory scope, or current PersonModel state.
 
-Admission occurs only through the existing semantic transaction. That transaction validates the relationship, source event, counterpart actor, predicate, value, and statement support before atomically writing:
+Admission occurs only through the governed F4 memory-admission transaction. That transaction revalidates the relationship, source event, counterpart actor, predicate, value, and statement support before atomically writing:
 
 ```text
 EvidenceItem(origin=COUNTERPART_STATEMENT)
@@ -115,6 +116,41 @@ ClaimEvidence(SUPPORTS)
 ```
 
 The claim remains scoped to the existing relationship.
+
+This checkpoint deliberately leaves the older lower-level claim-admission primitive available to existing foundation tests and internal callers. The new natural first-party memory path is the bounded path defined here; it does not imply that arbitrary callers or model output may create memory directly.
+
+## Concurrent admission fencing
+
+The F4 predicate is singleton and relationship-scoped. Two different source events must not race from the same prior current state and both become unsuperseded current claims.
+
+Every proposal that may write therefore crosses a relationship-scoped database write fence before current claim state is treated as authoritative for admission:
+
+```text
+proposal
+↓
+acquire relationship write fence
+↓
+recheck exact-source replay
+↓
+resolve current claim inside same transaction
+↓
+validate correction/current-state transition
+↓
+write Evidence + Claim + optional supersession
+↓
+commit
+```
+
+For the current relational F4 implementation, the durable relationship Timeline-head row is updated to its existing value solely to obtain the database write/row lock. Its sequence value is not advanced, and this fence is not a Timeline event or semantic relationship revision.
+
+The consequence is important:
+
+```text
+concurrent proposal A + proposal B
+≠ two current claims
+```
+
+One transaction establishes the current state first. A waiting transaction must then re-resolve that committed state and either remain unchanged, create an explicit correction, or fail closed.
 
 ## Same-turn ordering
 
@@ -172,6 +208,8 @@ Two different repetition cases are distinct.
 ### Exact transport/source replay
 
 If the same canonical source InteractionEvent is processed again after process loss, the memory admission service recovers the claim already supported by that event. It does not create another claim or another EvidenceItem.
+
+A write-capable worker also rechecks exact-source admission after acquiring the relationship fence, so two concurrent processors of the same source event cannot duplicate the admitted state.
 
 ### New statement with unchanged value
 
@@ -241,14 +279,16 @@ The executable suite must prove at least:
 1. an explicit primary-machine RAM statement produces one bounded extracted candidate;
 2. the candidate is a distinct object from the source-bound memory proposal;
 3. questions and unrelated `GB` statements produce no candidate;
-4. one source event creates one evidence-grounded admitted claim;
-5. replaying the same source event does not duplicate Claim or EvidenceItem state;
-6. an explicit correction creates a new claim and `CORRECTS` edge;
-7. a different value without explicit correction fails closed;
-8. a repeated same value leaves one current claim;
-9. current-memory retrieval resolves the corrected claim rather than the historical one;
-10. local first-party response construction performs memory admission before ContextProjection so newly admitted memory is eligible only after commit;
-11. the admitted memory survives complete surface/runtime recomposition and is available to a later interaction.
+4. declared bounded correction forms, including `Instead, ...`, produce explicit-correction candidates;
+5. one source event creates one evidence-grounded admitted claim;
+6. replaying the same source event does not duplicate Claim or EvidenceItem state;
+7. two concurrent different initial proposals cannot create two current claims;
+8. an explicit correction creates a new claim and `CORRECTS` edge;
+9. a different value without explicit correction fails closed;
+10. a repeated same value leaves one current claim;
+11. current-memory retrieval resolves the corrected claim rather than the historical one;
+12. local first-party response construction performs memory admission before ContextProjection so newly admitted memory is eligible only after commit;
+13. the admitted memory survives complete surface/runtime recomposition and is available to a later interaction.
 
 ## Scope boundary
 
