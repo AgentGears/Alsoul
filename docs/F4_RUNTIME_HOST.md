@@ -2,7 +2,7 @@
 
 **Status:** Implemented foundation checkpoint
 
-The F4 configured reactive slice has a narrow process-facing host. The host turns the converged persistence, recovery, provider, trusted first-party ingress, presentation-acceptance, and response boundaries into an executable process without creating a second source of semantic authority.
+The configured F4 slice has a narrow process-facing host. The host turns persistence, recovery, trusted first-party ingress, bounded interaction-purpose routing, provider execution, and presentation acceptance into an executable process without creating a second source of semantic authority.
 
 ## Boundary
 
@@ -16,10 +16,10 @@ pre-existing compatible F4 database
 alsoul-host
         ├── readiness / diagnostics
         ├── trusted first-party ingress
-        └── configured reactive execution
-                ├── world acquisition
-                ├── model generation
-                └── first-party presentation acceptance
+        ├── bounded high-level interaction
+        │       ├── MEMORY_STATEMENT → memory admission → stop
+        │       └── WORLD_QUESTION   → checked response path
+        └── lower-level checked-response recovery
 ```
 
 The host is deliberately not a bootstrapper, schema creator, public network authentication service, task scheduler, or authority service.
@@ -33,6 +33,8 @@ credential ≠ identity
 host readiness ≠ provider readiness
 operator diagnostic ≠ canonical runtime state
 trusted transport assertion ≠ model inference
+interaction classification ≠ model authority
+memory admission ≠ response obligation
 CompanionOutput ≠ presentation attempt ≠ sink acceptance ≠ Timeline presentation
 presented ≠ read/heard/understood
 bootstrap administration ≠ ordinary runtime
@@ -42,42 +44,15 @@ bootstrap administration ≠ ordinary runtime
 
 The host reads one strict JSON document. Unknown fields fail closed. Relative filesystem paths are resolved relative to the configuration file.
 
-Configuration version 2 requires an explicit first-party presentation endpoint in addition to the world and model routes:
+Configuration version 2 requires the existing database plus explicit world, model, and first-party presentation routes. HTTPS trust is process infrastructure rather than evidence, identity, permission, or canonical companion state.
 
-```json
-{
-  "host_config_version": 2,
-  "database": {
-    "path": "./alsoul.db"
-  },
-  "world": {
-    "locator": "https://world.example.invalid/requirements",
-    "timeout_seconds": 10
-  },
-  "model": {
-    "endpoint": "https://model.example.invalid/generate",
-    "provider_binding_ref": "primary-model-route",
-    "model_ref": "model-v1",
-    "timeout_seconds": 30
-  },
-  "presentation": {
-    "endpoint": "https://surface.example.invalid/present",
-    "timeout_seconds": 10
-  }
-}
-```
-
-HTTPS trust remains a process/host infrastructure concern and uses the platform TLS trust configuration. It is not evidence, identity, permission, or canonical companion state.
-
-The model authorization token is intentionally absent from the file. If required, it is supplied only through:
+The model authorization token remains absent from the configuration file and, if needed, is supplied only through:
 
 ```text
 ALSOUL_MODEL_AUTHORIZATION_TOKEN
 ```
 
-The host does not persist that value, render it into provider context, include it in semantic payloads, or return it from diagnostics.
-
-The presentation endpoint is likewise route configuration rather than authority or identity. Its availability does not imply permission to contact a counterpart beyond the bounded first-party reactive response already being executed.
+The host does not persist or emit it.
 
 ## Readiness
 
@@ -85,23 +60,19 @@ The presentation endpoint is likewise route configuration rather than authority 
 
 ```text
 configuration parses
-        ↓
+↓
 database file already exists
-        ↓
-database is readable
-        ↓
-required F4 tables exist
-        ↓
-required F4 columns exist
-        ↓
-foreign-key enforcement is active
-        ↓
+↓
+database readable
+↓
+required F4 tables/columns exist
+↓
+foreign-key enforcement active
+↓
 READY
 ```
 
-It performs no world, model, or presentation I/O. Provider contract verification is a separate operation so local process readiness cannot silently become a remote dependency check.
-
-A missing database fails closed and is not created as a side effect of readiness. A structurally compatible but identity-empty database can pass this readiness check because identity bootstrap is a separate administration concern; ingress will still fail closed until the required bindings exist.
+It performs no world, model, or presentation I/O. A structurally compatible but identity-empty store may pass structural readiness, while trusted ingress still fails closed until the required identity/presence bindings exist.
 
 ## Commands
 
@@ -117,41 +88,49 @@ alsoul-host --config ./host.json ready
 cat envelope.json | alsoul-host --config ./host.json ingest
 ```
 
-`ingest` resolves pre-existing identity, relationship, surface, and channel bindings and commits exactly one canonical `COUNTERPART_INPUT` event. The process caller must already have authenticated the external subject represented by the envelope.
+`ingest` resolves pre-existing identity, relationship, surface, and channel bindings and commits exactly one canonical `COUNTERPART_INPUT`. The model never participates in identity resolution.
 
-The model is not involved in identity resolution. Missing bindings fail closed and never trigger bootstrap.
-
-### One-shot first-party interaction
+### High-level one-shot interaction
 
 ```text
 cat envelope.json | alsoul-host --config ./host.json interact
 ```
 
-`interact` composes trusted ingress with the response coordinator and first-party presentation acceptance boundary:
+`interact` now means:
 
 ```text
 trusted transport assertion
 ↓
 COUNTERPART_INPUT committed
 ↓
-Investigation / Observation / WorldResult
+ConfiguredFoundationRuntime.interact
 ↓
-ContextProjection
-↓
-ModelInvocation / GeneratedOutput
-↓
-CompanionOutput
-↓
-first-party presentation attempt
-↓
-validated sink acceptance
-↓
-COMPANION_PRESENTED_OUTPUT
+F4InteractionPurposeGate
+├── MEMORY_STATEMENT
+│   ↓
+│   F4CounterpartMemoryAdmission
+│   ↓
+│   durable Evidence + Claim state
+│   ↓
+│   return successful memory outcome
+│   no provider work
+│
+└── WORLD_QUESTION
+    ↓
+    existing recovery-safe checked response
 ```
 
-Exact replay of the same logical transport event reuses the admitted input. If its semantic response is already presented, the replay does not repeat world acquisition, generation, adoption, sink dispatch, or Timeline presentation.
+The purpose gate derives classification from the immutable canonical event and fences the event to the exact admitted relationship, surface binding, and channel binding. Route mismatch fails before memory admission or provider work.
 
-See [F4 Trusted First-Party Ingress](F4_FIRST_PARTY_INGRESS.md) for the envelope, identity-resolution, and ingress-idempotency contracts. See [F4 First-Party Presentation Acceptance](F4_FIRST_PARTY_PRESENTATION.md) for the sink acceptance and presentation-recovery contract.
+For a supported memory statement, the host returns a structured `FoundationInteractionRunResult` containing the memory-admission outcome and no response object. No Investigation, ModelInvocation, CompanionOutput, presentation attempt, or presented Timeline event is required.
+
+For a supported world question, the result contains the existing checked response object.
+
+Unsupported high-level input remains canonical Timeline history but fails with `INTERACTION_PURPOSE_UNSUPPORTED` before provider work. The host does not send unsupported input to a model to guess intent.
+
+Exact replay of a memory-only transport event reuses the same admitted input and Claim/Evidence state without provider calls. Exact replay of a completed checked interaction reuses the completed response without duplicate acquisition, generation, adoption, presentation dispatch, or Timeline presentation.
+
+See [F4 Interaction Purpose Gate](F4_INTERACTION_PURPOSE_GATE.md), [F4 Trusted First-Party Ingress](F4_FIRST_PARTY_INGRESS.md), and [F4 First-Party Presentation Acceptance](F4_FIRST_PARTY_PRESENTATION.md).
 
 ### Content-free recovery diagnostic
 
@@ -161,7 +140,7 @@ alsoul-host --config ./host.json diagnose \
   --current-input-event-id <event-id>
 ```
 
-The diagnostic reports semantic recovery stage, durable attempt identifiers, blockers, and the next safe operation. It does not return counterpart input text, captured source bodies, generated prose, or credentials.
+Diagnostics describe the checked-response recovery state and next safe operation without returning counterpart text, captured source bodies, generated prose, or credentials. A memory-only interaction does not need to manufacture checked-response state merely to be diagnosable as successful by the high-level caller.
 
 ### Model contract probe
 
@@ -169,9 +148,9 @@ The diagnostic reports semantic recovery stage, durable attempt identifiers, blo
 alsoul-host --config ./host.json probe-model-contract
 ```
 
-This performs a synthetic provider-contract check. It does not create `ModelInvocation`, `GeneratedOutput`, Timeline, memory, presentation, or other CompanionPerson cognition state.
+This performs a synthetic provider-contract check and creates no CompanionPerson cognition, Timeline, memory, or presentation state.
 
-### Resume an already-admitted response
+### Lower-level checked-response execution/recovery
 
 ```text
 alsoul-host --config ./host.json respond \
@@ -181,36 +160,18 @@ alsoul-host --config ./host.json respond \
   --channel-binding-id <channel-binding-id>
 ```
 
-`respond` remains available as the lower-level recovery/control command. It consumes an already-admitted `COUNTERPART_INPUT` event and therefore preserves the invariant that current input enters canonical Timeline history before cognition begins.
-
-After a known complete process-loss boundary, `respond` or `interact` may add:
+`respond` remains the lower-level primitive for an interaction already selected for the checked world-question path. It is not a general intent router and does not reinterpret the input.
 
 ```text
---after-process-loss
+interact = select among the bounded implemented F4 semantic paths
+respond  = execute/resume the already-selected checked response path
 ```
 
-That path uses the existing provider-recovery coordinator before deciding whether provider execution may safely resume.
+After a known complete process-loss boundary, the checked response path may use `--after-process-loss` so the existing provider-recovery coordinator reconciles unresolved attempts before any retry decision.
 
 ## First-party presentation acceptance
 
-The host does not treat an internal adoption or a socket write as presentation. The configured first-party sink must positively accept the exact adopted output under a stable semantic presentation key.
-
-The request carries:
-
-```text
-presentation_key
-companion_output_id
-surface_binding_id
-channel_binding_id
-content_text
-content_digest
-```
-
-The sink returns an acceptance receipt whose key and content digest must exactly match the request.
-
-Only after receipt validation may the response coordinator commit `COMPANION_PRESENTED_OUTPUT` to the canonical Timeline.
-
-The sink contract is idempotent:
+Presentation remains relevant only when a CompanionOutput exists. The host does not treat adoption or socket write as presentation. A configured first-party sink must positively accept the exact adopted output under a stable semantic presentation key before `COMPANION_PRESENTED_OUTPUT` is committed.
 
 ```text
 same presentation key + same content
@@ -220,39 +181,33 @@ same presentation key + different content
     → conflict
 ```
 
-This makes recovery safe if the sink accepted the output but the process lost the response before the Timeline commit.
+Memory-only interactions never cross this boundary because they create no CompanionOutput.
 
 ## Presentation recovery
 
-The important uncertain path is:
+For a checked response:
 
 ```text
 CompanionOutput exists
 ↓
-sink accepts stable key K1
+sink accepts stable key
 ↓
-connection disappears before receipt reaches host
+connection lost before receipt reaches host
 ↓
-host reports unknown presentation outcome
+no presented Timeline event yet
 ↓
-no COMPANION_PRESENTED_OUTPUT exists yet
+new process retries same key
 ↓
-new process recovers same CompanionOutput
-↓
-retry K1 with exact content
-↓
-sink returns existing logical acceptance
+sink returns same logical acceptance
 ↓
 commit one COMPANION_PRESENTED_OUTPUT
 ```
 
-The network may contain two transport attempts. Alsoul still has one logical first-party presentation and one canonical Timeline presentation event.
-
-If the Timeline event already exists, recovery returns the existing completed response and does not redispatch to the presentation sink.
+This preserves one semantic presentation across multiple transport attempts.
 
 ## Administration and bootstrap separation
 
-The runtime host intentionally has no schema-initialization, migration, or bootstrap command. Those operations live in the separate `alsoul-admin` process boundary:
+The host contains no schema-initialization, migration, or foundation-bootstrap command.
 
 ```text
 alsoul-admin initialize-store / migrate-store
@@ -261,89 +216,55 @@ alsoul-admin bootstrap-foundation
         ≠
 alsoul-host trusted ingress
         ≠
-alsoul-host ordinary response execution / recovery
+alsoul-host high-level interaction
+        ≠
+alsoul-host checked-response recovery
 ```
 
-`alsoul-admin bootstrap-foundation` invokes the explicit `FoundationBootstrapper` boundary with an empty-store fence. If Person, CounterpartPerson, RelationshipState, or their foundation bindings are missing during ordinary runtime, `alsoul-host` fails rather than calling administration or manufacturing replacement identity.
-
-See [F4 Administration and First-Run Bootstrap](F4_ADMINISTRATION.md) for the installation, migration, bootstrap, and administration-status contract.
-
-## TLS transport
-
-The host uses HTTPS-only configured runtime contracts and the process platform's TLS trust configuration. Cross-origin model and presentation resolution is rejected so route semantics cannot silently move to another origin.
+Missing Person/Counterpart/Relationship roots during ordinary runtime are hard failures rather than implicit bootstrap triggers.
 
 ## Output contract
 
-Successful host commands emit one compact JSON object to standard output. Failures emit one JSON error object to standard error with a non-zero exit code. The host does not emit traceback state by default.
+Successful commands emit one compact JSON object to stdout. Failures emit one JSON error object to stderr with a non-zero exit code. Tracebacks are not emitted by default.
 
-Process-control responses contain durable semantic identifiers rather than counterpart input or user-facing output prose. `interact` returns separate `ingress` and `response` objects so transport admission and cognition/presentation remain distinguishable.
+`interact` keeps ingress and semantic interaction results distinct:
 
-An unknown presentation transport outcome is reported as an adapter-outcome uncertainty and does not falsely report a `presented_event_id`.
+```text
+ingress = what canonical input was admitted
+interaction = which bounded semantic path ran and what durable result it produced
+```
+
+For memory statements, `interaction.memory_admission` is populated while `interaction.response` is null. For checked questions, `interaction.response` is populated. Process-control output still does not return user-facing response prose from the canonical response path.
 
 ## Process-level acceptance
 
-The acceptance suite launches the host in separate Python processes against:
+The acceptance suite now proves both high-level branches.
 
-- a file-backed F4 database;
-- a local HTTPS world endpoint;
-- a local HTTPS model endpoint;
-- a local HTTPS first-party presentation endpoint;
-- a process-scoped test trust root;
-- an environment-only model authorization token.
-
-The normal process test proves:
+Memory-only interaction with unreachable providers:
 
 ```text
-ready
+trusted memory statement
 ↓
-ingest trusted input
+canonical input
+↓
+MEMORY_STATEMENT
+↓
+Evidence + Claim admission
 ↓
 process exits
 ↓
-replay ingest → same InteractionEvent
+replay same transport event
 ↓
-diagnose INPUT_ADMITTED
+same input and memory
 ↓
-synthetic model-contract probe
-↓
-interact same transport event
-↓
-recover admitted input
-↓
-HTTPS world acquisition
-↓
-WorldResult admission
-↓
-ContextProjection
-↓
-HTTPS model generation
-↓
-CompanionOutput adoption
-↓
-HTTPS presentation acceptance
-↓
-COMPANION_PRESENTED_OUTPUT
-↓
-replay interact → same completed response, no duplicate provider or sink work
+world/model/presentation calls remain zero
 ```
 
-A second process test forces the presentation sink to accept the output and then close the connection before returning its receipt. It verifies:
+Unsupported input likewise proves canonical ingress can succeed while the high-level purpose gate stops before Investigation/provider state.
 
-```text
-first attempt
-    sink logical acceptance = 1
-    presented Timeline events = 0
+The existing checked process acceptance still proves separate-process recovery through HTTPS world acquisition, model generation, presentation acceptance, and exact replay without duplicate work. The uncertain-presentation acceptance case remains unchanged.
 
-retry in a new process
-    same semantic presentation key
-    sink logical acceptance still = 1
-    presented Timeline events = 1
-    world/model work not repeated
-```
-
-A separate administration/process test starts from a fresh store, explicitly initializes and bootstraps it through `alsoul-admin`, and proves that an identity-empty but schema-compatible runtime host does not create missing bindings when ingress fails.
-
-The tests also verify that provider credentials and counterpart input are not echoed through process-control output.
+A route-mismatch regression separately proves that a canonical input cannot be continued under a different relationship, surface binding, or channel binding.
 
 ## Deliberate exclusions
 
@@ -352,12 +273,14 @@ This checkpoint does not add:
 - schema initialization, migration, or bootstrap inside `alsoul-host`;
 - public network authentication;
 - automatic counterpart or relationship creation;
-- model-based identity resolution;
+- model-based identity or purpose resolution;
+- general conversational routing;
+- mixed memory-and-question utterances;
 - read/heard/understood receipts;
 - effectful external Actions;
 - durable delegated tasks;
-- schedules or proactivity;
-- multi-channel fallback;
+- schedules/proactivity;
+- multi-channel fallback; or
 - rich embodiment.
 
-The purpose remains narrow: execute one trusted first-party F4 interaction end to end while preserving canonical identity, history, evidence, cognition, adoption, actual first-party presentation acceptance, and recovery boundaries while keeping first-run administration outside the runtime host.
+The host remains a narrow executable boundary for one durable companion: trusted input is canonical first, bounded purpose is selected without model authority, memory-only work can terminate honestly without a fabricated response, and checked response work preserves the existing world/cognition/presentation/recovery contracts.
