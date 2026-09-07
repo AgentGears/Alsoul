@@ -26,17 +26,29 @@ F4InteractionPurposeGate
     │   ↓
     │   operational surface notice only
     │
+    ├── CONVERSATIONAL_RESPONSE
+    │   ↓
+    │   source-free ContextProjection
+    │   ↓
+    │   model generation / conversational adoption
+    │   ↓
+    │   local first-party presentation acceptance
+    │   ↓
+    │   COMPANION_PRESENTED_OUTPUT
+    │   ↓
+    │   browser renders Companion expression
+    │
     └── WORLD_QUESTION
         ↓
-        world acquisition / model generation
+        fresh world acquisition / evidence-backed result
         ↓
-        CompanionOutput
+        model generation / checked-response adoption
         ↓
         local first-party presentation acceptance
         ↓
         COMPANION_PRESENTED_OUTPUT
         ↓
-        browser renders accepted content
+        browser renders checked response
 ```
 
 Permanent distinctions:
@@ -51,7 +63,9 @@ Surface ≠ canonical persistence authority
 surface operational state ≠ canonical companion state
 browser request ≠ identity inference
 surface notice ≠ CompanionOutput
-surface notice ≠ presented Timeline event
+conversation ≠ fresh-world investigation
+conversation ≠ memory admission
+GeneratedOutput ≠ CompanionOutput
 presentation sink acceptance ≠ read/heard/understood
 surface startup ≠ schema initialization ≠ identity bootstrap
 ```
@@ -81,9 +95,9 @@ The process binds only to `127.0.0.1`. The local listener is a first-party proce
 
 ## Existing host configuration
 
-The surface consumes the existing host configuration for the canonical database plus configured world/model runtime routes. Model authorization remains environment-only runtime-secret state.
+The surface consumes the existing host configuration for the canonical database plus configured world/model routes. Model authorization remains environment-only runtime-secret state.
 
-The surface replaces only the first-party presentation transport with an in-process durable local sink while preserving the existing presentation-acceptance contract. It does not bypass CompanionOutput adoption or Timeline presentation.
+The surface replaces only the configured first-party presentation transport with an in-process durable local sink while preserving the same presentation-acceptance contract. It does not bypass `GeneratedOutput → CompanionOutput → presentation` semantics.
 
 ## Trusted identity and route
 
@@ -98,7 +112,7 @@ channel_namespace / channel_ref
 
 Those values are not inferred from browser content. Every interaction passes through `FirstPartyIngress`, which resolves only pre-existing bindings.
 
-After ingress, `ConfiguredFoundationRuntime.interact` fences purpose classification to the exact admitted relationship, surface binding, and channel binding. A canonical event cannot be paired with a different route merely because a caller supplies different IDs.
+After ingress, `ConfiguredFoundationRuntime.interact` fences purpose classification to the exact admitted relationship, surface binding, and channel binding.
 
 ```text
 external subject assertion ≠ CounterpartPerson creation
@@ -110,9 +124,11 @@ If identity or route resolution fails, interaction fails closed.
 
 ## Bounded interaction-purpose behavior
 
-The browser does not classify intent. The semantic runtime does so from the already-canonical input through `F4InteractionPurposeGate`.
+The browser does not classify intent. The semantic runtime classifies the already-canonical input through `F4InteractionPurposeGate`.
 
-For the bounded memory form:
+### Memory statement
+
+For a bounded memory form such as:
 
 ```text
 My machine has 16 GB RAM.
@@ -134,7 +150,7 @@ EvidenceItem + admitted Claim
 return
 ```
 
-No Investigation, WorldResult, ContextProjection, ModelInvocation, GeneratedOutput, CompanionOutput, or `COMPANION_PRESENTED_OUTPUT` is created solely because the memory was admitted.
+No Investigation, ContextProjection, ModelInvocation, GeneratedOutput, CompanionOutput, or `COMPANION_PRESENTED_OUTPUT` is created solely because the memory was admitted.
 
 The browser may display deterministic operational status such as:
 
@@ -144,7 +160,60 @@ Memory corrected
 Memory already current
 ```
 
-That status is surface UI, not Alsoul speech. It is rendered as status rather than as an Alsoul message bubble.
+That status is surface UI, not Alsoul speech. It is rendered as status rather than as a Companion message bubble.
+
+### Conversational response
+
+For bounded self-contained social forms such as:
+
+```text
+Hello.
+Thanks.
+How are you?
+Goodbye.
+```
+
+the runtime selects `CONVERSATIONAL_RESPONSE` and executes:
+
+```text
+COUNTERPART_INPUT
+↓
+source-free ContextProjection
+    pinned Self revision
+    pinned Relationship revision
+    current input
+    Timeline frontier
+    no projected personal Claim
+    no projected WorldResult
+↓
+ModelInvocation
+↓
+GeneratedOutput
+    one COMPANION_EXPRESSION
+    source_ref = null
+↓
+explicit conversational adoption
+↓
+CompanionOutput
+↓
+local presentation acceptance
+↓
+COMPANION_PRESENTED_OUTPUT
+↓
+browser message bubble
+```
+
+This path performs no fresh-world acquisition and no memory admission. The resulting source-free expression is Companion-owned wording; it does not claim remembered or checked provenance.
+
+Contextual/deictic requests such as:
+
+```text
+Tell me what you think about this.
+```
+
+remain unsupported because the current F4 projection does not yet define a bounded prior-history selection policy for resolving `this`.
+
+### Checked world question
 
 For the bounded checked question:
 
@@ -152,9 +221,9 @@ For the bounded checked question:
 Would the current software run on my machine?
 ```
 
-the existing checked-response chain executes and can recover previously admitted memory.
+the existing checked-response chain executes, recovers eligible personal memory, acquires fresh world evidence, and maintains remembered/checked/interpretation distinctions.
 
-Unsupported or mixed interactions fail closed at the high-level F4 purpose gate after trusted ingress has preserved the canonical input. They are not sent to a model to guess a route.
+Unsupported or mixed interactions fail closed at the high-level purpose gate after trusted ingress has preserved the canonical input. They are not sent to a model to guess a route.
 
 ## Surface session request fencing
 
@@ -169,7 +238,7 @@ content_text
 transport_event_id?
 ```
 
-The browser response exposes surface-level content/status, bounded purpose, and transport replay state rather than internal Person, Relationship, evidence, memory, or cognition identifiers.
+The browser response exposes user-facing content/status, bounded purpose, and transport replay state rather than internal Person, Relationship, evidence, memory, or cognition identifiers.
 
 ## Durable local operational state
 
@@ -204,19 +273,19 @@ same transport_event_id + different semantics
     → conflict
 ```
 
-For a memory-only replay, the same input and admitted memory are recovered without provider work. For a checked response replay, the existing runtime recovery rules continue from the furthest trustworthy durable stage.
+Memory replay recovers the same admitted Claim/Evidence without provider work. Conversational and checked-response replay resume from the furthest trustworthy canonical response stage rather than regenerating already-durable work.
 
 ## Presentation acceptance across restart
 
-For checked responses, the local presentation sink persists acceptance under the same restart-stable presentation key derived from exact CompanionOutput and surface/channel route.
+For any response-producing interaction, the local presentation sink persists acceptance under the restart-stable presentation key derived from exact `CompanionOutput` and surface/channel route.
 
 Exact replay returns the existing acceptance receipt; semantic key reuse with different content is rejected. The runtime commits `COMPANION_PRESENTED_OUTPUT` only after a valid acceptance receipt.
 
-Memory-only interactions do not cross this boundary because they create no CompanionOutput.
+Memory-only interactions do not cross this boundary because they create no `CompanionOutput`.
 
 ## Complete surface/runtime recomposition
 
-The acceptance suite proves two complementary paths.
+The acceptance suite proves complementary paths.
 
 Memory then checked question:
 
@@ -240,14 +309,37 @@ recover same Person / counterpart / RelationshipState / memory
 perform fresh checked response
 ```
 
-Completed checked-response replay still preserves the same input event, CompanionOutput, and presented Timeline event without duplicate acquisition, generation, or local presentation acceptance.
+Conversational restart/replay:
+
+```text
+"Hello."
+↓
+CONVERSATIONAL_RESPONSE
+↓
+model generation / adoption / local presentation
+↓
+close complete surface/runtime composition
+↓
+construct new composition over same stores
+↓
+replay same transport occurrence
+↓
+same canonical input
+same CompanionOutput
+same presented Timeline event
+no duplicate model dispatch
+no duplicate logical presentation
+```
+
+Completed checked-response replay retains its existing stronger acquisition/generation/presentation idempotency guarantees.
 
 ## Browser UI
 
 The dependency-free page:
 
-- renders user messages and actual CompanionOutput text;
-- keeps memory-only operational acknowledgement in surface status rather than a companion message bubble;
+- renders counterpart messages and actual `CompanionOutput` text;
+- keeps memory-only operational acknowledgement in surface status rather than a Companion message bubble;
+- renders conversational and checked responses only after canonical presentation succeeds;
 - generates a transport-event ID for each submitted message;
 - sends only to the same loopback process;
 - includes no remote assets;
@@ -269,29 +361,14 @@ The local surface starts only after explicit administration:
 4. alsoul-host --config ./host.json ready
 5. alsoul-surface --config ./host.json --state ./surface-state.db ...
 6. open the printed loopback URL
-7. establish the bounded F4 personal memory naturally through a supported memory statement
-8. ask the supported current-world question when needed
+7. optionally establish the bounded F4 personal memory through a supported memory statement
+8. use a bounded self-contained conversational form or the supported current-world question
 ```
 
 No manual pre-seeding of the F4 memory claim is required for the natural local path.
 
 ## Deliberate exclusions
 
-This checkpoint does not add:
+This checkpoint does not add public network access, remote user authentication, multi-user routing, automatic identity bootstrap, schema migration, model-based identity/purpose selection, general conversational routing, arbitrary small talk, deictic prior-turn resolution, mixed memory-and-question utterances, general-purpose memory admission, arbitrary fresh-world questions, read/heard/understood receipts, multi-channel fallback, voice/rich embodiment, external Actions, delegated work, or schedules/proactivity.
 
-- public network access;
-- remote user authentication;
-- multi-user or multi-relationship surface routing;
-- automatic identity bootstrap or schema migration;
-- model-based identity or purpose selection;
-- general conversational routing;
-- mixed memory-and-question utterances;
-- general-purpose memory admission;
-- read/heard/understood receipts;
-- multi-channel fallback;
-- voice or rich embodiment;
-- external Actions;
-- delegated work; or
-- schedules/proactivity.
-
-The purpose remains narrow: expose the bounded F4 interaction through a real local surface without turning the surface into a second identity, routing, cognition, memory, or persistence authority.
+The purpose remains narrow: expose implemented F4 semantic paths through a real local surface without turning the browser or surface process into a second identity, routing, cognition, memory, epistemic, or persistence authority.

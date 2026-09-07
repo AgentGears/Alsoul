@@ -4,38 +4,31 @@
 
 This checkpoint closes the gap between deterministic acceptance fixtures and a configured F4 runtime without widening semantic authority.
 
-The runtime now exposes two distinct execution levels:
+The runtime exposes two execution levels:
 
 ```text
 ConfiguredFoundationRuntime.interact
     ↓
 bounded interaction-purpose gate
-    ├── MEMORY_STATEMENT → evidence-grounded memory admission → stop
-    └── WORLD_QUESTION   → configured reactive response path
+    ├── MEMORY_STATEMENT
+    │       → evidence-grounded memory admission
+    │       → stop
+    │
+    ├── CONVERSATIONAL_RESPONSE
+    │       → source-free ContextProjection
+    │       → model generation
+    │       → conversational adoption
+    │       → first-party presentation
+    │
+    └── WORLD_QUESTION
+            → checked fresh-world response path
 
 ConfiguredFoundationRuntime.respond
     ↓
-already-selected WORLD_QUESTION response/recovery path
+already-selected WORLD_QUESTION response/recovery path only
 ```
 
-The checked-response chain remains:
-
-```text
-Counterpart input
-→ Investigation
-→ Observation
-→ WorldSourceCapture
-→ EvidenceItem
-→ bounded source interpretation
-→ WorldResult admission
-→ ContextProjection
-→ ModelInvocation
-→ GeneratedOutput
-→ CompanionOutput
-→ presented Timeline event
-```
-
-The configured runtime adds interaction routing, configuration, source-specific interpretation, provider contract probing, and operator diagnostics around the existing semantic services. None of those concerns become CompanionPerson identity, memory, world truth, or shared-history authority.
+The configured runtime adds bounded interaction routing, configuration, provider interpretation, provider contract enforcement, and diagnostics around Alsoul-owned semantic services. None of those concerns become CompanionPerson identity, memory, world truth, or shared-history authority.
 
 ## Configuration boundary
 
@@ -71,34 +64,38 @@ The configured runtime requires HTTPS for world acquisition, model generation, a
 
 `ConfiguredFoundationRuntime.interact` is the high-level F4 interaction entry point after trusted ingress has already committed a canonical `COUNTERPART_INPUT`.
 
-It uses `F4InteractionPurposeGate` to derive one of the only two purposes implemented by F4:
+It uses `F4InteractionPurposeGate` to derive one implemented bounded purpose:
 
 ```text
 MEMORY_STATEMENT
+CONVERSATIONAL_RESPONSE
 WORLD_QUESTION
 ```
 
-The gate validates that the current input belongs to the supplied relationship, surface binding, and channel binding before the runtime continues. This prevents a high-level caller from pairing one canonical event with another route.
+The gate validates that the current input belongs to the supplied relationship, surface binding, and channel binding before semantic continuation.
 
-For `MEMORY_STATEMENT`, the runtime invokes `F4CounterpartMemoryAdmission` and returns the memory outcome without creating fresh-world or cognition state.
+For `MEMORY_STATEMENT`, the runtime invokes `F4CounterpartMemoryAdmission` and returns the memory outcome without fresh-world or cognition work.
 
-For `WORLD_QUESTION`, the runtime delegates to `respond` and the existing recovery-safe response coordinator.
+For `CONVERSATIONAL_RESPONSE`, the runtime invokes `FoundationConversationalResponseCoordinator`. That path builds a minimal ContextProjection with no projected personal or world propositions, performs one model invocation under the source-free `COMPANION_EXPRESSION` contract, adopts the candidate through a typed conversational output boundary, and uses the normal first-party presentation gate. It creates no Investigation or WorldResult.
+
+For `WORLD_QUESTION`, the runtime delegates to the checked `FoundationResponseCoordinator`, which performs fresh acquisition and evidence-backed world-result admission before cognition.
 
 Unsupported input fails closed before provider work.
 
 ```text
 interaction classification ≠ model authority
 memory admission ≠ response obligation
+conversation ≠ fresh-world investigation
 unsupported input ≠ inferred route
 ```
 
-See [F4 Interaction Purpose Gate](F4_INTERACTION_PURPOSE_GATE.md) for the bounded routing contract.
+See [F4 Interaction Purpose Gate](F4_INTERACTION_PURPOSE_GATE.md) and [F4 Conversational Response Path](F4_CONVERSATIONAL_RESPONSE.md).
 
-## Source-specific interpretation
+## Checked source-specific interpretation
 
 Raw provider return bytes do not become a WorldResult.
 
-The checked-response path first persists the acquisition as normal:
+The checked `WORLD_QUESTION` path first persists actual acquisition:
 
 ```text
 Observation
@@ -108,13 +105,13 @@ Observation
 
 It then loads the exact persisted capture into a bounded `WorldResultExtractor`.
 
-For the current F4 slice, `F4JsonMemoryRequirementExtractor` accepts one JSON semantic contract:
+For the current F4 checked slice, `F4JsonMemoryRequirementExtractor` accepts one JSON semantic contract:
 
 ```text
 minimum_memory_gb: positive integer
 ```
 
-A configured runtime also pins the expected HTTPS source origin. A capture from another origin is retained as historical acquisition evidence but is rejected for WorldResult derivation under that configured source contract.
+A configured runtime pins the expected HTTPS source origin. A capture from another origin is retained as historical acquisition evidence but rejected for WorldResult derivation under that configured source contract.
 
 ```text
 capture persisted
@@ -126,6 +123,46 @@ source contract satisfied
 
 The extractor only returns an `ExtractedWorldResult` proposal. `FoundationServices.admit_world_result` remains the authoritative admission boundary and independently validates evidence lineage and semantic support.
 
+The conversational path does not invoke this acquisition/interpretation chain.
+
+## Model response contracts
+
+The JSON model adapter derives its bounded response contract from the Alsoul-owned provider context shape rather than asking the model to choose the semantic path.
+
+For a checked projection containing exactly one eligible personal item and one current checked world item, the required sequence remains:
+
+```text
+REMEMBERED_COUNTERPART_STATEMENT
+CURRENT_CHECKED_WORLD
+COMPANION_INTERPRETATION
+```
+
+For the current conversational projection:
+
+```text
+personal_context = []
+world_context = []
+```
+
+and the required sequence is exactly:
+
+```text
+COMPANION_EXPRESSION
+```
+
+with:
+
+```text
+source_ref = null
+```
+
+Other provider-context shapes are outside the current F4 model wire contract and fail closed.
+
+```text
+provider contract selection ≠ model routing authority
+source-free expression ≠ evidence-backed proposition
+```
+
 ## ConfiguredFoundationRuntime composition
 
 `ConfiguredFoundationRuntime` composes:
@@ -134,6 +171,7 @@ The extractor only returns an `ExtractedWorldResult` proposal. `FoundationServic
 FoundationServices
 F4InteractionPurposeGate
 F4CounterpartMemoryAdmission
+FoundationConversationalResponseCoordinator
 FoundationResponseCoordinator
 HttpWorldAdapter
 F4JsonMemoryRequirementExtractor
@@ -153,13 +191,45 @@ channel_binding_id
 
 Provider route configuration is constructed outside canonical companion state.
 
-For an interaction already known to be on the checked-response path, lower-level `respond` keeps the existing recovery contract. It resumes from the furthest trustworthy durable stage. Reconfiguration or process replacement therefore does not recreate history or convert provider state into companion state.
+## Lower-level checked response fence
+
+`ConfiguredFoundationRuntime.respond` remains available for explicit checked-response recovery/control. It is not a general response primitive.
+
+Before invoking the checked coordinator it re-runs the deterministic purpose gate against the canonical input and exact route. Only `WORLD_QUESTION` may continue.
+
+```text
+CONVERSATIONAL_RESPONSE → respond
+    = RESPONSE_PATH_PURPOSE_MISMATCH
+    = no world provider work
+    = no model provider work
+```
+
+This prevents a lower-level caller from bypassing the high-level purpose boundary and forcing a social utterance through fresh-world work.
+
+## Recovery
+
+Both response-producing paths reuse the canonical response recovery graph:
+
+```text
+INPUT_ADMITTED
+PROJECTION_READY
+MODEL_ATTEMPT_UNRESOLVED
+GENERATED
+ADOPTED
+PRESENTED
+```
+
+Checked response recovery may additionally recover Investigation, capture, and WorldResult stages before projection.
+
+Conversational recovery begins at the input/projection boundary because no world work exists. A committed conversational GeneratedOutput is recovered rather than regenerated, and adopted output is re-presented idempotently when needed.
+
+Reconfiguration or process replacement therefore does not recreate history or convert provider state into companion state.
 
 ## Model-provider contract probe
 
-The configured runtime exposes an operator-only model contract probe.
+The configured runtime exposes an operator-only model contract probe for the checked-response wire shape.
 
-The probe sends synthetic F4 context and verifies that the configured endpoint returns the required semantic sequence:
+The probe sends synthetic F4 context and verifies:
 
 ```text
 REMEMBERED_COUNTERPART_STATEMENT
@@ -167,9 +237,9 @@ CURRENT_CHECKED_WORLD
 COMPANION_INTERPRETATION
 ```
 
-It also verifies that remembered and checked segments preserve the synthetic claim/result references and that the interpretation segment does not claim an external source.
+It also verifies the synthetic claim/result references and source-free interpretation segment.
 
-The probe is deliberately outside CompanionPerson cognition:
+The probe is outside CompanionPerson cognition:
 
 ```text
 operational contract probe
@@ -179,72 +249,23 @@ operational contract probe
 ≠ Timeline event
 ```
 
-No user message, memory, world result, or relationship state is used by the probe, and the probe writes no canonical cognition rows.
+No user message, memory, world result, or relationship state is used by the probe, and it writes no canonical cognition rows.
 
 ## Operator diagnostics
 
-`FoundationRuntimeDiagnostics` derives a content-free view of one checked response from canonical rows.
+`FoundationRuntimeDiagnostics` derives a content-free response view from canonical rows. Its detailed world-stage `next_action` values are designed for the checked response path; response-level recovery stages remain valid for conversational output as well.
 
-It can expose:
-
-```text
-recovery stage
-next safe operation
-Investigation identity
-Observation identities + statuses
-WorldResult identities
-ModelInvocation identities + outcomes
-provider/model references
-projection/generated/adopted/presented identities
-reuse/recovery blockers
-```
-
-It intentionally excludes:
-
-```text
-user message text
-captured source content
-generated response text
-credentials
-provider authorization headers
-```
-
-Diagnostics remain derived and non-authoritative.
-
-Example next-operation values include:
-
-```text
-START_INVESTIGATION
-START_WORLD_ACQUISITION
-RECONCILE_WORLD_ACQUISITION
-INTERPRET_WORLD_CAPTURE
-BUILD_CONTEXT_PROJECTION
-START_MODEL_INVOCATION
-RECONCILE_MODEL_ATTEMPT
-ADOPT_GENERATED_OUTPUT
-PRESENT_ADOPTED_OUTPUT
-NONE
-```
-
-These values describe what the operator/runtime may safely attempt next on the checked-response path. They do not create new lifecycle authority.
+Diagnostics intentionally exclude user message text, captured source content, generated response text, credentials, and authorization headers. They remain derived and non-authoritative.
 
 ## Failure semantics
 
-A cross-origin source response can produce:
+A checked cross-origin source response may preserve a successful Observation/Capture/EvidenceItem while rejecting WorldResult derivation. This is intentional: acquisition truth does not imply proposition admissibility.
 
-```text
-Observation SUCCEEDED
-WorldSourceCapture persisted
-EvidenceItem persisted
-WORLD_EXTRACTION_REJECTED
-no WorldResult
-```
+An invalid model contract response remains a rejected provider attempt. It does not become CompanionOutput or shared-history presentation.
 
-This is intentional. Alsoul can truthfully retain what it acquired without claiming that the source was admissible under the configured world contract.
+A conversational GeneratedOutput that violates the source-free expression contract can remain durable provider-return history while adoption fails; it does not become CompanionOutput.
 
-Likewise, an invalid model contract response remains a rejected provider attempt. It does not become CompanionOutput or shared-history presentation.
-
-An unsupported high-level interaction is different: trusted ingress may already have preserved the canonical counterpart input, but the purpose gate stops before Investigation or provider execution.
+An unsupported high-level interaction may already exist in canonical counterpart history, but the purpose gate stops before provider execution.
 
 ## Configuration persistence rule
 
@@ -254,19 +275,6 @@ Provider routes are deployment/runtime configuration rather than Person or Relat
 
 ## Acceptance coverage
 
-The executable suite verifies:
+The executable suite verifies configured HTTPS world/model/presentation routes; source-origin-pinned checked interpretation; transport credential separation; the synthetic checked model probe; memory-only interaction without provider work; route fencing; bounded conversational classification and execution without Investigation/WorldResult; the source-free conversational model contract; rejection of conversational source attribution; recovery of committed conversational generation without regeneration; checked-response rejection of conversational input; local surface conversational replay across complete recomposition; and the existing evidence-backed checked-response path.
 
-- configured HTTPS world, model, and presentation routes;
-- strict same-origin world interpretation;
-- capture retention without WorldResult admission when source policy rejects the capture;
-- transport credential separation from public configuration and canonical provider identity fields;
-- a configured model contract probe using synthetic context only;
-- no ModelInvocation or GeneratedOutput created by the operator probe;
-- operator diagnostics before and after a complete checked response;
-- a memory-only high-level interaction that creates admitted memory but no Investigation, ModelInvocation, CompanionOutput, or presented Timeline output;
-- exact memory-only replay without duplicate memory or provider work;
-- high-level route fencing to the canonical relationship/surface/channel event;
-- unsupported high-level interaction failing before provider work; and
-- the configured checked path through memory retrieval, fresh world evidence, model generation, adoption, and presentation.
-
-The configured path is still the bounded F4 slice. It does not introduce general conversational routing, external Actions, durable delegated work, triggers, schedules, proactive contact, multi-channel fallback, or rich embodiment.
+The configured runtime remains the bounded F4 slice. It does not introduce general conversational routing, deictic prior-history resolution, external Actions, durable delegated work, triggers, schedules, proactive contact, multi-channel fallback, or rich embodiment.

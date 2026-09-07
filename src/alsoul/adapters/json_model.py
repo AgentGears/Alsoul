@@ -112,7 +112,8 @@ class JsonModelProviderAdapter:
 
     Credentials are construction-time transport configuration. They are never
     placed in provider context, persisted model identity, or semantic payloads.
-    The endpoint must return the FoundationResponseDraft wire shape.
+    The endpoint must return the FoundationResponseDraft wire shape selected by
+    the bounded semantic context supplied by Alsoul.
     """
 
     endpoint: str
@@ -151,6 +152,7 @@ class JsonModelProviderAdapter:
         if self.authorization_token:
             headers["Authorization"] = f"Bearer {self.authorization_token}"
 
+        required_kinds = self._required_kinds(provider_context)
         request_body = self._request_body(provider_context)
         try:
             response = self.transport.post_json(
@@ -183,15 +185,23 @@ class JsonModelProviderAdapter:
                 "model endpoint returned an invalid FoundationResponseDraft"
             ) from exc
 
-        required_kinds = self._required_kinds()
         if tuple(segment.epistemic_kind for segment in draft.segments) != required_kinds:
             raise AdapterRejected(
                 "model endpoint returned an invalid F4 epistemic segment sequence"
             )
         if any(not segment.text.strip() for segment in draft.segments):
             raise AdapterRejected("model endpoint returned an empty response segment")
+
+        if required_kinds == ("COMPANION_EXPRESSION",):
+            if len(draft.segments) != 1 or draft.segments[0].source_ref is not None:
+                raise AdapterRejected(
+                    "model endpoint returned invalid conversational source attribution shape"
+                )
+            return draft
+
         if (
-            draft.segments[0].source_ref is None
+            len(draft.segments) != 3
+            or draft.segments[0].source_ref is None
             or draft.segments[1].source_ref is None
             or draft.segments[2].source_ref is not None
         ):
@@ -207,16 +217,30 @@ class JsonModelProviderAdapter:
             "provider_context": provider_context,
             "response_contract": {
                 "type": "FoundationResponseDraft",
-                "required_epistemic_kinds": list(self._required_kinds()),
+                "required_epistemic_kinds": list(
+                    self._required_kinds(provider_context)
+                ),
             },
         }
 
     @staticmethod
-    def _required_kinds() -> tuple[str, str, str]:
-        return (
-            "REMEMBERED_COUNTERPART_STATEMENT",
-            "CURRENT_CHECKED_WORLD",
-            "COMPANION_INTERPRETATION",
+    def _required_kinds(provider_context: dict[str, Any]) -> tuple[str, ...]:
+        personal = provider_context.get("personal_context")
+        world = provider_context.get("world_context")
+        if not isinstance(personal, list) or not isinstance(world, list):
+            raise AdapterRejected(
+                "provider context does not contain bounded F4 context collections"
+            )
+        if not personal and not world:
+            return ("COMPANION_EXPRESSION",)
+        if len(personal) == 1 and len(world) == 1:
+            return (
+                "REMEMBERED_COUNTERPART_STATEMENT",
+                "CURRENT_CHECKED_WORLD",
+                "COMPANION_INTERPRETATION",
+            )
+        raise AdapterRejected(
+            "provider context does not match a supported F4 response contract"
         )
 
 
