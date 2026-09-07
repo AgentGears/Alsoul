@@ -16,6 +16,7 @@ dependencies = [
 [project.scripts]
 alsoul-admin = "alsoul.admin.__main__:main"
 alsoul-host = "alsoul.host.__main__:main"
+alsoul-surface = "alsoul.surface.__main__:main"
 
 [project.optional-dependencies]
 dev = [
