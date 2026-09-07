@@ -1,6 +1,7 @@
 from .bootstrap import FoundationBootstrapper
 from .configured_runtime import (
     ConfiguredFoundationRuntime,
+    FoundationInteractionRunResult,
     FoundationRuntimeConfig,
     ModelContractProbeResult,
     ModelRuntimeConfig,
@@ -46,6 +47,7 @@ __all__ = [
     "F4MemoryProposal",
     "FirstPartyIngress",
     "FoundationBootstrapper",
+    "FoundationInteractionRunResult",
     "FoundationResponseCoordinator",
     "FoundationRuntimeConfig",
     "FoundationRuntimeDiagnostic",
