@@ -60,6 +60,9 @@ memory statement ≠ fresh-world question ≠ conversational response
 memory admission ≠ response obligation
 conversation ≠ fresh-world investigation
 conversation ≠ memory admission
+Timeline history ≠ MemoryClaim
+prior Timeline context ≠ factual source authority
+reference resolution ≠ unrestricted transcript injection
 source-free expression ≠ evidence-backed proposition
 surface notice ≠ CompanionOutput
 ```
@@ -134,6 +137,7 @@ F4InteractionPurposeGate
 │   ↓
 │   ContextProjection
 │       Self + Relationship + current input
+│       optional one bounded immediately-prior presented exchange
 │       no projected personal/world proposition
 │   ↓
 │   ModelInvocation
@@ -177,7 +181,7 @@ The checked path is mechanically capable of meaning:
 
 without those distinctions being prompt conventions.
 
-The conversational path intentionally supports only bounded self-contained social forms such as greetings, thanks, `How are you?`, and farewells. Contextual/deictic requests such as `Tell me what you think about this.` remain unsupported until a prior-Timeline selection contract exists.
+The conversational path supports bounded self-contained social forms and a narrow contextual grammar that can reference exactly the immediately preceding presented exchange. Broader pronoun/coreference resolution, generic transcript windows, semantic Timeline search, and cross-thread/channel references remain unsupported.
 
 ## Implementation boundaries
 
@@ -231,18 +235,22 @@ Correction is append-only through explicit supersession. Concurrent admission is
 
 `F4InteractionPurposeGate` classifies only canonical input and is deterministic/provider-independent. It currently selects `MEMORY_STATEMENT`, `CONVERSATIONAL_RESPONSE`, `WORLD_QUESTION`, or `UNSUPPORTED`.
 
-`ConfiguredFoundationRuntime.interact` is the high-level semantic boundary. `ConfiguredFoundationRuntime.respond` remains a lower-level checked-response primitive and now rejects any canonical input that is not a `WORLD_QUESTION` before provider work.
+`ConfiguredFoundationRuntime.interact` is the high-level semantic boundary. `ConfiguredFoundationRuntime.respond` remains a lower-level checked-response primitive and rejects any canonical input that is not a `WORLD_QUESTION` before provider work.
 
 ### Conversational response
 
-`FoundationConversationalResponseCoordinator` handles the bounded source-free conversational path. It projects canonical Self/Relationship/current-input state, performs no Investigation and no memory admission, and requires exactly one unsourced `COMPANION_EXPRESSION` from the provider contract before explicit conversational adoption.
+`FoundationConversationalResponseCoordinator` handles the bounded source-free conversational path. Self-contained forms project canonical Self/Relationship/current-input state. The narrow contextual grammar may additionally project exactly the immediately preceding completed presented exchange as historical interaction context. Neither path performs Investigation or memory admission, and both require exactly one unsourced `COMPANION_EXPRESSION` before explicit conversational adoption.
 
 ```text
 conversation context ≠ canonical history
+Timeline context ≠ admitted memory
+prior Companion speech ≠ factual source authority
 provider session ≠ Relationship continuity
 source-free expression ≠ memory/world claim
 GeneratedOutput ≠ CompanionOutput
 ```
+
+The selected prior exchange is persisted as exact `context_projection_event` membership. Once the projection commits, recovery reuses those exact events rather than searching history again.
 
 ### Fresh-world checked response
 
@@ -268,6 +276,8 @@ Investigation
 Model execution is replaceable. `ModelInvocation` is committed before dispatch. Provider failure, unknown outcome, retry, and replacement do not redefine CompanionPerson.
 
 `RecoveryCoordinator` derives progress from canonical rows instead of a mutable turn-status aggregate. Orphaned in-progress provider work is reconciled explicitly; retry creates a new attempt rather than mutating historical execution.
+
+Provider rendering is versioned. The bounded prior-Timeline context checkpoint advances the renderer identity because contextual projections may now render a separate `prior_timeline_context` field while self-contained and checked projections retain their existing semantic contents.
 
 ### First-party presentation
 
@@ -302,7 +312,7 @@ respond
 
 ### Local first-party surface
 
-`alsoul-surface` / `python -m alsoul.surface` provides a loopback-only browser surface over the same trusted ingress and runtime boundaries. The browser does not decide identity, memory, purpose, cognition, or canonical persistence.
+`alsoul-surface` / `python -m alsoul.surface` provides a loopback-only browser surface over the same trusted ingress and runtime boundaries. The browser does not decide identity, memory, purpose, contextual selection, cognition, or canonical persistence.
 
 A separate local operational store owns only inbound transport replay and first-party presentation acceptance. It is not a second Timeline or memory system.
 
@@ -319,6 +329,9 @@ Observation STARTED + process loss
 ModelInvocation IN_PROGRESS + process loss
 → reconcile old attempt to UNKNOWN
 → retry creates a new ModelInvocation
+
+ContextProjection with selected prior Timeline events committed
+→ recover exact selection; do not search history again
 
 GeneratedOutput committed
 → recover candidate; do not regenerate
@@ -358,6 +371,7 @@ Executable F4 checkpoints:
 - [F4 Evidence-Grounded Memory Admission](docs/F4_EVIDENCE_GROUNDED_MEMORY_ADMISSION.md)
 - [F4 Interaction Purpose Gate](docs/F4_INTERACTION_PURPOSE_GATE.md)
 - [F4 Conversational Response Path](docs/F4_CONVERSATIONAL_RESPONSE.md)
+- [F4 Prior-Timeline Context Selection](docs/F4_PRIOR_TIMELINE_CONTEXT.md)
 
 Architecture decision records:
 
@@ -370,8 +384,8 @@ Architecture decision records:
 
 ## Status
 
-The canonical foundation now supports explicit first-run initialization, durable identity, trusted first-party ingress, evidence-grounded bounded memory, deterministic semantic routing, bounded source-free conversational response, fresh-world checked response, provider execution/recovery, explicit output adoption, restart-safe first-party presentation, and a loopback browser surface.
+The canonical foundation now supports explicit first-run initialization, durable identity, trusted first-party ingress, evidence-grounded bounded memory, deterministic semantic routing, bounded source-free conversational response, mechanically bounded immediate-prior Timeline context, fresh-world checked response, provider execution/recovery, explicit output adoption, restart-safe first-party presentation, and a loopback browser surface.
 
-F4 deliberately does **not** yet implement general conversational routing, arbitrary prior-history reference resolution, general question answering, arbitrary fresh-world questions, broad memory extraction, effectful Actions, durable delegated work, scheduling, proactivity, multi-channel fallback, read/heard receipts, or rich embodiment.
+F4 deliberately does **not** yet implement general conversational routing, arbitrary prior-history reference resolution, generic transcript windows, semantic Timeline search, general question answering, arbitrary fresh-world questions, broad memory extraction, effectful Actions, durable delegated work, scheduling, proactivity, multi-channel fallback, read/heard receipts, or rich embodiment.
 
 The next implementation work should widen only one semantic boundary at a time without collapsing the distinctions above.
