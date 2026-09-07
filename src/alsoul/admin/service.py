@@ -179,6 +179,7 @@ class FoundationAdministrator:
                 surface_ref=surface_ref.strip(),
                 channel_namespace=channel_namespace.strip(),
                 channel_ref=channel_ref.strip(),
+                require_empty=True,
             )
         except SQLAlchemyError as exc:
             raise AdministrationError(
