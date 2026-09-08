@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from hashlib import sha256
+from threading import Barrier
 from uuid import uuid4
 
 import pytest
@@ -150,6 +152,67 @@ def test_active_alias_namespace_rejects_conflicting_loop(services, bootstrapper,
     with pytest.raises(DomainError) as excinfo:
         F4ConversationOpenLoopService(services).consider_event(conflict.event_id)
     assert excinfo.value.code == "CONVERSATION_OPEN_LOOP_ALIAS_CONFLICT"
+
+
+def test_concurrent_alias_assignment_preserves_one_active_owner(
+    services, bootstrapper, now
+):
+    ids = bootstrapper.bootstrap(
+        identity_namespace="alias-concurrency", external_subject=str(uuid4())
+    )
+    _open(services, ids, now, key="one", a="A", b="B")
+    _open(services, ids, now, key="two", a="C", b="D")
+    first = _append(
+        services,
+        ids,
+        now,
+        key="label-one",
+        text='Call the decision between A and B "shared".',
+    )
+    second = _append(
+        services,
+        ids,
+        now,
+        key="label-two",
+        text='Call the decision between C and D "SHARED".',
+    )
+    gate = Barrier(2)
+
+    def assign(event_id):
+        gate.wait(timeout=5)
+        try:
+            result = F4ConversationOpenLoopService(services).consider_event(event_id)
+            return result.disposition
+        except DomainError as exc:
+            return exc.code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = [
+            future.result(timeout=10)
+            for future in (
+                pool.submit(assign, first.event_id),
+                pool.submit(assign, second.event_id),
+            )
+        ]
+
+    assert sorted(outcomes) == [
+        "CONVERSATION_OPEN_LOOP_ALIAS_CONFLICT",
+        "LABELED",
+    ]
+    with services.engine.connect() as conn:
+        active = conn.execute(
+            select(schema.conversation_open_loop_alias)
+            .outerjoin(
+                schema.conversation_open_loop_alias_retirement,
+                schema.conversation_open_loop_alias_retirement.c.open_loop_alias_id
+                == schema.conversation_open_loop_alias.c.open_loop_alias_id,
+            )
+            .where(
+                schema.conversation_open_loop_alias.c.canonical_alias_key == "shared",
+                schema.conversation_open_loop_alias_retirement.c.open_loop_alias_id.is_(None),
+            )
+        ).mappings().all()
+    assert len(active) == 1
 
 
 def test_alias_can_target_one_loop_when_source_reference_is_ambiguous(
