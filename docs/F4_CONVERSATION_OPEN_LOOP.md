@@ -1,9 +1,9 @@
 # F4 Conversation Open Loop
 
-**Status:** Executable bounded Decision 13.A base with Decision 13.B addressing extension  
+**Status:** Executable bounded Decision 13.A base with Decisions 13.B–13.C addressing extensions  
 **Publication:** GitHub-safe
 
-This checkpoint implements durable `ConversationOpenLoop` continuity in the F4 runtime without turning conversational state into memory, delegated work, or background authority. Decision 13.B extends the same object with deterministic human-addressable references; the detailed reference contract lives in [F4 Targetable Conversation Open Loop](F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md).
+This checkpoint implements durable `ConversationOpenLoop` continuity in the F4 runtime without turning conversational state into memory, delegated work, or background authority. Decision 13.B adds deterministic source-derived references; Decision 13.C adds explicit counterpart-authored aliases. Detailed contracts live in [F4 Targetable Conversation Open Loop](F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md) and [F4 Conversation Open Loop Alias](F4_CONVERSATION_OPEN_LOOP_ALIAS.md).
 
 ## Semantic boundary
 
@@ -18,32 +18,33 @@ ConversationOpenLoop
 ≠ Permission
 ```
 
-An open loop therefore means only that a conversational matter remains unresolved. It does not authorize background execution, future contact, scheduling, external effects, or durable factual recall.
+An open loop means only that a conversational matter remains unresolved. It does not authorize background execution, future contact, scheduling, external effects, or durable factual recall.
 
-Decision 13.B adds another permanent distinction:
+Addressing state remains separate:
 
 ```text
 open_loop_id
 ≠ open_loop_reference_id
-≠ canonical_reference_key
+≠ open_loop_alias_id
+≠ canonical reference/alias key
 ≠ current-input selector
 ```
 
-The reference makes a loop addressable. It does not redefine loop identity or grant authority.
+A reference or alias makes a loop addressable. Neither redefines loop identity or grants authority.
 
 ## Bounded F4 grammar
 
 The first executable kind is `DECISION`.
 
-A bounded opening form such as:
+A bounded opening such as:
 
 ```text
 I need to decide between A and B.
 ```
 
-admits a durable loop whose canonical source is that exact `COUNTERPART_INPUT` Timeline event. Under schema v3 the same transaction also admits one source-grounded `DECISION_OPTION_PAIR` reference.
+admits a durable loop whose canonical source is that exact `COUNTERPART_INPUT` Timeline event. The same transaction admits one source-grounded `DECISION_OPTION_PAIR_V1` reference.
 
-An unqualified resume such as:
+An unqualified resume:
 
 ```text
 Back to that decision.
@@ -51,7 +52,7 @@ Back to that decision.
 
 requires exactly one unresolved `DECISION` loop in the relationship. Zero fails unavailable and more than one fails ambiguous.
 
-A qualified resume such as:
+A source-reference resume:
 
 ```text
 Back to the decision between A and B.
@@ -59,7 +60,19 @@ Back to the decision between A and B.
 
 uses exact equality against the mechanically normalized durable option-pair reference. Zero exact matches fails not-found; more than one exact match fails ambiguous. There is no ranking, semantic similarity, recency, or model-selected referent.
 
-The same deterministic selector layer can target the bounded `RESOLVED` and `CANCELLED` terminal operations. `SUPERSEDED` and `EXPIRED` remain defined terminal kinds but F4 does not autonomously create them.
+Decision 13.C permits an explicit user label after an exact target is already available:
+
+```text
+Call the decision between A and B "work laptop".
+```
+
+Later:
+
+```text
+Back to decision "work laptop".
+```
+
+uses exact `USER_LABEL_V1` alias equality. Alias assignment itself fails closed if the referenced target is missing or ambiguous. Alias selectors also support bounded resolve/cancel, while alias remove/rename have their own append-oriented alias lifecycle.
 
 ## Physical lifecycle
 
@@ -71,15 +84,21 @@ COUNTERPART_INPUT
 ConversationOpenLoop
 +
 ConversationOpenLoopReference
++
+optional ConversationOpenLoopAlias
 ↓
-optional later terminal closure
+optional alias retirement
+    REMOVED
+    RENAMED
+↓
+optional loop closure
     RESOLVED
     CANCELLED
     SUPERSEDED
     EXPIRED
 ```
 
-The open-loop row has no mutable status. Currentness is derived from absence of a terminal closure row. References survive closure as historical addressing provenance.
+The open-loop row has no mutable status. Currentness is derived from absence of a terminal closure. References and aliases survive closure as historical provenance. Alias retirement does not close the loop, and loop closure does not erase alias history.
 
 The current schema includes:
 
@@ -87,15 +106,18 @@ The current schema includes:
 conversation_open_loop
 conversation_open_loop_closure
 conversation_open_loop_reference
+conversation_open_loop_alias
+conversation_open_loop_alias_retirement
 context_projection_open_loop_item
 context_projection_open_loop_selector
+context_projection_open_loop_alias_selector
 ```
 
-Schema v1 and v2 remain frozen. Revision `0003_open_loop_reference` advances schema v2 to the current v3 runtime schema. Backfill creates reference metadata only when the canonical v2 opening source is mechanically reconstructable under the frozen bounded opening grammar; migration never uses model inference or semantic approximation.
+Schema v1–v3 remain frozen. Revision `0004_open_loop_user_alias` advances v3 to the current v4 runtime schema. Decision 13.B reference migration backfills only mechanically reconstructable source-derived references. Decision 13.C performs no alias backfill because earlier state contains no canonical counterpart-authored alias-assignment contract.
 
 ## Relationship-scoped continuity
 
-Unlike immediate-prior Timeline context, a `ConversationOpenLoop` is relationship-scoped rather than thread- or route-scoped.
+`ConversationOpenLoop` addressing is relationship-scoped rather than thread- or route-scoped.
 
 ```text
 same RelationshipState
@@ -106,82 +128,55 @@ exactly one eligible matching loop
 → bounded resume may select it
 ```
 
-A later interaction can therefore resume the loop after intervening dialogue or a new conversation/thread without pretending that the old event was admitted memory. This does not make arbitrary cross-thread history retrievable; only explicitly admitted open-loop state is eligible.
+A later interaction can therefore resume admitted loop state after intervening dialogue or a new conversation/thread without pretending that old Timeline content became MemoryClaim. This does not make arbitrary history retrievable.
 
 ## Cognition projection
 
-For an unqualified resume:
+Unqualified, source-reference, and alias selections are resolved before provider execution and pinned into immutable `ContextProjection` provenance.
 
 ```text
-ConversationOpenLoop OL1
-    opened_by_event = I1
+unqualified
+→ selection_basis = CURRENT_OPEN_DECISION_LOOP
 
-current input I7
-    "Back to that decision."
+explicit option pair
+→ selection_basis = EXPLICIT_DECISION_REFERENCE
+→ selected reference + DECISION_OPTION_PAIR_V1 key
 
-↓
-
-ContextProjection CP1
-    selected_event_refs = [I1, I7]
-    selected_open_loop = OL1
-    selection_basis = CURRENT_OPEN_DECISION_LOOP
+explicit user alias
+→ selection_basis = EXPLICIT_USER_ALIAS
+→ selected alias + USER_LABEL_V1 key
 ```
 
-For a qualified resume:
+Personal and world proposition context remain empty on these source-free conversational paths. The model receives only the already-resolved loop; candidate loops or alias candidates are never delegated to the model.
+
+Renderer provenance remains contract-specific:
 
 ```text
-ConversationOpenLoop OL1
-ConversationOpenLoopReference LR1
-    key = ["a","b"]
-
-current input I7
-    "Back to the decision between B and A."
-
-↓
-
-ContextProjection CP1
-    selected_event_refs = [I1, I7]
-    selected_open_loop = OL1
-    selection_basis = EXPLICIT_DECISION_REFERENCE
-    selected_reference = LR1
-    selector_contract = DECISION_OPTION_PAIR_V1
+unqualified open loop          → f4-renderer-v3
+explicit Decision 13.B ref     → f4-renderer-v4
+explicit Decision 13.C alias   → f4-renderer-v5
 ```
-
-Personal and world proposition context remain empty on these source-free conversational paths.
-
-Provider rendering places only the already-resolved loop in `conversation_open_loop_context`. Candidate loops are never delegated to the model for referent choice. Unqualified open-loop rendering retains `f4-renderer-v3`; explicit Decision 13.B reference rendering uses `f4-renderer-v4` because its provider-context shape is stronger.
 
 ## Recovery compatibility
 
-A durable projection created before open-loop-aware selection may contain only the current resume input. Such a projection remains historical state but is not reusable cognition context.
+A durable projection created before the required addressing lineage existed remains historical state but is not automatically reusable cognition context.
 
-Once a valid open-loop-aware projection commits, recovery preserves its exact immutable loop/event lineage and, for v3 qualified selection, its exact selector provenance.
-
-Reuse is selector-specific:
+Once a valid selection commits, recovery preserves that exact selection and revalidates only the semantics necessary for another provider execution.
 
 ```text
-unqualified CP selected OL1
-+
-active DECISION loops = {OL1}
-→ may remain reusable
+unqualified selection
+→ selected loop must remain the sole active DECISION loop
 
-active DECISION loops = {OL1, OL2}
-→ not reusable
+explicit source reference
+→ selected loop must remain the sole active loop matching the pinned reference
+
+explicit user alias
+→ selected loop must remain active
+→ pinned alias must remain unretired
+→ pinned alias must remain the sole active exact alias match
 ```
 
-Qualified selection is narrower:
-
-```text
-qualified CP selected OL1 / ["a","b"]
-+
-add OL2 / ["c","d"]
-→ may remain reusable
-
-add OL3 / ["a","b"]
-→ not reusable
-```
-
-Closure of OL1 also blocks another provider execution from a projection whose current conversational meaning requires OL1 to remain unresolved. Historical projection membership is never rewritten.
+Unrelated loops therefore do not invalidate explicit source-reference or alias selections. Closure of the selected loop, a second matching source reference, or retirement/integrity loss of a pinned alias blocks reuse as appropriate. Historical projection membership is never rewritten.
 
 ## Authority exclusions
 
@@ -200,17 +195,6 @@ Those remain governed by their own architecture boundaries.
 
 ## F4 exclusions
 
-This checkpoint intentionally does not implement:
+This checkpoint intentionally does not implement arbitrary semantic Timeline search, unrestricted pronoun/coreference resolution, model-selected history or referents, embedding/vector lookup, semantic alias/reference matching, model-generated aliases, latest-open-loop-wins behavior, automatic expiry/supersession, background work, proactive reminders/contact, or conversion of open-loop content into MemoryClaim.
 
-- arbitrary semantic Timeline search;
-- unrestricted pronoun/coreference resolution;
-- model-selected history or referents;
-- embedding/vector open-loop lookup;
-- synonym/paraphrase matching for decision references;
-- latest-open-loop-wins behavior;
-- automatic expiry or supersession;
-- background work from conversational state;
-- proactive reminders or contact;
-- conversion of open-loop content into MemoryClaim.
-
-The bounded implementation exists to prove durable conversational continuity and exact addressability while preserving the distinction between unresolved dialogue and every stronger kind of state.
+The bounded implementation proves durable conversational continuity and deterministic addressability while preserving the distinction between unresolved dialogue and every stronger kind of state.

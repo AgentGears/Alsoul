@@ -40,7 +40,8 @@ background work ≠ proactive contact
 PresentationProfile ≠ SelfModel
 AffectState ≠ stable personality
 ConversationOpenLoop ≠ MemoryClaim ≠ DelegatedTask ≠ Commitment ≠ Trigger
-open_loop_id ≠ open_loop_reference_id ≠ reference key ≠ selector
+open_loop_id ≠ open_loop_reference_id ≠ open_loop_alias_id ≠ selector
+user alias ≠ model-generated title
 persistence ≠ recoverability ≠ hydration
 schema initialization ≠ identity bootstrap ≠ runtime recovery
 surface operational state ≠ canonical companion state
@@ -72,16 +73,14 @@ CompanionPerson
             │                     └── PersonClaim / PersonModel
             │
             ├── ConversationOpenLoop
-            │       └── ConversationOpenLoopReference
+            │       ├── ConversationOpenLoopReference
+            │       └── ConversationOpenLoopAlias
             │
             └── Canonical Timeline
-                    │
                     └── EvidenceItem
-                            │
                             └── MemoryClaim / PersonClaim
 
 Fresh world question
-    │
     └── Investigation
             └── Observation
                     └── WorldSourceCapture
@@ -89,7 +88,6 @@ Fresh world question
                                     └── WorldResult
 
 Canonical state selected for cognition
-    │
     └── ContextProjection
             └── ModelInvocation
                     └── GeneratedOutput
@@ -120,7 +118,7 @@ F4InteractionPurposeGate
 │
 ├── CONVERSATIONAL_RESPONSE
 │   ↓
-│   optional bounded ConversationOpenLoop transition
+│   optional bounded ConversationOpenLoop / alias transition
 │   ↓
 │   deterministic context selection
 │       self-contained current input
@@ -158,7 +156,7 @@ F4InteractionPurposeGate
     COMPANION_PRESENTED_OUTPUT
 ```
 
-Everything outside the bounded implemented grammar remains `UNSUPPORTED` after canonical ingress. The model does not decide which branch runs or which durable open loop a reference means.
+Everything outside the bounded implemented grammar remains `UNSUPPORTED` after canonical ingress. The model does not decide which branch runs or which durable open loop a reference or alias means.
 
 The checked path can mechanically support distinctions such as:
 
@@ -194,7 +192,7 @@ Unqualified reference remains fail-closed when more than one decision is active:
 >1 active loops → ambiguous
 ```
 
-Decision 13.B adds deterministic explicit addressing:
+Decision 13.B adds deterministic source-derived addressing:
 
 ```text
 OL1 → ["a","b"]
@@ -207,11 +205,24 @@ exact mechanical reference match
 OL1
 ```
 
-The option-pair contract uses only Unicode normalization, whitespace normalization, case folding, and order-independent pair canonicalization. It does not use embeddings, synonyms, paraphrase inference, recency, semantic ranking, or model choice. Different loops may share the same reference key; such a collision is ambiguous rather than an identity merge.
+Decision 13.C adds explicit counterpart-authored aliases:
 
-Qualified references can govern bounded resume, resolve, and cancel operations. They do not create memory, work, permission, scheduling, or proactive-contact authority.
+```text
+Call the decision between A and B "work laptop".
+↓
+Alias "work laptop" → OL1
 
-Successful loop selection is pinned into immutable `ContextProjection` provenance. Recovery reuses that exact selection rather than searching history again. Unqualified reuse requires continued global active-loop uniqueness; explicit reuse requires continued uniqueness only among loops matching the pinned reference, so unrelated loops do not invalidate it.
+later:
+Back to decision "work laptop".
+↓
+exact USER_LABEL_V1 match
+↓
+OL1
+```
+
+Source references and user aliases use only declared mechanical normalization. They do not use embeddings, synonyms, paraphrase inference, recency, semantic ranking, or model choice. Source-derived reference collisions remain ambiguous; active user-alias conflicts are rejected at admission. Alias remove/rename is append-oriented and separate from loop closure.
+
+Successful loop selection is pinned into immutable `ContextProjection` provenance. Recovery reuses that exact selection rather than searching history again. Unqualified reuse requires continued global active-loop uniqueness; explicit source-reference reuse requires uniqueness only among loops matching the pinned reference; explicit alias reuse requires the pinned alias to remain an unretired unique active address.
 
 Broader pronoun/coreference resolution, generic transcript windows, semantic Timeline search, and arbitrary history resolution remain unsupported.
 
@@ -275,7 +286,13 @@ Model execution is replaceable. `ModelInvocation` is committed before dispatch. 
 
 `RecoveryCoordinator` derives progress from canonical rows rather than mutable turn status. Orphaned in-progress provider work is reconciled explicitly; retry creates a new attempt rather than mutating historical execution.
 
-Provider rendering is versioned. Existing prior-Timeline and unqualified open-loop provider-context contracts use `f4-renderer-v3`. An explicit Decision 13.B open-loop reference changes the provider-context shape and therefore records `f4-renderer-v4`.
+Provider rendering is versioned:
+
+```text
+prior-Timeline / unqualified open-loop context → f4-renderer-v3
+explicit source-derived open-loop reference     → f4-renderer-v4
+explicit counterpart-authored open-loop alias   → f4-renderer-v5
+```
 
 ### Fresh-world checked response
 
@@ -339,9 +356,14 @@ ContextProjection with selected prior Timeline events
 ContextProjection with unqualified ConversationOpenLoop selection
 → reuse only while selected loop remains the sole active DECISION loop
 
-ContextProjection with explicit open-loop reference selection
+ContextProjection with explicit source-reference selection
 → reuse while selected loop remains the sole active loop matching the pinned reference
 → unrelated active loops do not invalidate it
+
+ContextProjection with explicit user-alias selection
+→ reuse while selected loop remains active and pinned alias remains the unique active exact address
+→ unrelated active loops do not invalidate it
+→ alias retirement invalidates another provider execution
 
 GeneratedOutput committed
 → recover candidate; do not regenerate
@@ -382,6 +404,7 @@ Executable F4 checkpoints:
 - [F4 Prior-Timeline Context Selection](docs/F4_PRIOR_TIMELINE_CONTEXT.md)
 - [F4 Conversation Open Loop](docs/F4_CONVERSATION_OPEN_LOOP.md)
 - [F4 Targetable Conversation Open Loop](docs/F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md)
+- [F4 Conversation Open Loop Alias](docs/F4_CONVERSATION_OPEN_LOOP_ALIAS.md)
 
 Architecture decision records:
 
@@ -394,8 +417,8 @@ Architecture decision records:
 
 ## Status
 
-The canonical foundation supports explicit first-run initialization, durable identity, trusted first-party ingress, evidence-grounded bounded memory, deterministic semantic routing, bounded source-free conversation, mechanically bounded immediate-prior Timeline context, durable relationship-scoped `DECISION` ConversationOpenLoops, exact source-grounded option-pair addressing, fresh-world checked response, provider execution/recovery, explicit output adoption, restart-safe first-party presentation, and a loopback browser surface.
+The canonical foundation supports explicit first-run initialization, durable identity, trusted first-party ingress, evidence-grounded bounded memory, deterministic semantic routing, bounded source-free conversation, mechanically bounded immediate-prior Timeline context, durable relationship-scoped `DECISION` ConversationOpenLoops, exact source-grounded option-pair addressing, explicit counterpart-authored user aliases, fresh-world checked response, provider execution/recovery, explicit output adoption, restart-safe first-party presentation, and a loopback browser surface.
 
-F4 deliberately does **not** yet implement general conversational routing, arbitrary prior-history resolution, generic transcript windows, semantic Timeline search, semantic open-loop reference matching, general question answering, arbitrary fresh-world questions, broad memory extraction, automatic open-loop expiry/supersession, effectful Actions, durable delegated work, scheduling, proactivity, multi-channel fallback, read/heard receipts, or rich embodiment.
+F4 deliberately does **not** yet implement general conversational routing, arbitrary prior-history resolution, generic transcript windows, semantic Timeline search, semantic open-loop reference/alias matching, model-generated loop titles, general question answering, arbitrary fresh-world questions, broad memory extraction, automatic open-loop expiry/supersession, effectful Actions, durable delegated work, scheduling, proactivity, multi-channel fallback, read/heard receipts, or rich embodiment.
 
 The next implementation work should widen only one semantic boundary at a time without collapsing the distinctions above.

@@ -84,8 +84,12 @@ class ModelGenerationRunner:
         provider_context = self.services.render_provider_context(context_projection_id)
         renderer_version = self.renderer_version
         open_loop_context = provider_context.get("conversation_open_loop_context")
-        if isinstance(open_loop_context, dict) and open_loop_context.get("selection_policy") == "EXPLICIT_DECISION_REFERENCE":
-            renderer_version = "f4-renderer-v4"
+        if isinstance(open_loop_context, dict):
+            selection_policy = open_loop_context.get("selection_policy")
+            if selection_policy == "EXPLICIT_DECISION_REFERENCE":
+                renderer_version = "f4-renderer-v4"
+            elif selection_policy == "EXPLICIT_USER_ALIAS":
+                renderer_version = "f4-renderer-v5"
         request_digest = adapter.provider_request_digest(provider_context)
         invocation = self.services.start_model_invocation(StartModelInvocationCommand(operation_id=self.ids.new(), context_projection_id=context_projection_id, provider_binding_ref=adapter.provider_binding_ref, model_ref=adapter.model_ref, renderer_version=renderer_version, provider_request_digest=request_digest))
         if after_invocation_started is not None:
