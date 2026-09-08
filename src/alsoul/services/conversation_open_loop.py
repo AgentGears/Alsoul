@@ -7,6 +7,11 @@ from uuid import UUID
 from sqlalchemy import insert, select, update
 
 from alsoul.domain.errors import fail
+from alsoul.services.common import (
+    load_operation_receipt,
+    request_digest,
+    save_operation_receipt,
+)
 from alsoul.services.conversation_open_loop_context import (
     DECISION_REFERENCE_CONTRACT_VERSION,
     DECISION_REFERENCE_KIND,
@@ -32,6 +37,8 @@ OpenLoopSelectionBasis = Literal[
     "EXPLICIT_DECISION_REFERENCE",
     "EXPLICIT_USER_ALIAS",
 ]
+
+_ALIAS_ASSIGNMENT_RECEIPT_SCOPE = "ConversationOpenLoopAliasAssignment"
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,18 +450,67 @@ class F4ConversationOpenLoopService:
                     "canonical source does not match the bounded alias-assignment grammar",
                 )
 
-            replay = conn.execute(
-                select(schema.conversation_open_loop_alias).where(
-                    schema.conversation_open_loop_alias.c.source_event_id == source_event_id
-                )
-            ).mappings().one_or_none()
+            req = request_digest(
+                {
+                    "source_event_id": source_event_id,
+                    "relationship_id": relationship["relationship_id"],
+                    "selector_contract_version": directive.selector_contract_version,
+                    "selector_key": directive.selector_key,
+                    "alias_contract_version": USER_ALIAS_CONTRACT_VERSION,
+                    "alias_key": directive.alias_key,
+                }
+            )
+            replay = load_operation_receipt(
+                conn,
+                scope=_ALIAS_ASSIGNMENT_RECEIPT_SCOPE,
+                operation_id=source_event_id,
+                expected_request_digest=req,
+            )
             if replay is not None:
                 return F4ConversationOpenLoopResult(
                     source_event_id=source_event_id,
                     disposition="LABELED",
-                    open_loop_id=replay["open_loop_id"],
+                    open_loop_id=UUID(replay["open_loop_id"]),
+                    loop_kind=replay["loop_kind"],
+                    open_loop_alias_id=UUID(replay["open_loop_alias_id"]),
+                    idempotent_replay=True,
+                )
+
+            def persist_assignment_receipt(
+                *, open_loop_id: UUID, loop_kind: str, open_loop_alias_id: UUID
+            ) -> None:
+                save_operation_receipt(
+                    conn,
+                    scope=_ALIAS_ASSIGNMENT_RECEIPT_SCOPE,
+                    operation_id=source_event_id,
+                    req_digest=req,
+                    result_kind="ConversationOpenLoopAlias",
+                    result_ref=open_loop_alias_id,
+                    result_json={
+                        "open_loop_id": str(open_loop_id),
+                        "loop_kind": loop_kind,
+                        "open_loop_alias_id": str(open_loop_alias_id),
+                    },
+                    committed_at=self.services.clock.now(),
+                )
+
+            source_alias = conn.execute(
+                select(schema.conversation_open_loop_alias).where(
+                    schema.conversation_open_loop_alias.c.source_event_id == source_event_id
+                )
+            ).mappings().one_or_none()
+            if source_alias is not None:
+                persist_assignment_receipt(
+                    open_loop_id=source_alias["open_loop_id"],
                     loop_kind="DECISION",
-                    open_loop_alias_id=replay["open_loop_alias_id"],
+                    open_loop_alias_id=source_alias["open_loop_alias_id"],
+                )
+                return F4ConversationOpenLoopResult(
+                    source_event_id=source_event_id,
+                    disposition="LABELED",
+                    open_loop_id=source_alias["open_loop_id"],
+                    loop_kind="DECISION",
+                    open_loop_alias_id=source_alias["open_loop_alias_id"],
                     idempotent_replay=True,
                 )
 
@@ -470,12 +526,18 @@ class F4ConversationOpenLoopService:
             )
             if existing:
                 if len(existing) == 1 and existing[0]["open_loop_id"] == selection.open_loop_id:
+                    alias_id = existing[0]["open_loop_alias_id"]
+                    persist_assignment_receipt(
+                        open_loop_id=selection.open_loop_id,
+                        loop_kind=selection.loop_kind,
+                        open_loop_alias_id=alias_id,
+                    )
                     return F4ConversationOpenLoopResult(
                         source_event_id=source_event_id,
                         disposition="LABELED",
                         open_loop_id=selection.open_loop_id,
                         loop_kind=selection.loop_kind,
-                        open_loop_alias_id=existing[0]["open_loop_alias_id"],
+                        open_loop_alias_id=alias_id,
                         idempotent_replay=True,
                     )
                 fail(
@@ -484,6 +546,7 @@ class F4ConversationOpenLoopService:
                 )
 
             alias_id = self.services.ids.new()
+            now = self.services.clock.now()
             conn.execute(
                 insert(schema.conversation_open_loop_alias).values(
                     open_loop_alias_id=alias_id,
@@ -493,8 +556,22 @@ class F4ConversationOpenLoopService:
                     display_label=directive.alias_label,
                     canonical_alias_key=directive.alias_key,
                     source_event_id=source_event_id,
-                    created_at=self.services.clock.now(),
+                    created_at=now,
                 )
+            )
+            save_operation_receipt(
+                conn,
+                scope=_ALIAS_ASSIGNMENT_RECEIPT_SCOPE,
+                operation_id=source_event_id,
+                req_digest=req,
+                result_kind="ConversationOpenLoopAlias",
+                result_ref=alias_id,
+                result_json={
+                    "open_loop_id": str(selection.open_loop_id),
+                    "loop_kind": selection.loop_kind,
+                    "open_loop_alias_id": str(alias_id),
+                },
+                committed_at=now,
             )
             return F4ConversationOpenLoopResult(
                 source_event_id=source_event_id,
@@ -527,7 +604,22 @@ class F4ConversationOpenLoopService:
                 )
 
             replay = conn.execute(
-                select(schema.conversation_open_loop_alias_retirement).where(
+                select(
+                    schema.conversation_open_loop_alias_retirement,
+                    schema.conversation_open_loop_alias.c.open_loop_id,
+                    schema.conversation_open_loop.c.loop_kind,
+                )
+                .join(
+                    schema.conversation_open_loop_alias,
+                    schema.conversation_open_loop_alias_retirement.c.open_loop_alias_id
+                    == schema.conversation_open_loop_alias.c.open_loop_alias_id,
+                )
+                .join(
+                    schema.conversation_open_loop,
+                    schema.conversation_open_loop_alias.c.open_loop_id
+                    == schema.conversation_open_loop.c.open_loop_id,
+                )
+                .where(
                     schema.conversation_open_loop_alias_retirement.c.source_event_id
                     == source_event_id
                 )
@@ -536,6 +628,8 @@ class F4ConversationOpenLoopService:
                 return F4ConversationOpenLoopResult(
                     source_event_id=source_event_id,
                     disposition="RENAMED",
+                    open_loop_id=replay["open_loop_id"],
+                    loop_kind=replay["loop_kind"],
                     open_loop_alias_id=replay["open_loop_alias_id"],
                     replacement_alias_id=replay["replacement_alias_id"],
                     idempotent_replay=True,
@@ -611,7 +705,22 @@ class F4ConversationOpenLoopService:
                 )
 
             replay = conn.execute(
-                select(schema.conversation_open_loop_alias_retirement).where(
+                select(
+                    schema.conversation_open_loop_alias_retirement,
+                    schema.conversation_open_loop_alias.c.open_loop_id,
+                    schema.conversation_open_loop.c.loop_kind,
+                )
+                .join(
+                    schema.conversation_open_loop_alias,
+                    schema.conversation_open_loop_alias_retirement.c.open_loop_alias_id
+                    == schema.conversation_open_loop_alias.c.open_loop_alias_id,
+                )
+                .join(
+                    schema.conversation_open_loop,
+                    schema.conversation_open_loop_alias.c.open_loop_id
+                    == schema.conversation_open_loop.c.open_loop_id,
+                )
+                .where(
                     schema.conversation_open_loop_alias_retirement.c.source_event_id
                     == source_event_id
                 )
@@ -620,6 +729,8 @@ class F4ConversationOpenLoopService:
                 return F4ConversationOpenLoopResult(
                     source_event_id=source_event_id,
                     disposition="ALIAS_REMOVED",
+                    open_loop_id=replay["open_loop_id"],
+                    loop_kind=replay["loop_kind"],
                     open_loop_alias_id=replay["open_loop_alias_id"],
                     idempotent_replay=True,
                 )
