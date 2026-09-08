@@ -7,6 +7,8 @@ from sqlalchemy import select
 from alsoul.services.conversation_context import requires_prior_timeline_context
 from alsoul.services.conversation_open_loop_context import (
     DECISION_REFERENCE_KIND,
+    USER_ALIAS_CONTRACT_VERSION,
+    USER_ALIAS_KIND,
     parse_open_loop_directive,
     requires_conversation_open_loop_context,
 )
@@ -14,13 +16,7 @@ from alsoul.storage import schema
 
 
 def projection_reuse_blocker(conn, projection: dict[str, Any]) -> str | None:
-    """Return why one reactive ContextProjection must not be reused.
-
-    F4 retries may reuse an immutable projection only while the canonical state it
-    fenced is still current. Context-dependent inputs additionally require the exact
-    durable selection contract associated with their committed projection; durable
-    selection lineage takes precedence over re-running reference resolution.
-    """
+    """Return why one reactive ContextProjection must not be reused."""
 
     if projection["purpose"] != "RESPOND_TO_INTERACTION":
         return "WRONG_PURPOSE"
@@ -167,11 +163,57 @@ def _open_loop_selection_blocker(
             == projection["projection_id"]
         )
     ).mappings().one_or_none()
+    alias_selector = conn.execute(
+        select(schema.context_projection_open_loop_alias_selector).where(
+            schema.context_projection_open_loop_alias_selector.c.projection_id
+            == projection["projection_id"]
+        )
+    ).mappings().one_or_none()
+    if selector is not None and alias_selector is not None:
+        return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
 
-    explicit = False
+    selector_mode = "UNQUALIFIED"
     pinned_contract = None
     pinned_key = None
-    if selector is None:
+    pinned_alias_id = None
+
+    if alias_selector is not None:
+        if (
+            alias_selector["open_loop_id"] != item["open_loop_id"]
+            or alias_selector["selection_basis"] != "EXPLICIT_USER_ALIAS"
+            or alias_selector["selector_contract_version"]
+            != USER_ALIAS_CONTRACT_VERSION
+            or not alias_selector["selector_key"]
+        ):
+            return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+        alias = conn.execute(
+            select(schema.conversation_open_loop_alias).where(
+                schema.conversation_open_loop_alias.c.open_loop_alias_id
+                == alias_selector["open_loop_alias_id"]
+            )
+        ).mappings().one_or_none()
+        if (
+            alias is None
+            or alias["open_loop_id"] != item["open_loop_id"]
+            or alias["alias_kind"] != USER_ALIAS_KIND
+            or alias["alias_contract_version"]
+            != alias_selector["selector_contract_version"]
+            or alias["canonical_alias_key"] != alias_selector["selector_key"]
+        ):
+            return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+        retired = conn.execute(
+            select(schema.conversation_open_loop_alias_retirement.c.alias_retirement_id).where(
+                schema.conversation_open_loop_alias_retirement.c.open_loop_alias_id
+                == alias["open_loop_alias_id"]
+            )
+        ).scalar_one_or_none()
+        if retired is not None:
+            return "CONVERSATION_OPEN_LOOP_ALIAS_RETIRED"
+        selector_mode = "USER_ALIAS"
+        pinned_contract = alias_selector["selector_contract_version"]
+        pinned_key = alias_selector["selector_key"]
+        pinned_alias_id = alias_selector["open_loop_alias_id"]
+    elif selector is None:
         # Compatibility for schema-v2 projections. Those could only have been
         # admitted by the unqualified decision-resume contract.
         directive = parse_open_loop_directive(current_input["content_text"])
@@ -215,17 +257,53 @@ def _open_loop_selection_blocker(
                 or reference["canonical_reference_key"] != selector["selector_key"]
             ):
                 return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
-            explicit = True
+            selector_mode = "DECISION_REFERENCE"
             pinned_contract = selector["selector_contract_version"]
             pinned_key = selector["selector_key"]
         else:
             return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
 
-    # Reuse preserves the semantics of the selector that originally chose this loop.
-    # Unqualified selection requires global uniqueness among active decision loops.
-    # Explicit selection requires uniqueness only among active loops matching the
-    # exact pinned reference contract and key; unrelated loops do not invalidate it.
-    if explicit:
+    if selector_mode == "USER_ALIAS":
+        active_rows = conn.execute(
+            select(
+                schema.conversation_open_loop.c.open_loop_id,
+                schema.conversation_open_loop_alias.c.open_loop_alias_id,
+            )
+            .join(
+                schema.conversation_open_loop_alias,
+                schema.conversation_open_loop_alias.c.open_loop_id
+                == schema.conversation_open_loop.c.open_loop_id,
+            )
+            .outerjoin(
+                schema.conversation_open_loop_closure,
+                schema.conversation_open_loop_closure.c.open_loop_id
+                == schema.conversation_open_loop.c.open_loop_id,
+            )
+            .outerjoin(
+                schema.conversation_open_loop_alias_retirement,
+                schema.conversation_open_loop_alias_retirement.c.open_loop_alias_id
+                == schema.conversation_open_loop_alias.c.open_loop_alias_id,
+            )
+            .where(
+                schema.conversation_open_loop.c.relationship_id
+                == projection["relationship_id"],
+                schema.conversation_open_loop.c.loop_kind == "DECISION",
+                schema.conversation_open_loop_closure.c.open_loop_id.is_(None),
+                schema.conversation_open_loop_alias_retirement.c.open_loop_alias_id.is_(None),
+                schema.conversation_open_loop_alias.c.alias_kind == USER_ALIAS_KIND,
+                schema.conversation_open_loop_alias.c.alias_contract_version
+                == pinned_contract,
+                schema.conversation_open_loop_alias.c.canonical_alias_key == pinned_key,
+            )
+        ).mappings().all()
+        active_loop_ids = [row["open_loop_id"] for row in active_rows]
+        if not any(
+            row["open_loop_id"] == item["open_loop_id"]
+            and row["open_loop_alias_id"] == pinned_alias_id
+            for row in active_rows
+        ):
+            return "CONVERSATION_OPEN_LOOP_ALIAS_RETIRED"
+    elif selector_mode == "DECISION_REFERENCE":
         active_loop_ids = conn.execute(
             select(schema.conversation_open_loop.c.open_loop_id)
             .join(
@@ -304,9 +382,6 @@ def _open_loop_selection_blocker(
     ):
         return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
 
-    # ConversationOpenLoop is relationship-scoped. Its source may legitimately come
-    # from another thread/surface/channel; durable relationship identity is the
-    # continuity boundary rather than transport adjacency.
     return None
 
 
