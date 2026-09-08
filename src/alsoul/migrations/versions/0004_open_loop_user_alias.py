@@ -13,6 +13,8 @@ down_revision = "0003_open_loop_reference"
 branch_labels = None
 depends_on = None
 
+_ALIAS_ASSIGNMENT_RECEIPT_SCOPE = "ConversationOpenLoopAliasAssignment"
+
 
 def upgrade() -> None:
     op.create_table(
@@ -130,6 +132,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    operation_receipt = sa.table(
+        "operation_receipt",
+        sa.column("operation_scope", sa.String(128)),
+    )
+    # Alias-assignment receipts contain result references to v4 alias rows. They
+    # cannot survive a downgrade that deliberately removes those rows, otherwise a
+    # later re-upgrade could replay a stale open_loop_alias_id instead of rebuilding
+    # the alias from the retained canonical source event and decision loop.
+    op.execute(
+        operation_receipt.delete().where(
+            operation_receipt.c.operation_scope == _ALIAS_ASSIGNMENT_RECEIPT_SCOPE
+        )
+    )
+
     op.drop_table("context_projection_open_loop_alias_selector")
     op.drop_table("conversation_open_loop_alias_retirement")
     op.drop_index(
