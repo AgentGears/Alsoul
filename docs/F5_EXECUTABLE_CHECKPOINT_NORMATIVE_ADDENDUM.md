@@ -10,10 +10,13 @@ The addendum closes trust ambiguities that are material at the personal-world bo
 
 ```text
 calendar-window endpoint instants ≠ calendar-window membership semantics
+recurrence master ≠ concrete occurrence in the requested window
 bounded personal-world read ≠ unbounded provider-query superset
 Permission field match ≠ trusted Permission grant
 Approval bound to Action ≠ Approval issued by an authorized approver
 committed projection ≠ indefinitely fresh current-state context
+historical freshness policy ≠ current freshness eligibility
+ExecutionAttempt prepared ≠ external dispatch may have started
 provider mutation response ≠ durable effect evidence
 ```
 
@@ -79,13 +82,42 @@ Both boundaries must resolve to unique valid instants under the pinned rules. If
 
 Provider-specific inclusive end dates, duration fields, or local-time representations must be normalized into this exclusive-end form before the canonical predicate is evaluated.
 
+## Recurring source data
+
+Natural-language recurrence reasoning remains outside F5.A, but recurrence already present in the selected calendar cannot be silently ignored or interpreted inconsistently.
+
+The first executable slice does **not** implement local RRULE/recurrence evaluation. Instead, an eligible calendar capability must provide trusted, bounded provider/adapter expansion of recurring source data into concrete occurrences for the exact requested interval, including provider-recognized exceptions and cancellations.
+
+A normalized concrete occurrence retains enough identity/provenance to distinguish it from the series definition, for example:
+
+```text
+provider series/master ref?
+provider occurrence/instance ref
+concrete timed start/end
+OR concrete all-day start/end-exclusive dates
+occurrence status
+exception/replacement provenance where applicable
+```
+
+The series master itself is not admitted as a calendar-day event merely because its template start/end resembles one occurrence. The host applies the canonical timed/all-day normalization and overlap predicate to concrete occurrences only.
+
+For the first slice:
+
+- a provider-expanded cancelled occurrence is excluded when the capability contract defines the cancellation status as authoritative;
+- a provider-expanded modified/exception occurrence is evaluated using the concrete replacement occurrence supplied by the trusted provider/adapter contract;
+- an original occurrence that has been replaced/cancelled must not also survive as a duplicate result;
+- provider occurrence identity is used to prevent master/instance/exception duplication before result admission;
+- if the provider/adapter cannot produce a complete bounded occurrence expansion for the requested interval, the request fails closed rather than returning a knowingly partial schedule.
+
+A provider that returns only a recurrence master and leaves occurrence expansion to unspecified client behavior is not eligible for the first F5.A capability.
+
 ## Complete but bounded provider query
 
 Provider query behavior is not authoritative for Alsoul membership semantics, and F5.A does not permit an unbounded history fetch merely to make overlap evaluation complete.
 
-For the first executable slice, a calendar adapter is eligible only when its trusted capability contract proves that the provider-side query can return **all** events overlapping the exact requested interval without requiring arbitrarily old calendar history. In practice the provider/adapter query semantics must be equivalent to the canonical overlap relation for the bounded resource/window, even if provider syntax differs.
+For the first executable slice, a calendar adapter is eligible only when its trusted capability contract proves that the provider-side query can return **all** concrete events/occurrences overlapping the exact requested interval without requiring arbitrarily old calendar history. In practice the provider/adapter query semantics must be equivalent to the canonical overlap relation for the bounded resource/window, including the recurrence-expansion semantics above, even if provider syntax differs.
 
-The host still normalizes returned events and reapplies the canonical predicate before result admission. Provider filtering is a completeness/minimization mechanism, not semantic authority.
+The host still normalizes returned events and reapplies the canonical predicate before result admission. Provider filtering/expansion is a completeness/minimization mechanism, not semantic authority.
 
 A provider that exposes only `event_start within requested window` and cannot otherwise enumerate all overlapping events with a finite trusted bound is **not eligible** for the first F5.A capability. The runtime must not compensate by fetching unbounded prior history.
 
@@ -93,7 +125,7 @@ If a later capability version introduces a finite maximum event-duration/span co
 
 The first F5.A slice therefore requires overlap-complete bounded query semantics rather than relying on that future extension.
 
-## F5.A acceptance additions for membership/query semantics
+## F5.A acceptance additions for membership/query/recurrence semantics
 
 F5.A is not complete until executable tests additionally prove:
 
@@ -104,9 +136,14 @@ F5.A is not complete until executable tests additionally prove:
 5. a multi-day timed event is included for every requested day whose exact interval it overlaps;
 6. all-day events are normalized from calendar dates to exact half-open intervals using the selected resource's pinned timezone/rules metadata;
 7. ambiguous/nonexistent all-day boundaries fail closed rather than using library/provider defaults;
-8. provider query semantics are complete for the canonical overlap predicate while remaining bounded to the declared personal-world capability contract;
-9. a `start-within-window`-only provider cannot pass F5.A by silently omitting long-running overlapping events or by fetching unbounded history;
-10. non-overlapping provider material is not admitted into `WorldSourceCapture`, WorldResult, or model context merely because provider query mechanics returned it.
+8. recurring masters are normalized through trusted bounded provider/adapter expansion into concrete occurrences before overlap evaluation;
+9. a recurring exception moved into or out of the requested window is evaluated at its concrete replacement time rather than the master template time;
+10. a cancelled recurring occurrence is excluded and does not reappear through the master;
+11. master/occurrence/exception representations cannot create duplicate admitted events;
+12. a provider that returns only recurrence masters without complete trusted occurrence expansion fails closed for the first slice;
+13. provider query semantics are complete for the canonical overlap predicate while remaining bounded to the declared personal-world capability contract;
+14. a `start-within-window`-only provider cannot pass F5.A by silently omitting long-running overlapping events or by fetching unbounded history;
+15. non-overlapping provider material is not admitted into `WorldSourceCapture`, WorldResult, or model context merely because provider query mechanics returned it.
 
 # B. Trusted Permission provenance and authorized grantor
 
@@ -238,48 +275,53 @@ F5.B is not complete until executable tests additionally prove:
 7. revocation or unreadability of approver eligibility between attempts blocks retry before the connector call;
 8. a valid Approval retains immutable provenance linking exact Action, trusted approval ceremony/source, authorized approver, relationship/resource scope, policy/version, and admission time.
 
-# D. Freshness revalidation before new model generation
+# D. Current-policy freshness revalidation before new model generation
 
 A committed `ContextProjection` is immutable provenance for what was selected; it is not proof that a current-state personal-world observation remains fresh indefinitely.
 
-For F5.A, every admitted personal-calendar WorldResult used for a current-state answer carries or deterministically derives trusted freshness metadata:
+For F5.A, every admitted personal-calendar WorldResult used for a current-state answer carries historical freshness provenance:
 
 ```text
 captured_at
-freshness_policy_version
-fresh_until
+freshness_policy_version_at_admission
+fresh_until_at_admission
 source interaction id
 selected PersonalResourceBinding
 exact requested interval
 ```
 
-The trusted freshness policy is host/capability policy, not model or provider suggestion. Missing or unreadable freshness metadata makes the result ineligible for a new current-state model generation.
+Those stored values explain why the result was considered fresh when admitted. They are not permanent authority for later cognition.
 
-Before starting a **new** ModelInvocation from a previously committed personal-calendar projection that has no durable GeneratedOutput, the runtime revalidates:
+The trusted **current** freshness policy is host/capability policy, not model or provider suggestion. Before starting a new ModelInvocation from a previously committed personal-calendar projection that has no durable GeneratedOutput, the runtime obtains the current trusted freshness policy and evaluates the observation again.
+
+Eligibility requires:
 
 ```text
 same originating interaction
 AND same selected resource/request interval
-AND trusted freshness policy/version recognized
-AND now <= fresh_until
+AND current freshness policy is readable/trusted
+AND current policy explicitly considers this captured_at/result eligible now
 AND no other projection-eligibility invariant has become invalid
 ```
 
-If freshness fails, the old projection remains immutable historical provenance but is not reused for new cognition. The runtime re-evaluates current read authority, performs a new Observation/acquisition, admits a new WorldResult, and builds a new ContextProjection.
+The implementation may recompute a current deadline from `captured_at` under the current policy or may use another deterministic current-policy predicate. A historical `fresh_until_at_admission` that remains in the future is **not sufficient** when policy has changed or tightened. A historical policy version being merely recognized for interpretation is also not sufficient; it must still be currently eligible under the active policy or be reevaluated under the active policy.
 
-If a GeneratedOutput, adopted CompanionOutput, or presented output is already durably committed, deterministic downstream recovery may continue from that committed stage without pretending that a new calendar read occurred. This rule prevents process loss between projection and generation from turning an expired observation into a newly generated "current" answer.
+If current freshness eligibility fails or cannot be evaluated, the old projection remains immutable historical provenance but is not reused for new cognition. The runtime re-evaluates current read authority, performs a new Observation/acquisition, admits a new WorldResult, and builds a new ContextProjection.
+
+If a GeneratedOutput, adopted CompanionOutput, or presented output is already durably committed, deterministic downstream recovery may continue from that committed stage without pretending that a new calendar read occurred. This rule prevents process loss between projection and generation from turning an observation that is stale under **current** policy into a newly generated "current" answer.
 
 ## F5.A acceptance additions for freshness/recovery
 
 F5.A recovery tests must additionally prove:
 
-1. process loss after projection commit but before model generation rechecks freshness before a new ModelInvocation;
-2. an unexpired same-interaction projection may be reused without duplicate acquisition;
-3. an expired/missing/unreadable freshness state causes a new authority check and new Observation rather than stale projection reuse;
-4. the stale projection remains immutable and is not rewritten into freshness;
-5. already durable GeneratedOutput/adopted/presented stages remain deterministic downstream recovery stages and do not trigger an unnecessary calendar mutation or fabricated re-check claim.
+1. process loss after projection commit but before model generation rechecks freshness under the current trusted policy before a new ModelInvocation;
+2. an observation still eligible under current policy may be reused for the same interaction without duplicate acquisition;
+3. an expired/missing/unreadable current freshness policy or ineligible result causes a new authority check and new Observation rather than stale projection reuse;
+4. tightening/changing the freshness policy while a projection waits for generation can invalidate it even when its historical `fresh_until_at_admission` is still in the future;
+5. the stale projection and historical policy provenance remain immutable and are not rewritten into freshness;
+6. already durable GeneratedOutput/adopted/presented stages remain deterministic downstream recovery stages and do not trigger an unnecessary calendar mutation or fabricated re-check claim.
 
-# E. Pre-dispatch correlation and atomic Effect evidence
+# E. Pre-dispatch correlation, dispatch-start fence, and atomic Effect evidence
 
 F5.B requires recoverable Action-correlated evidence. For the first mutation slice, correlation that exists only in an ephemeral successful provider response is not sufficient because process loss can destroy the only identifier needed to reconcile the Action.
 
@@ -292,18 +334,46 @@ Action A1
 ↓
 K(A1) durably established
 ↓
-ExecutionAttempt records K(A1)
-↓
-dispatch
+ExecutionAttempt PREPARED records K(A1)
 ```
 
 `K(A1)` must be unique to the Action and must not be derived solely from semantic payload equality. Retries of the same Action reuse the same external operation identity when capability semantics permit them.
 
 A provider integration whose only unique Action-correlated identifier is first learned from the create response and cannot be recovered through any pre-dispatch durable correlation mechanism is **not eligible** for the first F5.B capability. A response-learned provider event ID may strengthen evidence, but it cannot be the sole recovery correlation.
 
-## Durability ordering
+## Durable dispatch-start fence
 
-After dispatch, provider response/correlation evidence is persisted before Effect admission. The first committed `CONFIRMED_EFFECT` state must already have recoverable supporting evidence linked to it.
+A prepared ExecutionAttempt is not proof that transport observed a request. The host therefore persists a distinct dispatch-start fence **after** the immediate pre-dispatch authority check and **before** invoking provider transport.
+
+Conceptually:
+
+```text
+ExecutionAttempt PREPARED with K(A1)
+↓
+revalidate complete current authority gate
+↓
+commit dispatch_started_at / DISPATCH_FENCED
+↓
+only after that commit succeeds may transport be invoked
+```
+
+The fence is conservative. Once `DISPATCH_FENCED` is committed, recovery must assume that transport **may** have observed the request, even if the process actually died in the tiny interval before the transport call began.
+
+Therefore durable recovery distinguishes:
+
+```text
+PREPARED, no dispatch fence
+    → provider could not have observed this attempt under the contract
+
+DISPATCH_FENCED, no conclusive response/effect evidence
+    → UNKNOWN_EFFECT; reconcile through K(A1); no blind retry
+```
+
+A transport adapter must never be called from an unfenced attempt. The fence commit is part of the trusted executor boundary, not a best-effort log written after dispatch.
+
+## Durability ordering after dispatch
+
+After transport begins, provider response/correlation evidence is persisted before Effect admission. The first committed `CONFIRMED_EFFECT` state must already have recoverable supporting evidence linked to it.
 
 Conceptually:
 
@@ -318,16 +388,19 @@ that no visible Effect state exists without its support
 
 The storage design may use one database transaction, foreign-key-enforced dependent insertion, or another mechanism with equivalent crash semantics. It must not commit an Effect first and attach evidence later.
 
-If evidence is durable but the process dies before Effect admission, recovery admits the Effect from that durable evidence without redispatching the Action. If dispatch may have occurred but no conclusive response evidence was persisted, the pre-dispatch `K(A1)` supports read-side reconciliation and the state remains `UNKNOWN_EFFECT` until adequate evidence exists.
+If evidence is durable but the process dies before Effect admission, recovery admits the Effect from that durable evidence without redispatching the Action. If a fenced dispatch has no conclusive response evidence, `K(A1)` supports read-side reconciliation and the state remains `UNKNOWN_EFFECT` until adequate evidence exists.
 
 ## Required crash-boundary behavior
 
 ```text
-crash before dispatch
-    → no external effect assumed; ordinary authority/retry rules apply
+crash while PREPARED, before dispatch fence commit
+    → no external dispatch possible for this attempt; ordinary current-authority retry rules apply
 
-crash after dispatch, before conclusive response evidence commit
-    → UNKNOWN_EFFECT; reconcile using durable Action correlation; no blind retry
+crash after dispatch fence commit, before transport invocation
+    → UNKNOWN_EFFECT conservatively; reconcile using K(A1); no blind retry
+
+crash after transport invocation, before conclusive response evidence commit
+    → UNKNOWN_EFFECT; reconcile using K(A1); no blind retry
 
 crash after response/correlation evidence commit, before Effect commit
     → recover evidence and admit Effect if sufficient; do not redispatch
@@ -336,18 +409,21 @@ crash after Effect commit
     → Effect and its SUPPORTS evidence are both already recoverable
 ```
 
-## F5.B acceptance additions for Effect durability
+## F5.B acceptance additions for dispatch/effect durability
 
 F5.B is not complete until executable tests additionally prove:
 
 1. Action-specific external correlation is durably established before every mutation dispatch;
 2. an adapter relying solely on a response-learned unique event ID with no recoverable pre-dispatch correlation is rejected for the first F5.B capability;
-3. crash after dispatch but before response-evidence commit recovers as `UNKNOWN_EFFECT` and reconciles through the durable Action correlation without blind retry;
-4. provider response/reconciliation evidence becomes durable before Effect admission;
-5. crash after evidence commit but before Effect commit recovers and can admit the Effect without redispatch;
-6. the first visible committed Effect state already has its required Action-correlated SUPPORTS evidence;
-7. no crash boundary can expose a confirmed Effect without recoverable supporting evidence;
-8. strong completion language remains blocked until that evidence-backed Effect state is committed.
+3. transport is impossible before a durable dispatch-start fence is committed;
+4. crash before the fence leaves a PREPARED attempt that is known not to have reached transport;
+5. crash in the fence-to-transport window recovers conservatively as `UNKNOWN_EFFECT` and does not blindly retry;
+6. crash after transport but before response-evidence commit also recovers as `UNKNOWN_EFFECT` and reconciles through durable Action correlation;
+7. provider response/reconciliation evidence becomes durable before Effect admission;
+8. crash after evidence commit but before Effect commit recovers and can admit the Effect without redispatch;
+9. the first visible committed Effect state already has its required Action-correlated SUPPORTS evidence;
+10. no crash boundary can expose a confirmed Effect without recoverable supporting evidence;
+11. strong completion language remains blocked until that evidence-backed Effect state is committed.
 
 # Closure consequence
 
@@ -358,6 +434,8 @@ exact personal-calendar windows
 +
 canonical provider-independent event membership
 +
+trusted bounded recurrence expansion
++
 bounded overlap-complete personal-world acquisition
 +
 trusted Permission admission / authorized grantor
@@ -366,9 +444,11 @@ trusted Approval admission / authorized approver
 +
 cross-relationship/resource isolation
 +
-freshness revalidation before new cognition
+current-policy freshness revalidation before new cognition
 +
 pre-dispatch Action correlation
++
+durable dispatch-start fencing
 +
 atomic evidence-backed Effect confirmation
 ```
@@ -377,10 +457,12 @@ This preserves the intended trust boundary:
 
 ```text
 what belongs to the requested personal-world view
-must not depend on adapter defaults or unbounded access
+must not depend on adapter defaults, recurrence ambiguity, or unbounded access
 
 standing authority and per-action consent
 must not depend on untrusted identifiers
+
+recovery must distinguish definitely-not-dispatched from may-have-dispatched
 
 and
 
