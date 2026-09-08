@@ -1,8 +1,8 @@
 """Current persistence schema.
 
-Historical schema modules remain frozen. Schema v3 extends the executable foundation
-with durable targetable ConversationOpenLoop references and projection selector
-provenance.
+Historical schema modules remain frozen. Schema v4 extends the executable foundation
+with durable counterpart-authored ConversationOpenLoop aliases, append-oriented alias
+retirement, and alias-selection projection provenance.
 """
 
-from .schema_v3 import *  # noqa: F401,F403
+from .schema_v4 import *  # noqa: F401,F403
