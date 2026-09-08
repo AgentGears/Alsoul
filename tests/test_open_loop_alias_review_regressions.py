@@ -137,6 +137,20 @@ def test_blank_alias_directives_are_bounded_as_unsupported(text):
     assert classify_f4_interaction_text(text) == "UNSUPPORTED"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        'Call the decision between   and B "work".',
+        'Call the decision between A and    "work".',
+        'Label the decision between   and B as "work".',
+        'Label the decision between A and    as "work".',
+    ],
+)
+def test_blank_alias_assignment_options_are_bounded_as_unsupported(text):
+    assert parse_open_loop_directive(text).operation == "NONE"
+    assert classify_f4_interaction_text(text) == "UNSUPPORTED"
+
+
 def test_rename_replay_preserves_original_semantic_result(services, bootstrapper, now):
     ids = bootstrapper.bootstrap(
         identity_namespace="alias-review-rename",
