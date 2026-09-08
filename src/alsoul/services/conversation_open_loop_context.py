@@ -165,6 +165,13 @@ def canonicalize_decision_option_pair(option_a: str, option_b: str) -> str:
     return json.dumps(sorted((first, second)), ensure_ascii=False, separators=(",", ":"))
 
 
+def _try_canonicalize_decision_option_pair(option_a: str, option_b: str) -> str | None:
+    try:
+        return canonicalize_decision_option_pair(option_a, option_b)
+    except ValueError:
+        return None
+
+
 def normalize_user_alias(value: str) -> str:
     """Apply the frozen mechanical normalization used by USER_LABEL_V1."""
 
@@ -186,11 +193,14 @@ def _try_normalize_user_alias(value: str) -> str | None:
 def _explicit_directive(operation: OpenLoopDirective, match: re.Match[str]) -> F4OpenLoopDirective:
     option_a = match.group("option_a")
     option_b = match.group("option_b")
+    selector_key = _try_canonicalize_decision_option_pair(option_a, option_b)
+    if selector_key is None:
+        return F4OpenLoopDirective(operation="NONE")
     return F4OpenLoopDirective(
         operation=operation,
         selector_kind="DECISION_OPTION_PAIR",
         selector_contract_version=DECISION_REFERENCE_CONTRACT_VERSION,
-        selector_key=canonicalize_decision_option_pair(option_a, option_b),
+        selector_key=selector_key,
         option_a=option_a,
         option_b=option_b,
     )
@@ -222,6 +232,8 @@ def parse_open_loop_directive(content_text: str) -> F4OpenLoopDirective:
         match = pattern.fullmatch(content_text)
         if match:
             directive = _explicit_directive("LABEL", match)
+            if directive.operation == "NONE":
+                return directive
             label = match.group("label")
             alias_key = _try_normalize_user_alias(label)
             if alias_key is None:
