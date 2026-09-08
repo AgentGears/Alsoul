@@ -190,13 +190,35 @@ Successful selection is pinned into immutable `ContextProjection` selector prove
 
 See [F4 Targetable Conversation Open Loop](F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md).
 
+## Decision 13.C — Explicit counterpart-authored open-loop aliases
+
+`ConversationOpenLoopAlias` is immutable durable relationship-scoped addressing state explicitly assigned by the counterpart after an existing deterministic selector resolves one active loop. It is separate from canonical loop identity, source-derived references, memory, and current-input selectors.
+
+```text
+open_loop_id
+≠ open_loop_reference_id
+≠ open_loop_alias_id
+≠ canonical alias key
+≠ selector
+```
+
+F4 aliases use `USER_LABEL_V1`: Unicode normalization, whitespace normalization, and case folding only. A model-generated title, inferred topic, embedding result, semantic similarity result, or recency rule cannot create or resolve a user alias.
+
+The active alias namespace is relationship-scoped and write-fenced. One canonical alias key may address at most one active `DECISION` loop under `USER_LABEL_V1`; conflict fails closed. One loop may hold multiple aliases and repeating the same canonical alias for the same loop reuses the existing alias.
+
+Alias removal and rename are append-oriented lifecycle transitions distinct from loop closure. Rename retires the old alias and creates or reuses a replacement alias. Closing a loop retains alias history; retiring an alias does not close the loop. Alias keys may be explicitly reused only when prior ownership no longer participates in the active namespace.
+
+Exact aliases may govern bounded resume, resolve, and cancel. Alias selection is pinned into immutable `ContextProjection` provenance and uses `f4-renderer-v5`. Reuse requires the selected loop to remain active and the pinned alias to remain an unretired unique exact address. Migration from schema v3 creates no aliases because older state contains no canonical user-authored alias assignment contract.
+
+See [F4 Conversation Open Loop Alias](F4_CONVERSATION_OPEN_LOOP_ALIAS.md).
+
 ## Decision 14.A — Whole-system hydration and recovery
 
 Recovery is deterministic reconstruction from Alsoul-owned durable state, not provider/model runtime restoration. Readiness is operation-specific. Canonical identity/Self and required Relationship integrity are hard blockers; other missing domains degrade/block only dependent operations. Recovery resumes from the furthest trustworthy durable stage.
 
 ## Decision 15.A — F4 physical persistence
 
-F4 uses a transactional relational store. Self and Relationship use immutable complete revisions plus current heads. Timeline, evidence, claims, captures, WorldResults, ContextProjections, generated/adopted outputs, presented history, ConversationOpenLoop lifecycle, durable open-loop references, and selector provenance are immutable or append-oriented. External calls occur outside long-lived database transactions.
+F4 uses a transactional relational store. Self and Relationship use immutable complete revisions plus current heads. Timeline, evidence, claims, captures, WorldResults, ContextProjections, generated/adopted outputs, presented history, ConversationOpenLoop lifecycle, durable open-loop references, user aliases, alias retirement, and selector provenance are immutable or append-oriented. External calls occur outside long-lived database transactions.
 
 ## Decision 15.B — F4 application services and recovery state
 
@@ -210,7 +232,8 @@ See:
 - [F4 Implementation Bootstrap](F4_IMPLEMENTATION_BOOTSTRAP.md)
 - [F4 Conversation Open Loop](F4_CONVERSATION_OPEN_LOOP.md)
 - [F4 Targetable Conversation Open Loop](F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md)
+- [F4 Conversation Open Loop Alias](F4_CONVERSATION_OPEN_LOOP_ALIAS.md)
 
 ## Current implementation boundary
 
-The executable walking skeleton now includes persistent identity/relationship, canonical first-party text history, one evidence-grounded personal memory, fresh world acquisition/result, bounded source-free conversation, mechanically selected immediate-prior Timeline context, one relationship-scoped `DECISION` ConversationOpenLoop with deterministic explicit addressing, immutable ContextProjection, model invocation, output adoption, presentation, and complete runtime reconstruction. Broader open-loop kinds, semantic reference matching, automatic expiry/supersession, generic semantic history retrieval, effectful work, durable tasks, proactivity, rich modality, and affect remain outside F4 implementation.
+The executable walking skeleton now includes persistent identity/relationship, canonical first-party text history, one evidence-grounded personal memory, fresh world acquisition/result, bounded source-free conversation, mechanically selected immediate-prior Timeline context, relationship-scoped `DECISION` ConversationOpenLoops with deterministic source references and explicit counterpart-authored aliases, immutable ContextProjection, model invocation, output adoption, presentation, and complete runtime reconstruction. Broader open-loop kinds, semantic reference/alias matching, automatic expiry/supersession, generic semantic history retrieval, effectful work, durable tasks, proactivity, rich modality, and affect remain outside F4 implementation.
