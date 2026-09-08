@@ -6,6 +6,8 @@ from sqlalchemy import select
 
 from alsoul.services.conversation_context import requires_prior_timeline_context
 from alsoul.services.conversation_open_loop_context import (
+    DECISION_REFERENCE_KIND,
+    parse_open_loop_directive,
     requires_conversation_open_loop_context,
 )
 from alsoul.storage import schema
@@ -16,8 +18,8 @@ def projection_reuse_blocker(conn, projection: dict[str, Any]) -> str | None:
 
     F4 retries may reuse an immutable projection only while the canonical state it
     fenced is still current. Context-dependent inputs additionally require the exact
-    durable selection contract now associated with their grammar; legacy projections
-    are history, not silently reusable cognition context.
+    durable selection contract associated with their committed projection; durable
+    selection lineage takes precedence over re-running reference resolution.
     """
 
     if projection["purpose"] != "RESPOND_TO_INTERACTION":
@@ -52,7 +54,15 @@ def projection_reuse_blocker(conn, projection: dict[str, Any]) -> str | None:
     if projected_input is None:
         return "CURRENT_INPUT_NOT_PROJECTED"
 
-    if requires_conversation_open_loop_context(current_input["content_text"]):
+    open_loop_item = conn.execute(
+        select(schema.context_projection_open_loop_item.c.open_loop_id).where(
+            schema.context_projection_open_loop_item.c.projection_id
+            == projection["projection_id"]
+        )
+    ).scalar_one_or_none()
+    if open_loop_item is not None or requires_conversation_open_loop_context(
+        current_input["content_text"]
+    ):
         blocker = _open_loop_selection_blocker(
             conn,
             projection=projection,
@@ -151,25 +161,112 @@ def _open_loop_selection_blocker(
     ):
         return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
 
-    # Reuse must preserve the same uniqueness condition that fresh selection used.
-    # Open-loop admission can occur for an already-admitted Timeline event without
-    # advancing the Timeline frontier, so frontier equality alone cannot fence this
-    # derived relationship state. The selected loop must still be the one and only
-    # unresolved DECISION loop at provider-execution time.
-    active_loop_ids = conn.execute(
-        select(schema.conversation_open_loop.c.open_loop_id)
-        .outerjoin(
-            schema.conversation_open_loop_closure,
-            schema.conversation_open_loop_closure.c.open_loop_id
-            == schema.conversation_open_loop.c.open_loop_id,
+    selector = conn.execute(
+        select(schema.context_projection_open_loop_selector).where(
+            schema.context_projection_open_loop_selector.c.projection_id
+            == projection["projection_id"]
         )
-        .where(
-            schema.conversation_open_loop.c.relationship_id
-            == projection["relationship_id"],
-            schema.conversation_open_loop.c.loop_kind == "DECISION",
-            schema.conversation_open_loop_closure.c.open_loop_id.is_(None),
-        )
-    ).scalars().all()
+    ).mappings().one_or_none()
+
+    explicit = False
+    pinned_contract = None
+    pinned_key = None
+    if selector is None:
+        # Compatibility for schema-v2 projections. Those could only have been
+        # admitted by the unqualified decision-resume contract.
+        directive = parse_open_loop_directive(current_input["content_text"])
+        if directive.operation != "RESUME" or directive.selector_kind != "UNQUALIFIED":
+            return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+    else:
+        if selector["open_loop_id"] != item["open_loop_id"]:
+            return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+        if selector["selection_basis"] == "CURRENT_OPEN_DECISION_LOOP":
+            if any(
+                selector[name] is not None
+                for name in (
+                    "open_loop_reference_id",
+                    "selector_contract_version",
+                    "selector_key",
+                )
+            ):
+                return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+        elif selector["selection_basis"] == "EXPLICIT_DECISION_REFERENCE":
+            if any(
+                selector[name] is None
+                for name in (
+                    "open_loop_reference_id",
+                    "selector_contract_version",
+                    "selector_key",
+                )
+            ):
+                return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+            reference = conn.execute(
+                select(schema.conversation_open_loop_reference).where(
+                    schema.conversation_open_loop_reference.c.open_loop_reference_id
+                    == selector["open_loop_reference_id"]
+                )
+            ).mappings().one_or_none()
+            if (
+                reference is None
+                or reference["open_loop_id"] != item["open_loop_id"]
+                or reference["reference_kind"] != DECISION_REFERENCE_KIND
+                or reference["reference_contract_version"]
+                != selector["selector_contract_version"]
+                or reference["canonical_reference_key"] != selector["selector_key"]
+            ):
+                return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+            explicit = True
+            pinned_contract = selector["selector_contract_version"]
+            pinned_key = selector["selector_key"]
+        else:
+            return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
+
+    # Reuse preserves the semantics of the selector that originally chose this loop.
+    # Unqualified selection requires global uniqueness among active decision loops.
+    # Explicit selection requires uniqueness only among active loops matching the
+    # exact pinned reference contract and key; unrelated loops do not invalidate it.
+    if explicit:
+        active_loop_ids = conn.execute(
+            select(schema.conversation_open_loop.c.open_loop_id)
+            .join(
+                schema.conversation_open_loop_reference,
+                schema.conversation_open_loop_reference.c.open_loop_id
+                == schema.conversation_open_loop.c.open_loop_id,
+            )
+            .outerjoin(
+                schema.conversation_open_loop_closure,
+                schema.conversation_open_loop_closure.c.open_loop_id
+                == schema.conversation_open_loop.c.open_loop_id,
+            )
+            .where(
+                schema.conversation_open_loop.c.relationship_id
+                == projection["relationship_id"],
+                schema.conversation_open_loop.c.loop_kind == "DECISION",
+                schema.conversation_open_loop_closure.c.open_loop_id.is_(None),
+                schema.conversation_open_loop_reference.c.reference_kind
+                == DECISION_REFERENCE_KIND,
+                schema.conversation_open_loop_reference.c.reference_contract_version
+                == pinned_contract,
+                schema.conversation_open_loop_reference.c.canonical_reference_key
+                == pinned_key,
+            )
+        ).scalars().all()
+    else:
+        active_loop_ids = conn.execute(
+            select(schema.conversation_open_loop.c.open_loop_id)
+            .outerjoin(
+                schema.conversation_open_loop_closure,
+                schema.conversation_open_loop_closure.c.open_loop_id
+                == schema.conversation_open_loop.c.open_loop_id,
+            )
+            .where(
+                schema.conversation_open_loop.c.relationship_id
+                == projection["relationship_id"],
+                schema.conversation_open_loop.c.loop_kind == "DECISION",
+                schema.conversation_open_loop_closure.c.open_loop_id.is_(None),
+            )
+        ).scalars().all()
+
     if item["open_loop_id"] not in active_loop_ids:
         return "CONVERSATION_OPEN_LOOP_NO_LONGER_ACTIVE"
     if len(active_loop_ids) != 1:
@@ -208,7 +305,7 @@ def _open_loop_selection_blocker(
         return "CONVERSATION_OPEN_LOOP_SELECTION_INVALID"
 
     # ConversationOpenLoop is relationship-scoped. Its source may legitimately come
-    # from another thread/surface/channel; the durable relationship identity is the
+    # from another thread/surface/channel; durable relationship identity is the
     # continuity boundary rather than transport adjacency.
     return None
 

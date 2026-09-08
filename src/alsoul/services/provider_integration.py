@@ -38,141 +38,58 @@ class ModelGenerationRunResult:
 
 
 class WorldAcquisitionRunner:
-    """Run one concrete read-only acquisition under an existing Investigation.
+    """Run one concrete read-only acquisition under an existing Investigation."""
 
-    The Observation is persisted before calling the adapter. Provider return data
-    becomes canonical only through RecordObservationSuccess; this runner never
-    creates a WorldResult.
-    """
-
-    def __init__(
-        self,
-        services: FoundationServices,
-        *,
-        clock: Clock | None = None,
-        ids: IdGenerator | None = None,
-    ) -> None:
+    def __init__(self, services: FoundationServices, *, clock: Clock | None = None, ids: IdGenerator | None = None) -> None:
         self.services = services
         self.clock = clock or SystemClock()
         self.ids = ids or UUIDGenerator()
 
-    def run(
-        self,
-        *,
-        investigation_id: UUID,
-        adapter: WorldAcquisitionAdapter,
-        acquisition_kind: str,
-        request_descriptor: dict[str, Any],
-        after_observation_started: AttemptStartedHook | None = None,
-    ) -> WorldAcquisitionRunResult:
-        observation = self.services.start_observation(
-            StartObservationCommand(
-                operation_id=self.ids.new(),
-                investigation_id=investigation_id,
-                acquisition_kind=acquisition_kind,
-                request_descriptor=request_descriptor,
-            )
-        )
-
-        # This hook is deliberately outside the provider try/except. A caller that
-        # simulates or detects process loss after the durable STARTED boundary must
-        # leave the Observation STARTED rather than rewriting it as FAILED.
+    def run(self, *, investigation_id: UUID, adapter: WorldAcquisitionAdapter, acquisition_kind: str, request_descriptor: dict[str, Any], after_observation_started: AttemptStartedHook | None = None) -> WorldAcquisitionRunResult:
+        observation = self.services.start_observation(StartObservationCommand(operation_id=self.ids.new(), investigation_id=investigation_id, acquisition_kind=acquisition_kind, request_descriptor=request_descriptor))
         if after_observation_started is not None:
             after_observation_started(observation.observation_id)
-
         try:
             acquired = adapter.acquire(captured_at=self.clock.now())
             if not isinstance(acquired, WorldAcquisitionSuccess):
                 raise TypeError("world adapter returned an invalid acquisition result")
-            success_command = RecordObservationSuccessCommand(
-                operation_id=self.ids.new(),
-                observation_id=observation.observation_id,
-                source_identity=acquired.source_identity,
-                requested_locator=acquired.requested_locator,
-                resolved_locator=acquired.resolved_locator,
-                content_text=acquired.content,
-                captured_at=acquired.captured_at,
-                source_version=acquired.source_version,
-                source_published_at=acquired.source_published_at,
-                source_modified_at=acquired.source_modified_at,
-            )
+            command = RecordObservationSuccessCommand(operation_id=self.ids.new(), observation_id=observation.observation_id, source_identity=acquired.source_identity, requested_locator=acquired.requested_locator, resolved_locator=acquired.resolved_locator, content_text=acquired.content, captured_at=acquired.captured_at, source_version=acquired.source_version, source_published_at=acquired.source_published_at, source_modified_at=acquired.source_modified_at)
         except Exception:
             self._mark_observation_failed_best_effort(observation.observation_id)
             raise
-
         try:
-            accepted = self.services.record_observation_success(success_command)
+            accepted = self.services.record_observation_success(command)
         except Exception:
-            # If the success transaction definitely did not commit, FAILED is the
-            # conservative recoverable state. If it did commit before transport
-            # uncertainty, the terminal-state guard prevents rewriting SUCCEEDED.
             self._mark_observation_failed_best_effort(observation.observation_id)
             raise
-
-        return WorldAcquisitionRunResult(
-            observation_id=observation.observation_id,
-            source_capture_id=accepted.source_capture_id,
-            evidence_id=accepted.evidence_id,
-        )
+        return WorldAcquisitionRunResult(observation.observation_id, accepted.source_capture_id, accepted.evidence_id)
 
     def _mark_observation_failed_best_effort(self, observation_id: UUID) -> None:
         try:
-            self.services.record_observation_failure(
-                operation_id=self.ids.new(),
-                observation_id=observation_id,
-            )
+            self.services.record_observation_failure(operation_id=self.ids.new(), observation_id=observation_id)
         except Exception:
-            # Preserve the primary failure. Recovery derives the durable state and
-            # will not treat an orphan STARTED observation as successful evidence.
             pass
 
 
 class ModelGenerationRunner:
-    """Bind one replaceable provider attempt to an immutable ContextProjection.
+    """Bind one replaceable provider attempt to an immutable ContextProjection."""
 
-    ModelInvocation is committed before dispatch. A successful provider return is
-    persisted only as GeneratedOutput; adoption and presentation remain separate
-    semantic boundaries.
-    """
-
-    def __init__(
-        self,
-        services: FoundationServices,
-        *,
-        clock: Clock | None = None,
-        ids: IdGenerator | None = None,
-        renderer_version: str = "f4-renderer-v3",
-    ) -> None:
+    def __init__(self, services: FoundationServices, *, clock: Clock | None = None, ids: IdGenerator | None = None, renderer_version: str = "f4-renderer-v3") -> None:
         self.services = services
         self.clock = clock or SystemClock()
         self.ids = ids or UUIDGenerator()
         self.renderer_version = renderer_version
 
-    def run(
-        self,
-        *,
-        context_projection_id: UUID,
-        adapter: ModelProviderAdapter,
-        after_invocation_started: AttemptStartedHook | None = None,
-    ) -> ModelGenerationRunResult:
+    def run(self, *, context_projection_id: UUID, adapter: ModelProviderAdapter, after_invocation_started: AttemptStartedHook | None = None) -> ModelGenerationRunResult:
         provider_context = self.services.render_provider_context(context_projection_id)
+        renderer_version = self.renderer_version
+        open_loop_context = provider_context.get("conversation_open_loop_context")
+        if isinstance(open_loop_context, dict) and open_loop_context.get("selection_policy") == "EXPLICIT_DECISION_REFERENCE":
+            renderer_version = "f4-renderer-v4"
         request_digest = adapter.provider_request_digest(provider_context)
-        invocation = self.services.start_model_invocation(
-            StartModelInvocationCommand(
-                operation_id=self.ids.new(),
-                context_projection_id=context_projection_id,
-                provider_binding_ref=adapter.provider_binding_ref,
-                model_ref=adapter.model_ref,
-                renderer_version=self.renderer_version,
-                provider_request_digest=request_digest,
-            )
-        )
-
-        # As with Observation, process loss after this durable boundary must leave
-        # IN_PROGRESS intact for explicit reconciliation to UNKNOWN.
+        invocation = self.services.start_model_invocation(StartModelInvocationCommand(operation_id=self.ids.new(), context_projection_id=context_projection_id, provider_binding_ref=adapter.provider_binding_ref, model_ref=adapter.model_ref, renderer_version=renderer_version, provider_request_digest=request_digest))
         if after_invocation_started is not None:
             after_invocation_started(invocation.model_invocation_id)
-
         try:
             draft = adapter.generate(provider_context)
             if not isinstance(draft, FoundationResponseDraft):
@@ -183,52 +100,24 @@ class ModelGenerationRunner:
             self.services.fail_model_invocation(invocation.model_invocation_id)
             raise
         except AdapterOutcomeUnknown:
-            self.services.fail_model_invocation(
-                invocation.model_invocation_id,
-                unknown=True,
-            )
+            self.services.fail_model_invocation(invocation.model_invocation_id, unknown=True)
             raise
         except Exception as exc:
-            self.services.fail_model_invocation(
-                invocation.model_invocation_id,
-                unknown=True,
-            )
-            raise AdapterOutcomeUnknown(
-                "model adapter outcome became unusable after invocation dispatch began"
-            ) from exc
-
-        completion = CompleteModelInvocationCommand(
-            operation_id=self.ids.new(),
-            model_invocation_id=invocation.model_invocation_id,
-            content_text=content_text,
-            content_digest=sha256_text(content_text),
-            semantic_payload=semantic_payload,
-            received_at=self.clock.now(),
-        )
+            self.services.fail_model_invocation(invocation.model_invocation_id, unknown=True)
+            raise AdapterOutcomeUnknown("model adapter outcome became unusable after invocation dispatch began") from exc
+        completion = CompleteModelInvocationCommand(operation_id=self.ids.new(), model_invocation_id=invocation.model_invocation_id, content_text=content_text, content_digest=sha256_text(content_text), semantic_payload=semantic_payload, received_at=self.clock.now())
         try:
             generated = self.services.complete_model_invocation(completion)
         except Exception:
             self._mark_model_unknown_best_effort(invocation.model_invocation_id)
             raise
-
-        return ModelGenerationRunResult(
-            model_invocation_id=invocation.model_invocation_id,
-            generated_output_id=generated.generated_output_id,
-        )
+        return ModelGenerationRunResult(invocation.model_invocation_id, generated.generated_output_id)
 
     def _mark_model_unknown_best_effort(self, model_invocation_id: UUID) -> None:
         try:
             self.services.fail_model_invocation(model_invocation_id, unknown=True)
         except Exception:
-            # Preserve the primary persistence failure. If completion committed,
-            # SUCCEEDED stays terminal; otherwise recovery sees IN_PROGRESS/UNKNOWN.
             pass
 
 
-__all__ = [
-    "AttemptStartedHook",
-    "ModelGenerationRunResult",
-    "ModelGenerationRunner",
-    "WorldAcquisitionRunResult",
-    "WorldAcquisitionRunner",
-]
+__all__ = ["AttemptStartedHook", "ModelGenerationRunResult", "ModelGenerationRunner", "WorldAcquisitionRunResult", "WorldAcquisitionRunner"]

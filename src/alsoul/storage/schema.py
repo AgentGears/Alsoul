@@ -1,7 +1,8 @@
 """Current persistence schema.
 
-Schema v1 remains frozen so the initial migration stays reproducible. Schema v2
-extends the executable foundation with durable ConversationOpenLoop persistence.
+Historical schema modules remain frozen. Schema v3 extends the executable foundation
+with durable targetable ConversationOpenLoop references and projection selector
+provenance.
 """
 
-from .schema_v2 import *  # noqa: F401,F403
+from .schema_v3 import *  # noqa: F401,F403

@@ -3,7 +3,7 @@
 **Status:** Converged foundation checkpoint
 **Publication:** GitHub-safe
 
-This checkpoint advances the public semantic model from Decision 10.B through the boundary required to begin F4 implementation.
+This checkpoint advances the public semantic model from Decision 10.B through the boundary required for the executable F4 foundation.
 
 ## Decision 11.A — One Person across many presences
 
@@ -62,7 +62,24 @@ ConversationOpenLoop
 
 Loop lifecycle is append-oriented and distinguishes resolved, cancelled, superseded, and expired. An unfinished conversational loop does not authorize background work or proactive follow-up.
 
-The executable F4 implementation now includes one deliberately bounded `DECISION` open-loop kind. Its opening and terminal closure are durable append-oriented records; later bounded reference resolution may select exactly one unresolved decision loop by relationship. Ambiguity fails closed rather than using latest-wins selection. See [F4 Conversation Open Loop](F4_CONVERSATION_OPEN_LOOP.md).
+The executable F4 implementation includes one deliberately bounded `DECISION` open-loop kind. Its opening and terminal closure are durable append-oriented records; an unqualified bounded resume may select exactly one unresolved decision loop by relationship. Ambiguity fails closed rather than using latest-wins selection. See [F4 Conversation Open Loop](F4_CONVERSATION_OPEN_LOOP.md).
+
+## Decision 13.B — Targetable open-loop references
+
+`ConversationOpenLoop.open_loop_id` remains canonical loop identity. Human-addressable routing is represented separately by immutable source-grounded `ConversationOpenLoopReference` state.
+
+```text
+open_loop_id
+≠ open_loop_reference_id
+≠ canonical_reference_key
+≠ current-input selector
+```
+
+F4 `DECISION` loops use one versioned `DECISION_OPTION_PAIR` reference admitted with the loop. Normalization is deliberately mechanical: Unicode normalization, whitespace normalization, case folding, and order-independent option-pair canonicalization. Semantic similarity, embeddings, paraphrase expansion, model interpretation, recency, and latest-wins selection do not participate.
+
+A later bounded directive produces a selector. Unqualified selectors require exactly one active decision loop; explicit selectors require exactly one active loop with an exact durable reference match. Zero explicit matches fail not-found and multiple matches fail ambiguous. The same deterministic selection layer may govern bounded resume, resolve, and cancel operations.
+
+Successful selection is pinned into immutable `ContextProjection` selector provenance. The model receives only the host-resolved loop. Reuse preserves the original selector semantics: unqualified selection requires global active-loop uniqueness while explicit selection requires uniqueness only among active loops matching its pinned reference. See [F4 Targetable Conversation Open Loop](F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md).
 
 ## Decision 14.A — Whole-system hydration and recovery
 
@@ -80,7 +97,7 @@ Recovery resumes from the furthest trustworthy durable stage.
 
 ## Decision 15.A — F4 physical persistence
 
-The F4 walking skeleton uses a transactional relational store. Identity-bearing Self and Relationship state use immutable complete revisions plus current heads. Timeline, evidence, claims, source captures, WorldResults, ContextProjections, generated/adopted outputs, and presentation history are immutable or append-oriented.
+The F4 walking skeleton uses a transactional relational store. Identity-bearing Self and Relationship state use immutable complete revisions plus current heads. Timeline, evidence, claims, source captures, WorldResults, ContextProjections, generated/adopted outputs, presentation history, ConversationOpenLoop lifecycle, open-loop references, and selector provenance are immutable or append-oriented.
 
 External calls do not occur inside long-lived database transactions. Each semantic admission boundary commits a small valid durable stage.
 
@@ -90,7 +107,7 @@ Canonical F4 state advances only through typed semantic application services. Ge
 
 Database-command retries use stable operation identity. New external acquisition creates a new Observation. New model execution creates a new ModelInvocation. Output adoption is fenced by a semantic OutputTarget and first-party presentation by one Timeline event per CompanionOutput.
 
-Response recovery state is derived from canonical rows rather than stored as an authoritative mutable turn-status record.
+Response recovery state is derived from canonical rows rather than stored as an authoritative mutable turn-status record. Open-loop-aware projection reuse revalidates the exact selector semantics pinned by the immutable projection before another provider execution.
 
 ## Implementation boundary
 
@@ -108,7 +125,8 @@ first-party text presentation
 bounded conversational response
 bounded immediate-prior Timeline context
 bounded relationship-scoped ConversationOpenLoop
+exact targetable DECISION open-loop references
 complete runtime reconstruction
 ```
 
-Effectful Actions, durable Tasks, proactivity, rich modality, and affect remain outside the F4 code path. ConversationOpenLoop is implemented only for a narrow decision-loop grammar; generic semantic history retrieval, automatic expiry/supersession, background work, and proactive contact remain outside the slice.
+Effectful Actions, durable Tasks, proactivity, rich modality, and affect remain outside the F4 code path. ConversationOpenLoop remains deliberately narrow: generic semantic history retrieval, semantic reference matching, automatic expiry/supersession, background work, and proactive contact remain outside the slice.
