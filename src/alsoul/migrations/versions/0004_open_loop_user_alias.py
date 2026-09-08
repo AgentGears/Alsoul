@@ -14,6 +14,8 @@ branch_labels = None
 depends_on = None
 
 _ALIAS_ASSIGNMENT_RECEIPT_SCOPE = "ConversationOpenLoopAliasAssignment"
+_OPEN_LOOP_CLOSURE_RECEIPT_SCOPE = "ConversationOpenLoopClosure"
+_BUILD_CONTEXT_PROJECTION_RECEIPT_SCOPE = "BuildContextProjection"
 
 
 def upgrade() -> None:
@@ -135,7 +137,28 @@ def downgrade() -> None:
     operation_receipt = sa.table(
         "operation_receipt",
         sa.column("operation_scope", sa.String(128)),
+        sa.column("result_ref", sa.Uuid(as_uuid=True)),
     )
+    alias_selector = sa.table(
+        "context_projection_open_loop_alias_selector",
+        sa.column("projection_id", sa.Uuid(as_uuid=True)),
+    )
+    projection_event = sa.table(
+        "context_projection_event",
+        sa.column("projection_id", sa.Uuid(as_uuid=True)),
+    )
+    alias_projection_ids = sa.select(alias_selector.c.projection_id)
+
+    # All ConversationOpenLoopClosure receipts are introduced by v4 and may carry
+    # v4-only alias selector identity. The durable v3 closure row remains canonical,
+    # so removing these replay receipts is lossless with respect to the downgraded
+    # schema and prevents a later re-upgrade from returning a deleted alias ID.
+    op.execute(
+        operation_receipt.delete().where(
+            operation_receipt.c.operation_scope == _OPEN_LOOP_CLOSURE_RECEIPT_SCOPE
+        )
+    )
+
     # Alias-assignment receipts contain result references to v4 alias rows. They
     # cannot survive a downgrade that deliberately removes those rows, otherwise a
     # later re-upgrade could replay a stale open_loop_alias_id instead of rebuilding
@@ -143,6 +166,25 @@ def downgrade() -> None:
     op.execute(
         operation_receipt.delete().where(
             operation_receipt.c.operation_scope == _ALIAS_ASSIGNMENT_RECEIPT_SCOPE
+        )
+    )
+
+    # ContextProjection is rebuildable state, not canonical history. A v3 schema
+    # cannot represent EXPLICIT_USER_ALIAS lineage. Remove the replay receipts for
+    # exactly those projections and invalidate their selected-event membership before
+    # dropping the alias selector. The base projection row is retained so any
+    # historical ModelInvocation foreign key remains auditable, but v2/v3 rendering
+    # fails closed instead of silently reinterpreting the projection as unqualified.
+    op.execute(
+        operation_receipt.delete().where(
+            operation_receipt.c.operation_scope
+            == _BUILD_CONTEXT_PROJECTION_RECEIPT_SCOPE,
+            operation_receipt.c.result_ref.in_(alias_projection_ids),
+        )
+    )
+    op.execute(
+        projection_event.delete().where(
+            projection_event.c.projection_id.in_(alias_projection_ids)
         )
     )
 
