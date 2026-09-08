@@ -176,6 +176,13 @@ def normalize_user_alias(value: str) -> str:
     return normalized
 
 
+def _try_normalize_user_alias(value: str) -> str | None:
+    try:
+        return normalize_user_alias(value)
+    except ValueError:
+        return None
+
+
 def _explicit_directive(operation: OpenLoopDirective, match: re.Match[str]) -> F4OpenLoopDirective:
     option_a = match.group("option_a")
     option_b = match.group("option_b")
@@ -191,13 +198,16 @@ def _explicit_directive(operation: OpenLoopDirective, match: re.Match[str]) -> F
 
 def _alias_selector(operation: OpenLoopDirective, match: re.Match[str]) -> F4OpenLoopDirective:
     label = match.group("label")
+    alias_key = _try_normalize_user_alias(label)
+    if alias_key is None:
+        return F4OpenLoopDirective(operation="NONE")
     return F4OpenLoopDirective(
         operation=operation,
         selector_kind="USER_ALIAS",
         selector_contract_version=USER_ALIAS_CONTRACT_VERSION,
-        selector_key=normalize_user_alias(label),
+        selector_key=alias_key,
         alias_label=label,
-        alias_key=normalize_user_alias(label),
+        alias_key=alias_key,
     )
 
 
@@ -213,6 +223,9 @@ def parse_open_loop_directive(content_text: str) -> F4OpenLoopDirective:
         if match:
             directive = _explicit_directive("LABEL", match)
             label = match.group("label")
+            alias_key = _try_normalize_user_alias(label)
+            if alias_key is None:
+                return F4OpenLoopDirective(operation="NONE")
             return F4OpenLoopDirective(
                 operation=directive.operation,
                 selector_kind=directive.selector_kind,
@@ -221,13 +234,18 @@ def parse_open_loop_directive(content_text: str) -> F4OpenLoopDirective:
                 option_a=directive.option_a,
                 option_b=directive.option_b,
                 alias_label=label,
-                alias_key=normalize_user_alias(label),
+                alias_key=alias_key,
             )
 
     rename = _ALIAS_RENAME.fullmatch(content_text)
     if rename:
         directive = _alias_selector("RENAME_ALIAS", rename)
+        if directive.operation == "NONE":
+            return directive
         new_label = rename.group("new_label")
+        new_alias_key = _try_normalize_user_alias(new_label)
+        if new_alias_key is None:
+            return F4OpenLoopDirective(operation="NONE")
         return F4OpenLoopDirective(
             operation=directive.operation,
             selector_kind=directive.selector_kind,
@@ -236,7 +254,7 @@ def parse_open_loop_directive(content_text: str) -> F4OpenLoopDirective:
             alias_label=directive.alias_label,
             alias_key=directive.alias_key,
             new_alias_label=new_label,
-            new_alias_key=normalize_user_alias(new_label),
+            new_alias_key=new_alias_key,
         )
 
     remove = _ALIAS_REMOVE.fullmatch(content_text)
