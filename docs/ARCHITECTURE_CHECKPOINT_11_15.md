@@ -81,6 +81,25 @@ A later bounded directive produces a selector. Unqualified selectors require exa
 
 Successful selection is pinned into immutable `ContextProjection` selector provenance. The model receives only the host-resolved loop. Reuse preserves the original selector semantics: unqualified selection requires global active-loop uniqueness while explicit selection requires uniqueness only among active loops matching its pinned reference. See [F4 Targetable Conversation Open Loop](F4_TARGETABLE_CONVERSATION_OPEN_LOOP.md).
 
+## Decision 13.C — Explicit user-authored open-loop aliases
+
+`ConversationOpenLoopAlias` is an immutable durable relationship-scoped address explicitly assigned by the counterpart to one already-resolved `ConversationOpenLoop`. Alias identity, source-derived reference identity, loop identity, and current-input selectors remain separate.
+
+```text
+ConversationOpenLoop
+≠ ConversationOpenLoopReference
+≠ ConversationOpenLoopAlias
+≠ selector
+```
+
+F4 aliases use `USER_LABEL_V1`, which performs only mechanical Unicode normalization, whitespace normalization, and case folding. Model-generated titles, inferred topics, embeddings, semantic similarity, and recency cannot create or resolve aliases.
+
+Alias admission first resolves exactly one active loop under an existing deterministic selector and then applies a relationship-scoped write fence. One canonical active alias key may address at most one active `DECISION` loop in a relationship. The same loop may have multiple aliases; repeated assignment of the same canonical alias to the same loop reuses the existing alias.
+
+Alias removal and rename are append-oriented and separate from loop closure. Rename retires the old alias and creates or reuses a replacement alias; closing a loop does not erase alias history and retiring an alias does not close the loop.
+
+Alias resume/resolve/cancel uses exact active alias equality. Successful alias selection is pinned into immutable `ContextProjection` provenance. Reuse requires the selected loop to remain active and the pinned alias to remain an unretired unique active address; unrelated loops do not invalidate the selection. Explicit alias context uses renderer contract `f4-renderer-v5`. Migration does not fabricate aliases for older loops because older state contains no canonical user-authored alias-assignment contract. See [F4 Conversation Open Loop Alias](F4_CONVERSATION_OPEN_LOOP_ALIAS.md).
+
 ## Decision 14.A — Whole-system hydration and recovery
 
 Recovery is deterministic reconstruction from Alsoul-owned durable state, not restoration of model/provider runtime.
@@ -97,7 +116,7 @@ Recovery resumes from the furthest trustworthy durable stage.
 
 ## Decision 15.A — F4 physical persistence
 
-The F4 walking skeleton uses a transactional relational store. Identity-bearing Self and Relationship state use immutable complete revisions plus current heads. Timeline, evidence, claims, source captures, WorldResults, ContextProjections, generated/adopted outputs, presentation history, ConversationOpenLoop lifecycle, open-loop references, and selector provenance are immutable or append-oriented.
+The F4 walking skeleton uses a transactional relational store. Identity-bearing Self and Relationship state use immutable complete revisions plus current heads. Timeline, evidence, claims, source captures, WorldResults, ContextProjections, generated/adopted outputs, presentation history, ConversationOpenLoop lifecycle, source-derived references, user-authored aliases, and selector provenance are immutable or append-oriented.
 
 External calls do not occur inside long-lived database transactions. Each semantic admission boundary commits a small valid durable stage.
 
@@ -125,8 +144,9 @@ first-party text presentation
 bounded conversational response
 bounded immediate-prior Timeline context
 bounded relationship-scoped ConversationOpenLoop
-exact targetable DECISION open-loop references
+exact targetable DECISION source references
+explicit counterpart-authored DECISION aliases
 complete runtime reconstruction
 ```
 
-Effectful Actions, durable Tasks, proactivity, rich modality, and affect remain outside the F4 code path. ConversationOpenLoop remains deliberately narrow: generic semantic history retrieval, semantic reference matching, automatic expiry/supersession, background work, and proactive contact remain outside the slice.
+Effectful Actions, durable Tasks, proactivity, rich modality, and affect remain outside the F4 code path. ConversationOpenLoop remains deliberately narrow: generic semantic history retrieval, semantic reference/alias matching, automatic expiry/supersession, background work, and proactive contact remain outside the slice.
