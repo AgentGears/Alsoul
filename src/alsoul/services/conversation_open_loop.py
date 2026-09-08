@@ -39,6 +39,7 @@ OpenLoopSelectionBasis = Literal[
 ]
 
 _ALIAS_ASSIGNMENT_RECEIPT_SCOPE = "ConversationOpenLoopAliasAssignment"
+_OPEN_LOOP_CLOSURE_RECEIPT_SCOPE = "ConversationOpenLoopClosure"
 
 
 @dataclass(frozen=True, slots=True)
@@ -768,6 +769,49 @@ class F4ConversationOpenLoopService:
             event, relationship = self._load_source(conn, source_event_id)
             self._fence_relationship(conn, relationship["relationship_id"])
 
+            directive = parse_open_loop_directive(event["content_text"])
+            expected_operation = "RESOLVE" if closure_kind == "RESOLVED" else "CANCEL"
+            if directive.operation != expected_operation:
+                fail(
+                    "CONVERSATION_OPEN_LOOP_SOURCE_MISMATCH",
+                    "canonical source does not match the requested bounded loop closure",
+                )
+
+            req = request_digest(
+                {
+                    "source_event_id": source_event_id,
+                    "relationship_id": relationship["relationship_id"],
+                    "closure_kind": closure_kind,
+                    "selector_kind": directive.selector_kind,
+                    "selector_contract_version": directive.selector_contract_version,
+                    "selector_key": directive.selector_key,
+                }
+            )
+            receipt = load_operation_receipt(
+                conn,
+                scope=_OPEN_LOOP_CLOSURE_RECEIPT_SCOPE,
+                operation_id=source_event_id,
+                expected_request_digest=req,
+            )
+            if receipt is not None:
+                return F4ConversationOpenLoopResult(
+                    source_event_id=source_event_id,
+                    disposition=receipt["disposition"],
+                    open_loop_id=UUID(receipt["open_loop_id"]),
+                    loop_kind=receipt["loop_kind"],
+                    open_loop_reference_id=(
+                        UUID(receipt["open_loop_reference_id"])
+                        if receipt.get("open_loop_reference_id")
+                        else None
+                    ),
+                    open_loop_alias_id=(
+                        UUID(receipt["open_loop_alias_id"])
+                        if receipt.get("open_loop_alias_id")
+                        else None
+                    ),
+                    idempotent_replay=True,
+                )
+
             replay = conn.execute(
                 select(
                     schema.conversation_open_loop_closure,
@@ -803,31 +847,49 @@ class F4ConversationOpenLoopService:
                     idempotent_replay=True,
                 )
 
-            directive = parse_open_loop_directive(event["content_text"])
-            expected_operation = "RESOLVE" if closure_kind == "RESOLVED" else "CANCEL"
-            if directive.operation != expected_operation:
-                fail(
-                    "CONVERSATION_OPEN_LOOP_SOURCE_MISMATCH",
-                    "canonical source does not match the requested bounded loop closure",
-                )
-
             selection = resolve_active_decision_loop(
                 conn,
                 relationship_id=relationship["relationship_id"],
                 directive=directive,
             )
+            disposition = "RESOLVED" if closure_kind == "RESOLVED" else "CANCELLED"
+            now = self.services.clock.now()
             conn.execute(
                 insert(schema.conversation_open_loop_closure).values(
                     open_loop_id=selection.open_loop_id,
                     closure_kind=closure_kind,
                     source_event_id=source_event_id,
                     superseding_open_loop_id=None,
-                    closed_at=self.services.clock.now(),
+                    closed_at=now,
                 )
+            )
+            save_operation_receipt(
+                conn,
+                scope=_OPEN_LOOP_CLOSURE_RECEIPT_SCOPE,
+                operation_id=source_event_id,
+                req_digest=req,
+                result_kind="ConversationOpenLoopClosure",
+                result_ref=selection.open_loop_id,
+                result_json={
+                    "disposition": disposition,
+                    "open_loop_id": str(selection.open_loop_id),
+                    "loop_kind": selection.loop_kind,
+                    "open_loop_reference_id": (
+                        str(selection.open_loop_reference_id)
+                        if selection.open_loop_reference_id is not None
+                        else None
+                    ),
+                    "open_loop_alias_id": (
+                        str(selection.open_loop_alias_id)
+                        if selection.open_loop_alias_id is not None
+                        else None
+                    ),
+                },
+                committed_at=now,
             )
             return F4ConversationOpenLoopResult(
                 source_event_id=source_event_id,
-                disposition=("RESOLVED" if closure_kind == "RESOLVED" else "CANCELLED"),
+                disposition=disposition,
                 open_loop_id=selection.open_loop_id,
                 loop_kind=selection.loop_kind,
                 open_loop_reference_id=selection.open_loop_reference_id,
