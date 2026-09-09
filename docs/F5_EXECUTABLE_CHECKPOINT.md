@@ -38,6 +38,7 @@ Credential possession ≠ Permission
 provider technical scope ≠ Permission
 Capability availability ≠ Permission
 Permission ≠ Approval
+Permission validity ≠ current RelationshipState / resource-binding validity
 read / observe ≠ write / act
 personal-world observation ≠ MemoryClaim
 WorldSourceCapture ≠ general memory eligibility
@@ -59,11 +60,13 @@ snapshot completion time ≠ snapshot freshness age
 canonical minimization ≠ permission to persist raw provider payload elsewhere
 projection freshness ≠ authority to disclose projection data to a model route
 prior model route authority ≠ authority for a later model dispatch or changed route
+model-generated schedule text ≠ adopted schedule truth
 first generation ≠ indefinitely authorized first presentation
 presentation payload dispatch ≠ sink acceptance
 unknown presentation outcome ≠ presented
 unknown presentation outcome ≠ definitely undisclosed
 point-in-time negative sink lookup ≠ terminal non-acceptance
+stable presentation_key ≠ presentation-attempt transport generation
 Action correlation ≠ concurrency/idempotency fence
 ```
 
@@ -139,6 +142,8 @@ ContextProjection
 current freshness + current personal-data/model-egress authority for exact model route
 ↓
 ModelInvocation / GeneratedOutput
+↓
+structured schedule-plan validation / deterministic schedule rendering
 ↓
 CompanionOutput adoption
 ↓
@@ -275,7 +280,9 @@ For the first F5 slice, the authorized grantor is the counterpart bound to the s
 Before every external read transport request, including every pagination request, validation requires:
 
 ```text
-Permission present and readable
+current RelationshipState remains active / valid for the counterpart
+AND selected PersonalResourceBinding is ACTIVE and still associated with that relationship/counterpart
+AND Permission present and readable
 AND trusted Permission admission provenance valid
 AND holder == current CompanionPerson
 AND capability / operation class matches
@@ -287,7 +294,7 @@ AND Permission is current / unexpired / unrevoked
 AND constraints hold
 ```
 
-Cross-relationship, cross-resource, forged, unreadable, revoked, or mismatched Permission fails closed.
+Cross-relationship, cross-resource, forged, unreadable, revoked, mismatched, ended-relationship, inactive-binding, or unbound-resource state fails closed.
 
 The first slice does not require a separate per-interaction Approval for this bounded read. The active user request plus standing Permission is sufficient under this contract. That rule does not generalize to writes or to arbitrary personal-data egress.
 
@@ -296,7 +303,9 @@ The first slice does not require a separate per-interaction Approval for this bo
 Immediately before each external read transport request, the host evaluates:
 
 ```text
-calendar.events.read Capability is available and trusted
+same trusted counterpart / current RelationshipState remains valid for this interaction
+AND selected PersonalResourceBinding remains ACTIVE and currently associated with that relationship/counterpart
+AND calendar.events.read Capability is available and trusted
 AND current AI Capability Policy permits the read
 AND selected resource is inside current Resource Scope
 AND trusted current Permission authorizes the read
@@ -313,6 +322,8 @@ One successful semantic `Observation` retains immutable authority provenance suf
 Capability ref + contract/version
 AI Capability Policy decision ref/version
 Resource Scope decision ref/version
+RelationshipState current-validity decision ref/version
+PersonalResourceBinding active-association decision ref/version
 Permission ref + trusted grant provenance
 PersonalResourceBinding
 CredentialBinding ref
@@ -322,7 +333,7 @@ trusted timezone/rules/window
 first and last authority-evaluation times
 ```
 
-For multi-page acquisition, page requests remain children of the same Observation/acquisition identity while each transport dispatch records its own current authority evaluation or a mechanically linked evaluation record.
+For multi-page acquisition, page requests remain children of the same Observation/acquisition identity while each transport dispatch records its own current authority evaluation or a mechanically linked evaluation record. The page-specific authority record includes the current RelationshipState and active resource-binding decisions; a relationship end, resource deactivation, or unbinding between pages blocks the next transport before it can observe personal data.
 
 Authority provenance explains why access was allowed. It does not prove calendar content and does not authorize later model egress or presentation.
 
@@ -429,7 +440,7 @@ capability contract/version
 field-selection/minimization contract
 ```
 
-Current read authority is re-evaluated before every page transport dispatch. Revocation or unreadability during pagination aborts the acquisition; partial pages cannot be promoted into a complete `WorldResult`.
+Current read authority is re-evaluated before every page transport dispatch, including current RelationshipState validity and active/current association of the selected PersonalResourceBinding. Revocation, relationship termination, resource deactivation/unbinding, or unreadability during pagination aborts the acquisition; partial pages cannot be promoted into a complete `WorldResult`.
 
 ### Coherent-snapshot requirement
 
@@ -738,13 +749,57 @@ Model-egress denial by itself does not authorize or require reacquisition. A new
 
 A lost model response does not make a retry inherit the old egress decision. Every retry that would transmit personal data is a new disclosure decision and re-evaluates the full current model-egress gate for the exact route.
 
-## 2.16 First-presentation freshness, disclosure authority, and uncertain sink acceptance
+## 2.16 Mechanically constrained schedule cognition and adoption
+
+Personal-calendar truth is not entrusted to unconstrained generated prose.
+
+The first F5.A slice retains the `ModelInvocation` boundary, but the model may produce only a bounded structured schedule plan. Schedule facts become adoptable only after mechanical validation against the exact `ContextProjection`.
+
+Conceptually:
+
+```text
+CalendarAnswerPlanV1 {
+    source_context_projection_id
+    source_world_result_id
+    requested_date
+    ordered_occurrence_refs[]
+    rendering_contract_version = DAY_SCHEDULE_V1
+    framing_mode?              # optional bounded trusted enum; no factual payload
+}
+```
+
+The structured plan does **not** carry authoritative title, time, resource, or event-detail overrides. Those facts are resolved only from the selected normalized projection after validation.
+
+Before any `GeneratedOutput` can be adopted as `CompanionOutput`, the host mechanically verifies:
+
+```text
+source_context_projection_id == selected eligible ContextProjection
+AND source_world_result_id matches that projection lineage
+AND requested_date == canonical requested date
+AND every ordered_occurrence_ref resolves to one selected normalized occurrence in that projection
+AND every selected normalized occurrence is represented exactly once
+AND no unknown / duplicate / out-of-window occurrence ref exists
+AND rendering_contract_version is trusted/current for this slice
+AND no model-supplied field can override normalized title/time/all-day/resource semantics
+```
+
+For a complete empty schedule, `ordered_occurrence_refs` is empty only when the coherent complete current `WorldResult` contains zero selected normalized occurrences.
+
+The host then deterministically renders schedule facts from projection data. A model-selected `framing_mode`, when supported, is a bounded non-factual rendering option and cannot introduce or modify event propositions.
+
+Instruction-like calendar titles are inert data. They are represented to the model and renderer as data fields, never as system/developer/user/tool instructions; the deterministic renderer escapes/quotes them according to its contract and does not execute or reinterpret their contents. A title such as an imperative remains only the title of an observed event.
+
+If the structured plan is malformed, omits or invents an occurrence, references another window/resource, duplicates an occurrence, attempts a title/time override, or otherwise fails semantic equality, the generated result remains unadopted. The runtime does not fall back to raw model prose, does not create a truthful-looking `CompanionOutput`, and does not present unsupported schedule claims.
+
+Source phrases such as “I checked your calendar” are admitted/rendered from validated acquisition/provenance state, not from model assertion.
+
+## 2.17 First-presentation freshness, disclosure authority, and uncertain sink acceptance
 
 A durable `GeneratedOutput` or unpresented `CompanionOutput` is immutable cognition, but it is not indefinitely eligible for first presentation of personal calendar material.
 
 The F5 personal-data presentation contract extends the F4 first-party idempotent presentation boundary with explicit uncertain-acceptance reconciliation. The objective is to avoid unauthorized redisclosure and false historical claims when the sink may already have accepted a payload before an acknowledgement was lost.
 
-### 2.16.1 Before any payload-bearing presentation transport
+### 2.17.1 Before any payload-bearing presentation transport
 
 Immediately before every transport that would send the personal-data payload to the first-party sink, the host evaluates two independent gates:
 
@@ -772,13 +827,15 @@ If freshness fails while disclosure remains valid, the old generated/adopted out
 
 If disclosure authority fails or is unreadable, no payload-bearing presentation transport occurs and no reacquisition is attempted solely to bypass that denial.
 
-### 2.16.2 Durable presentation attempt and dispatch uncertainty
+### 2.17.2 Durable presentation attempt, transport generation, and dispatch uncertainty
 
 Before a payload-bearing presentation transport can observe the payload, the host durably records a presentation attempt/fence conceptually equivalent to:
 
 ```text
 PersonalPresentationAttempt {
     presentation_attempt_id
+    presentation_attempt_generation
+    presentation_transport_fence_scope_id
     companion_output_id
     presentation_key
     surface_binding_id
@@ -792,60 +849,83 @@ PersonalPresentationAttempt {
 }
 ```
 
+`presentation_key` remains the restart-stable semantic identity of the same `CompanionOutput`. `presentation_attempt_generation` / `presentation_transport_fence_scope_id` identifies the exact bounded transport epoch. Every payload-bearing transport request must carry both the stable semantic key and the exact attempt/fence generation identity.
+
+Conceptually:
+
+```text
+send_personal_presentation(
+    presentation_key,
+    presentation_attempt_generation,
+    presentation_transport_fence_scope_id,
+    payload
+)
+```
+
+The exact wire representation may differ, but the sink must be able to bind acceptance, terminal-negative status, cancellation/settling, and content-free lookup to the exact transport generation. A payload request from attempt `P1` cannot later be interpreted as transport from attempt `P2` merely because both share the same stable semantic `presentation_key`.
+
 The exact schema may differ, but recovery must distinguish:
 
 ```text
 no presentation dispatch fence
-    → sink could not have observed this payload through this attempt
+    → sink could not have observed this payload through this attempt generation
 
 presentation dispatch fenced, no validated acceptance receipt
     → UNKNOWN_PRESENTATION_ACCEPTANCE
 
-validated sink acceptance
+validated sink acceptance for exact attempt generation/fence scope
     → ACCEPTED
 
-authoritative terminal content-free sink status proves prior attempt cannot be accepted
+authoritative terminal content-free sink status proves prior attempt generation cannot be accepted
     → NOT_ACCEPTED
 ```
 
 A transport timeout or lost acknowledgement after the presentation fence is not treated as definitely undisclosed and is not treated as presented.
 
-### 2.16.3 Required content-free acceptance-status lookup
+### 2.17.3 Required content-free acceptance-status lookup
 
-A first-party sink used for F5 personal-data presentation must preserve the F4 idempotent `presentation_key` contract and support an authoritative content-free acceptance-status lookup keyed by presentation identity.
+A first-party sink used for F5 personal-data presentation must preserve the F4 restart-stable semantic `presentation_key` contract and support an authoritative content-free acceptance-status lookup keyed by the exact presentation transport generation/fence scope.
 
 Conceptually:
 
 ```text
-lookup_presentation_status(presentation_key, presentation_attempt_id or equivalent fence scope)
+lookup_presentation_status(
+    presentation_key,
+    presentation_attempt_generation,
+    presentation_transport_fence_scope_id
+)
     → ACCEPTED + acceptance evidence
     | NOT_ACCEPTED + terminal-negative evidence
     | UNKNOWN
 ```
 
-The lookup request must not resend, echo, hash-expand, or otherwise disclose the personal payload. The response may contain only structural acceptance metadata sufficient to establish presentation truth, such as the presentation key, attempt/fence scope, acceptance state, sink receipt/reference, settling/cancellation reference, and relevant timestamps.
+The lookup request must not resend, echo, hash-expand, or otherwise disclose the personal payload. The response may contain only structural acceptance metadata sufficient to establish presentation truth, such as the presentation key, attempt generation/fence scope, acceptance state, sink receipt/reference, settling/cancellation reference, and relevant timestamps.
 
-A sink that can recover acceptance only by resending the payload is ineligible for F5 personal-data presentation.
+A validated acceptance receipt must bind the exact `presentation_key` and attempt generation/fence scope. An acceptance record for another generation cannot satisfy the current attempt merely because the payload digest or semantic key matches.
 
-### 2.16.4 `NOT_ACCEPTED` must be terminal against delayed acceptance
+A sink that can recover acceptance only by resending the payload, or that cannot distinguish transport generations under one semantic `presentation_key`, is ineligible for F5 personal-data presentation.
+
+### 2.17.4 `NOT_ACCEPTED` must be terminal against delayed acceptance
 
 A point-in-time absence, eventually consistent negative index result, or observation that the sink has not accepted **yet** is not `NOT_ACCEPTED`.
 
-`NOT_ACCEPTED` is authoritative only when the sink contract proves, for the covered uncertain presentation attempt, that every payload transport already dispatched, queued, or in flight under that attempt can no longer later become accepted without a new explicitly authorized payload transport.
+`NOT_ACCEPTED` is authoritative only when the sink contract proves, for the covered uncertain presentation attempt generation/fence scope, that every payload transport already dispatched, queued, or in flight under that generation can no longer later become accepted without a new explicitly authorized payload transport under a new generation.
 
 The first slice permits either:
 
 ```text
-linearizable terminal per-key/per-attempt negative status
+linearizable terminal per-key/per-attempt-generation negative status
 OR
-an authoritative cancellation + settling fence that proves all earlier transports are drained/cancelled and cannot later accept
+an authoritative cancellation + settling fence that proves all earlier transports in that generation are drained/cancelled and cannot later accept
 ```
 
 Terminal-negative evidence retains at least:
 
 ```text
 presentation_key
-presentation_attempt/fence scope
+presentation_attempt_id
+presentation_attempt_generation
+presentation_transport_fence_scope_id
 terminal-negative proof kind
 settled/cancelled-through reference
 status/consistency contract version
@@ -857,42 +937,44 @@ If the sink cannot prove this terminality, recovery remains `UNKNOWN_PRESENTATIO
 An eligible sink must therefore make the following impossible:
 
 ```text
-host records authoritative NOT_ACCEPTED for attempt P1
+host records authoritative NOT_ACCEPTED for attempt generation P1/G1
 ↓
-no new authorized payload transport occurs
+no new authorized payload transport for G1 occurs
 ↓
-an old queued/in-flight transport from P1 later becomes ACCEPTED
+an old queued/in-flight transport from P1/G1 later becomes ACCEPTED
 ```
 
 If the sink's consistency model permits that sequence, the sink is ineligible for the first F5 personal-data presentation slice.
 
-A later explicitly authorized payload delivery, when allowed, is a new bounded presentation attempt after the terminal-negative fence. It cannot be conflated with delayed acceptance from the earlier uncertain attempt. The new attempt re-evaluates current freshness and current disclosure authority before any payload is sent.
+A later explicitly authorized payload delivery, when allowed, is a new bounded presentation attempt generation after the terminal-negative fence. It reuses the same stable semantic `presentation_key` for the same `CompanionOutput` but receives a new attempt/generation/fence identity. Acceptance or terminality for the old generation cannot be reopened, transferred, or reclassified as truth for the new generation. The new attempt re-evaluates current freshness and current disclosure authority before any payload is sent.
 
-### 2.16.5 Recovery of an uncertain presentation
+### 2.17.5 Recovery of an uncertain presentation
 
-When recovery finds `UNKNOWN_PRESENTATION_ACCEPTANCE`, it first performs the content-free status lookup. It does not resend the payload merely to recover a receipt.
+When recovery finds `UNKNOWN_PRESENTATION_ACCEPTANCE`, it first performs the content-free status lookup for the exact attempt generation/fence scope. It does not resend the payload merely to recover a receipt.
 
 If the lookup establishes `ACCEPTED`:
 
 ```text
-persist acceptance evidence
+persist exact-generation acceptance evidence
 ↓
 commit/recover exactly one COMPANION_PRESENTED_OUTPUT Timeline event
 ```
 
 This Timeline commit records a presentation the sink already accepted before or during the earlier authorized payload dispatch. It does not constitute a new personal-data disclosure and therefore does not require current calendar read/disclosure Permission merely to record historical truth.
 
-The Timeline event/presentation provenance points to the original presentation attempt and sink acceptance evidence, including acceptance time when available. Revocation after that acceptance does not erase the historical event.
+The Timeline event/presentation provenance points to the original presentation attempt generation and sink acceptance evidence, including acceptance time when available. Revocation after that acceptance does not erase the historical event.
 
-If the lookup establishes authoritative terminal `NOT_ACCEPTED`, no presentation event is committed. Any later payload send is a new bounded presentation attempt and requires fresh evaluation of current freshness and current disclosure authority. If either gate fails, no payload retry occurs.
+If the lookup establishes authoritative terminal `NOT_ACCEPTED`, no presentation event is committed. Any later payload send is a new bounded presentation attempt generation and requires fresh evaluation of current freshness and current disclosure authority. If either gate fails, no payload retry occurs.
 
 If lookup remains `UNKNOWN`, no Timeline presentation event is fabricated. The runtime retains the unknown presentation state. It may retry the content-free lookup under bounded technical policy, but it may not resend the payload merely to resolve uncertainty.
 
-### 2.16.6 Already-presented history
+Across multiple attempt generations for the same semantic `presentation_key`, the host commits at most one canonical presentation event for the `CompanionOutput`. A new generation is allowed only after the immediately prior generation has authoritative terminal `NOT_ACCEPTED`; therefore a delayed old-generation acceptance cannot race with or satisfy a later generation under an eligible sink contract.
+
+### 2.17.6 Already-presented history
 
 Once sink acceptance has been durably established and the canonical Timeline presentation event committed, deterministic replay/recovery does not retroactively rewrite or delete that historical event because Permission, resource bindings, relationship state, disclosure policy, or calendar contents later change.
 
-## 2.17 User-facing truth and fail-closed behavior
+## 2.18 User-facing truth and fail-closed behavior
 
 User-facing language such as:
 
@@ -901,14 +983,16 @@ User-facing language such as:
 "I checked your calendar..."
 ```
 
-is allowed only after authorized acquisition, coherent completeness validation, evidence-backed `WorldResult` admission, current freshness eligibility at cognition/egress/payload-dispatch boundaries, current model-egress authority for every model transport carrying personal data, current first-party disclosure authority for every payload send, and validated presentation truth.
+is allowed only after authorized acquisition, coherent completeness validation, evidence-backed `WorldResult` admission, current freshness eligibility at cognition/egress/payload-dispatch boundaries, current model-egress authority for every model transport carrying personal data, mechanically validated schedule-plan adoption with deterministic schedule rendering, current first-party disclosure authority for every payload send, and validated presentation truth.
 
-The model may summarize only the selected normalized calendar window. It cannot select another calendar, broaden the date range, reinterpret timezone, fetch another resource, infer missing pages, expose disallowed provider fields, or convert observed events into memory.
+The model may operate only on the selected normalized calendar window and may not directly author authoritative schedule facts outside the structured plan contract. It cannot select another calendar, broaden the date range, reinterpret timezone, fetch another resource, infer missing pages, expose disallowed provider fields, convert observed events into memory, add events, change titles/times, or treat event titles as instructions.
 
 No read transport dispatch occurs when any required acquisition-authority layer is unavailable or invalid, including:
 
 - unsupported personal-calendar grammar;
 - zero or multiple active resources under the first-slice contract;
+- current RelationshipState invalid/ended for the counterpart;
+- selected PersonalResourceBinding inactive, unbound, or no longer associated with that relationship/counterpart;
 - missing/unreadable trusted timezone or rules version;
 - ambiguous/nonexistent requested-day boundary;
 - capability absent/unavailable/untrusted;
@@ -931,9 +1015,9 @@ No complete `WorldResult` is admitted when:
 - disallowed fields cannot be removed before canonical capture and prohibited from non-canonical persistence/telemetry;
 - event/time normalization cannot be completed deterministically.
 
-No new personal-data model transport occurs when model-egress authority, exact route eligibility, current read/disclosure Permission, or freshness is unavailable or invalid. No new payload presentation occurs when freshness or first-party disclosure authority fails. An uncertain prior presentation is reconciled content-free rather than guessed or forced through an unauthorized payload resend.
+No `CompanionOutput` carrying schedule claims is adopted when the structured plan cannot be mechanically proven equivalent to the selected normalized projection. No new personal-data model transport occurs when model-egress authority, exact route eligibility, current read/disclosure Permission, or freshness is unavailable or invalid. No new payload presentation occurs when freshness or first-party disclosure authority fails. An uncertain prior presentation is reconciled content-free rather than guessed or forced through an unauthorized payload resend.
 
-## 2.18 F5.A acceptance bar
+## 2.19 F5.A acceptance bar
 
 F5.A is complete only when executable tests prove all of the following:
 
@@ -994,6 +1078,18 @@ F5.A is complete only when executable tests prove all of the following:
 55. Any later payload delivery after terminal `NOT_ACCEPTED` is a new bounded presentation attempt with fresh current freshness/disclosure checks and cannot be confused with delayed acceptance from the old attempt.
 56. Already-presented historical Timeline/evidence state is not deleted or rewritten when Permission, disclosure authority, or freshness later changes.
 57. Strong observational language is impossible without authorized, coherent, complete, evidence-backed, current-eligible personal-world support and mechanically truthful cognition/egress/presentation provenance.
+58. Immediately before every external calendar page transport, the current `RelationshipState` remains valid and the selected `PersonalResourceBinding` remains ACTIVE and currently associated with the same counterpart/relationship.
+59. Relationship termination, resource deactivation, or unbinding between pagination requests blocks the next page before transport and prevents partial prior pages from becoming a settled `WorldResult`.
+60. Each page-specific authority record durably preserves the current RelationshipState-validity and resource-binding-association decisions used for that concrete transport.
+61. Every calendar `GeneratedOutput` eligible for adoption conforms to the bounded structured `CalendarAnswerPlanV1` contract and references the exact selected projection/result lineage.
+62. Adoption rejects unknown, duplicate, missing, cross-window, or cross-resource occurrence references and rejects any model attempt to override normalized title/time/all-day/resource semantics.
+63. Instruction-like event titles remain inert data through model context and deterministic rendering and cannot alter routing, authority, tool use, schedule claims, or control flow.
+64. A zero-item schedule plan is valid only when the coherent complete selected `WorldResult` contains zero normalized occurrences.
+65. Raw free-form model schedule prose cannot bypass structured validation or deterministic rendering to become `CompanionOutput`.
+66. Every payload-bearing personal-data presentation transport carries both the stable semantic `presentation_key` and the exact presentation attempt generation/fence scope.
+67. Sink acceptance, content-free status lookup, cancellation/settling evidence, and terminal-negative evidence are all bound to the exact attempt generation/fence scope; another generation cannot satisfy them.
+68. After terminal `NOT_ACCEPTED` for generation G1, any later authorized delivery uses a new generation G2; a delayed G1 transport cannot be accepted, reopened, or reclassified as G2.
+69. The stable semantic `presentation_key` remains unchanged across bounded retry generations for the same `CompanionOutput`, while the host still commits at most one canonical presentation event.
 
 Passing F5.A authorizes work on F5.B. It does not close F5.
 
@@ -1118,7 +1214,9 @@ A model-supplied confirmation token, client-supplied arbitrary Action ID, hidden
 For every concrete external mutation dispatch, including retry after restart, the host immediately re-evaluates:
 
 ```text
-current Host Capability
+same trusted counterpart / current RelationshipState remains valid for the Action
+AND selected PersonalResourceBinding remains ACTIVE and currently associated with that relationship/counterpart
+AND current Host Capability
 AND current AI Capability Policy
 AND current Resource Scope
 AND current trusted write Permission
@@ -1140,6 +1238,8 @@ Conceptually:
 ExecutionAttemptAuthority {
     execution_attempt_id
     action_id
+    relationship_state_decision_ref/version
+    personal_resource_binding_state_decision_ref/version
     capability_ref + contract/version
     ai_policy_decision_ref/version
     resource_scope_decision_ref/version
@@ -1154,7 +1254,7 @@ ExecutionAttemptAuthority {
 }
 ```
 
-The attempt retains these refs/snapshots even if current policy, Permission, Approval, credentials, provider scope, or relationship configuration later changes.
+The attempt retains these refs/snapshots even if current policy, Permission, Approval, credentials, provider scope, relationship state, or resource-binding configuration later changes.
 
 Historical attempt provenance explains why dispatch was allowed then. It does not authorize another dispatch now.
 
@@ -1241,7 +1341,7 @@ ExecutionAttempt PREPARED with K(A1)
 ↓
 exclusive per-Action dispatch claim is current
 ↓
-revalidate complete current authority gate
+revalidate complete current authority gate, including current RelationshipState and active resource binding
 ↓
 persist attempt-level authority provenance
 ↓
@@ -1510,8 +1610,10 @@ is allowed only after `CONFIRMED_EFFECT` has durable minimized evidence satisfyi
 
 A timeout, ambiguous provider state, early empty reconciliation read, correlated semantic mismatch, incomplete evidence, or concurrent losing worker cannot justify strong completion language.
 
-No mutation transport dispatch occurs when any required layer is absent, unreadable, denied, expired, revoked, unusable, mismatched, or not exclusively owned, including:
+No mutation transport dispatch occurs when any required layer is absent, unreadable, denied, expired, revoked, unusable, mismatched, inactive, unbound, or not exclusively owned, including:
 
+- current RelationshipState ended/invalid or counterpart association no longer valid;
+- selected PersonalResourceBinding inactive, unbound, or no longer associated with that relationship/counterpart;
 - semantic capability unavailable or effect contract untrusted;
 - AI policy denial;
 - target resource outside current scope;
@@ -1531,7 +1633,7 @@ No mutation transport dispatch occurs when any required layer is absent, unreada
 
 An adapter is also ineligible when it cannot enforce F5.B mutation-response minimization before canonical/non-canonical persistence.
 
-These conditions are re-evaluated before every retry.
+These conditions, including current RelationshipState and active resource-binding association, are re-evaluated before every retry.
 
 ## 3.15 F5.B acceptance bar
 
@@ -1582,6 +1684,9 @@ F5.B is complete only when executable tests prove all of the following:
 43. Presentation/model failure after confirmed Effect cannot execute the Action again.
 44. Credential rotation may change execution binding without redefining Action or Person.
 45. Strong completion language is mechanically blocked until corresponding evidence-backed `CONFIRMED_EFFECT` exists.
+46. Immediately before every mutation dispatch/retry, the current `RelationshipState` remains valid and the selected `PersonalResourceBinding` remains ACTIVE and currently associated with the same counterpart/relationship.
+47. Relationship termination, resource deactivation, or unbinding after Action/Approval creation but before a dispatch or retry blocks transport even when Permission, Approval, Resource Scope, and credentials otherwise remain valid.
+48. Every `ExecutionAttempt` authority record durably preserves the current RelationshipState-validity and PersonalResourceBinding active-association decisions used for that concrete dispatch.
 
 # 4. F5 closure bar
 
@@ -1589,6 +1694,8 @@ F5 closes only when F5.A and F5.B are both green and executable evidence demonst
 
 - persistent Person/Relationship identity remains separate from account/resource/credential identity;
 - personal-world read authority is explicit, current, provenance-backed, and fail-closed;
+- current RelationshipState validity and active PersonalResourceBinding association are re-evaluated before every personal-calendar page transport and every mutation dispatch/retry;
+- page/attempt authority provenance preserves the relationship/resource-binding decisions that authorized each concrete transport;
 - trusted time semantics are explicit and deterministic;
 - calendar membership is provider-independent and boundary-correct;
 - recurrence expansion is concrete, bounded, and complete;
@@ -1602,10 +1709,15 @@ F5 closes only when F5.A and F5.B are both green and executable evidence demonst
 - current personal-data/model-egress authority and exact model route eligibility are re-evaluated before every personal-data model dispatch/retry;
 - historical model-route authority cannot authorize a changed route or later retry;
 - every personal-data ModelInvocation retains immutable egress decision and concrete route provenance;
+- personal-calendar schedule claims are mechanically constrained to the exact normalized projection before CompanionOutput adoption;
+- instruction-like calendar titles remain inert data and cannot become control instructions or unsupported schedule claims;
 - every payload-bearing first presentation attempt requires current freshness and current first-party disclosure authority;
+- every personal-data payload transport carries a stable semantic `presentation_key` plus an exact attempt-generation/fence identity;
+- sink acceptance, terminal-negative status, cancellation/settling, and content-free reconciliation are scoped to the exact presentation attempt generation;
+- a terminal old presentation generation cannot later accept or be conflated with a newly authorized generation under the same semantic key;
 - revocation/resource-unbinding after generation blocks new disclosure without rewriting history;
 - uncertain sink acceptance is represented durably and reconciled through content-free status lookup rather than forced payload resend;
-- `NOT_ACCEPTED` is admitted only as a terminal negative against delayed acceptance from all earlier transports covered by that attempt;
+- `NOT_ACCEPTED` is admitted only as a terminal negative against delayed acceptance from all earlier transports covered by that attempt generation;
 - eventually consistent or point-in-time negative presentation status remains unknown unless linearizable terminality or equivalent cancellation/settling proof exists;
 - prior accepted presentation may be recorded as historical truth after revocation without redisclosing its payload;
 - read and write authority are independently scoped;
