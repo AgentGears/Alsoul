@@ -25,7 +25,7 @@ explicitly approved bounded mutation
 effect confirmation / reconciliation
 ```
 
-Read authority does not imply write authority. Access to one personal resource does not imply access to another. Access to personal data does not make that data durable personal memory.
+Read authority does not imply write authority. Access to one personal resource does not imply access to another. Access to personal data does not make that data durable personal memory. Prior authority does not guarantee later disclosure or later dispatch authority.
 
 The governing distinctions are:
 
@@ -53,6 +53,11 @@ Action correlation ≠ semantic correctness of the Effect
 Approval record match ≠ faithful consent presentation
 prepared attempt ≠ transport may have started
 provider response ≠ durable Effect evidence
+one logical Observation ≠ one transport request
+terminal page token ≠ coherent snapshot
+canonical minimization ≠ permission to persist raw provider payload elsewhere
+first generation ≠ indefinitely authorized first presentation
+Action correlation ≠ concurrency/idempotency fence
 ```
 
 Authority is monotonic narrowing:
@@ -75,7 +80,7 @@ F5.A  personal-world observation
 F5.B  bounded external action + effect reconciliation
 ```
 
-F5.A is the immediate implementation target. F5.B starts only after the read-side authority, provenance, minimization, completeness, and recovery boundary is executable. F5 is not closed until both tranches satisfy their acceptance bars.
+F5.A is the immediate implementation target. F5.B starts only after the read-side authority, provenance, minimization, completeness, coherent-snapshot, disclosure, and recovery boundary is executable. F5 is not closed until both tranches satisfy their acceptance bars.
 
 # 2. F5.A — Read-only personal calendar observation
 
@@ -114,7 +119,7 @@ Observation
 one logical personal-calendar acquisition
     └── one or more bounded transport page requests if required
 ↓
-trusted normalization / minimization / completeness validation
+trusted coherent-snapshot / normalization / minimization / completeness validation
 ↓
 WorldSourceCapture
 ↓
@@ -128,12 +133,12 @@ ModelInvocation / GeneratedOutput
 ↓
 CompanionOutput adoption
 ↓
-current-state presentation eligibility
+current freshness + personal-data disclosure eligibility
 ↓
 first-party presentation
 ```
 
-The connector performs acquisition only. It does not decide semantic routing, resource selection, permission, memory admission, time interpretation, completeness policy, projection eligibility, or what the model may see.
+The connector performs acquisition only. It does not decide semantic routing, resource selection, permission, memory admission, time interpretation, completeness policy, projection eligibility, disclosure authority, or what the model may see.
 
 ## 2.3 Capability contract
 
@@ -155,12 +160,16 @@ supported resource kind = CALENDAR
 request constraints
 response semantics
 pagination/completeness semantics
+pagination snapshot/coherency semantics
 recurrence-expansion semantics
 field-normalization schema version
+raw-response minimization/telemetry contract
 freshness-policy binding/version
 ```
 
 A missing or unreadable capability declaration blocks dispatch. The runtime must not infer read/write/effect class from a tool or function name.
+
+An adapter is ineligible for the first slice when it cannot provide a bounded complete and coherent view of the requested window, cannot enforce the field-minimization contract before persistence/telemetry, or cannot prove the required authority and provenance semantics.
 
 ## 2.4 Personal resource identity and trusted time semantics
 
@@ -377,7 +386,7 @@ The first slice requires:
 - occurrence identity to prevent master/instance/exception duplication;
 - master-only or incomplete recurrence expansion to fail closed rather than return a knowingly partial schedule.
 
-## 2.10 Complete but bounded acquisition and pagination
+## 2.10 Complete, bounded, and coherent acquisition
 
 Provider query behavior is not authoritative for Alsoul membership semantics.
 
@@ -386,6 +395,8 @@ For the first executable slice, an adapter is eligible only when its trusted cap
 A `start-within-window`-only provider that cannot otherwise enumerate long-running overlapping events with a finite trusted bound is ineligible. The runtime must not compensate by fetching unbounded prior history.
 
 One semantic read may require multiple bounded transport page requests. Pagination is part of one `Observation` and one logical acquisition, not multiple independent semantic observations.
+
+### Pagination completeness
 
 The capability contract must define trusted pagination/completeness semantics including at least:
 
@@ -397,7 +408,7 @@ provider truncation/result-cap behavior
 maximum bounded page/resource limits enforced by Alsoul
 ```
 
-Every page request must remain constrained to the same:
+Every page request remains constrained to the same:
 
 ```text
 PersonalResourceBinding
@@ -408,20 +419,48 @@ field-selection/minimization contract
 
 Current read authority is re-evaluated before every page transport dispatch. Revocation or unreadability during pagination aborts the acquisition; partial pages cannot be promoted into a complete `WorldResult`.
 
-The `WorldSourceCapture` retains completeness provenance sufficient to establish:
+### Coherent-snapshot requirement
+
+A terminal page token proves traversal completion only when the pages belong to one coherent logical view. The first slice therefore requires the capability contract to provide one of the following trusted mechanisms:
+
+```text
+snapshot-consistent cursor/session identity
+OR provider revision/version fence that is stable across all pages
+OR equivalent authoritative snapshot token
+OR deterministic change detection that proves no membership-affecting mutation occurred across pagination
+```
+
+Pages from different provider revisions/snapshots must never be silently combined.
+
+If the provider uses offset/page-number pagination without snapshot semantics, the adapter must detect any membership-affecting change that could skip, duplicate, add, remove, reorder, or replace an event while the logical acquisition is in progress. If coherent completeness cannot be proven, the acquisition fails closed.
+
+A capability may permit a bounded restart of pagination only when all of the following hold:
+
+```text
+no WorldSourceCapture / WorldResult for the failed logical traversal has been admitted
+current read authority is re-evaluated before the restarted transport
+restart count is bounded by trusted capability policy
+all prior partial page material is discarded rather than mixed into the new traversal
+new traversal establishes one fresh coherent snapshot/revision lineage
+```
+
+The restart may remain under the same semantic Observation only as a failed internal traversal followed by a fresh bounded traversal for the same user interaction; it cannot make partial earlier pages canonical evidence.
+
+The `WorldSourceCapture` retains completeness/coherency provenance sufficient to establish:
 
 ```text
 one Observation/acquisition identity
+snapshot/session/revision identity or equivalent coherency proof
 ordered page/cursor chain or equivalent page lineage
 bounded request scope for every page
 terminal completeness proof
-raw provider count/cap signals needed to detect truncation
+provider count/cap signals needed to detect truncation
 normalization schema version
 ```
 
-If pagination terminates early, a cap is reached without authoritative completeness, a token is missing/inconsistent, or provider truncation cannot be ruled out, the acquisition fails closed. A partial first page cannot be narrated as a complete checked schedule.
+If pagination terminates early, a cap is reached without authoritative completeness, a token is missing/inconsistent, provider truncation cannot be ruled out, snapshot/revision identity changes unexpectedly, or coherent traversal cannot otherwise be established, the acquisition fails closed. A partial or incoherent schedule cannot be narrated as a complete checked schedule.
 
-## 2.11 Field-level minimization
+## 2.11 Field-level minimization and non-canonical data handling
 
 Resource/window minimization is necessary but not sufficient. The first F5.A slice uses an explicit normalized event allowlist.
 
@@ -454,7 +493,26 @@ location
 provider-side unrelated metadata
 ```
 
-If the provider response necessarily contains disallowed fields, they are discarded inside the trusted adapter/normalization boundary before `WorldSourceCapture` admission. A provider payload dump is not an acceptable canonical capture.
+If the provider necessarily returns disallowed fields, those fields may exist only ephemerally inside the trusted adapter boundary for the minimum time required to parse and normalize the response. They are discarded before canonical capture.
+
+The same minimization boundary applies to **non-canonical persistence and telemetry**. Disallowed raw personal fields must not be written or emitted to:
+
+```text
+transport/debug logs
+application logs
+traces/spans
+metrics labels or event payloads
+retry caches or durable transport queues
+response caches
+crash dumps / diagnostic snapshots
+analytics payloads
+dead-letter stores
+test fixtures captured from production responses
+```
+
+Operational telemetry may retain non-sensitive structural metadata such as request IDs, page counts, timing, redacted error classes, or normalized schema/version identifiers when that metadata does not reveal disallowed personal content.
+
+If an adapter/runtime cannot prevent raw personal fields from being persisted or emitted outside the allowed canonical evidence path, that integration is ineligible for the first F5.A slice. Debug mode, exception serialization, and transport middleware do not create an exception to this rule.
 
 The `ContextProjection` is stricter still. It exposes only the user-facing schedule fields needed to answer the bounded question, normally normalized title, time/all-day semantics, and source classification. Provider identifiers and recurrence mechanics remain outside model context unless a future contract explicitly requires them.
 
@@ -473,7 +531,7 @@ trusted timezone/rules version
 exact requested interval
 captured_at
 normalized allowlisted event material
-completeness provenance
+completeness/coherency provenance
 normalization contract/version
 ```
 
@@ -543,7 +601,7 @@ AND same selected PersonalResourceBinding
 AND same exact requested interval
 AND current freshness policy is readable/trusted
 AND current policy considers captured_at/result eligible now
-AND completeness/minimization/projection invariants remain valid
+AND completeness/coherency/minimization/projection invariants remain valid
 ```
 
 A historical `fresh_until_at_admission` remaining in the future is not sufficient after policy change.
@@ -570,33 +628,54 @@ Before a new `ModelInvocation` from a previously committed personal-calendar `Co
 
 A policy change between projection construction and model invocation may invalidate that immutable projection. The stale projection remains historical provenance; new authorized acquisition/result/projection state is required for new current-state cognition.
 
-### Durable generated/adopted output before first presentation
+## 2.15 First-presentation freshness and disclosure authority
 
-A durable `GeneratedOutput` or unpresented `CompanionOutput` is immutable cognition, but it is not indefinitely eligible for **first presentation as a current-state answer**.
+A durable `GeneratedOutput` or unpresented `CompanionOutput` is immutable cognition, but it is not indefinitely eligible for **first presentation** of personal calendar material.
 
-Before the first accepted presentation of an unpresented current-calendar output, the host checks current-state presentation eligibility against the underlying capture and current trusted freshness policy.
-
-If still eligible, presentation may continue without regeneration.
-
-If no longer eligible, the old generated/adopted output remains immutable historical provenance but must not be newly presented with unqualified current-state language. The first slice chooses one of two explicitly contracted behaviors:
+Before the first accepted presentation of an unpresented personal-calendar output, the host evaluates two independent gates:
 
 ```text
-preferred first-slice behavior:
-    re-evaluate current read authority
-    → reacquire
-    → build new projection
-    → generate/adopt a new current answer
-
-optional future historical-presentation behavior:
-    present mechanically explicit "as of <captured_at>" language
-    only under an explicit versioned presentation policy
+A. current-state freshness eligibility
+AND
+B. current personal-data disclosure authority
 ```
 
-The first executable slice does **not** silently convert stale current language into historical language. Unless that separate as-of presentation policy exists, stale-before-first-presentation requires reacquisition/regeneration.
+### Current-state freshness eligibility
 
-Once a presentation has already been durably accepted as presented, deterministic replay/recovery does not retroactively rewrite it because the calendar later changes.
+The underlying capture/result must still satisfy the trusted current freshness policy. If freshness fails while disclosure authority remains valid, the old generated/adopted output remains immutable historical provenance but must not be newly presented with unqualified current-state language.
 
-## 2.15 User-facing truth
+The preferred first-slice behavior is:
+
+```text
+re-evaluate current read authority
+→ reacquire
+→ build new projection
+→ generate/adopt a new current answer
+```
+
+A future explicit versioned presentation policy may allow mechanically bounded `as of <captured_at>` historical language, but stale current language is never silently relabeled.
+
+### Current personal-data disclosure authority
+
+First presentation also requires current trusted authority to disclose the still-unpresented personal material to the same counterpart/relationship. The gate includes at least:
+
+```text
+same trusted counterpart / RelationshipState remains valid for the output
+AND selected PersonalResourceBinding remains associated with that counterpart/relationship
+AND current AI Capability / personal-data disclosure policy permits presentation
+AND current trusted read Permission remains present, unexpired, unrevoked, relationship/resource-matched, and disclosure-eligible for this interaction
+AND no current policy or explicit revocation fence prohibits delivery of the captured personal data
+```
+
+Credential usability and provider technical scope are acquisition feasibility, not prerequisites for displaying already-captured data. They are rechecked only if a new acquisition is required.
+
+If current disclosure authority fails or is unreadable, the existing output is **not** first-presented and no reacquisition is attempted until authority is restored. Historical output/evidence remains immutable but undisclosed.
+
+Permission revocation, resource unbinding, relationship mismatch, or policy denial after generation but before first presentation therefore blocks delivery even when the output is still fresh.
+
+Once a presentation has already been durably accepted as presented, deterministic replay/recovery does not retroactively rewrite or delete that historical Timeline event because Permission, resource bindings, or calendar state later changes.
+
+## 2.16 User-facing truth and fail-closed behavior
 
 User-facing language such as:
 
@@ -605,13 +684,11 @@ User-facing language such as:
 "I checked your calendar..."
 ```
 
-is allowed only after authorized acquisition, completeness validation, evidence-backed WorldResult admission, and current presentation eligibility exist.
+is allowed only after authorized acquisition, coherent completeness validation, evidence-backed `WorldResult` admission, current freshness eligibility, and current disclosure authority exist.
 
 The model may summarize only the selected normalized calendar window. It cannot select another calendar, broaden the date range, reinterpret timezone, fetch another resource, infer missing pages, expose disallowed provider fields, or convert observed events into memory.
 
-## 2.16 F5.A fail-closed cases
-
-No read transport dispatch occurs when any required layer is unavailable or invalid, including:
+No read transport dispatch occurs when any required acquisition-authority layer is unavailable or invalid, including:
 
 - unsupported personal-calendar grammar;
 - zero or multiple active resources under the first-slice contract;
@@ -632,10 +709,11 @@ No complete `WorldResult` is admitted when:
 - recurrence expansion is incomplete;
 - provider query cannot be overlap-complete within bounded access;
 - pagination/truncation completeness cannot be established;
-- disallowed fields cannot be removed before canonical capture;
+- pagination snapshot/coherency cannot be established;
+- disallowed fields cannot be removed before canonical capture and prohibited from non-canonical persistence/telemetry;
 - event/time normalization cannot be completed deterministically.
 
-No new current-state cognition or first presentation is allowed from stale personal-world evidence under the rules above.
+No new current-state cognition is allowed from stale personal-world evidence. No first presentation is allowed when either freshness or current disclosure authority fails.
 
 ## 2.17 F5.A acceptance bar
 
@@ -655,21 +733,28 @@ F5.A is complete only when executable tests prove all of the following:
 12. A master-only or incomplete recurrence provider fails closed.
 13. Provider query semantics are complete for canonical overlap while remaining bounded; unbounded-history compensation is prohibited.
 14. Pagination completes only with authoritative terminal/completeness evidence; truncation, token inconsistency, cap exhaustion without completeness, or early termination fails closed.
-15. Partial pages cannot produce a settled checked schedule.
-16. `WorldSourceCapture` retains acquisition/completeness provenance without retaining disallowed provider fields.
-17. Provider descriptions, attendee identities, conference data, attachments, reminders, private notes, locations, and unrelated metadata are discarded before canonical capture under the first-slice schema.
-18. Model context contains only the normalized schedule fields required for the answer and no credential secret.
-19. The answer remains traceable through Investigation → Observation → WorldSourceCapture → EvidenceItem → WorldResult → ContextProjection.
-20. Observation authority provenance durably records the exact capability/policy/resource/Permission/credential/time decisions used for the concrete acquisition.
-21. Calendar content creates no MemoryClaim/PersonClaim automatically.
-22. Another interaction cannot reuse the personal-world result as generic context.
-23. Process loss after capture/result but before projection evaluates current freshness before new projection construction.
-24. Tightening freshness policy invalidates recovered capture/result reuse even when historical admission metadata still says fresh.
-25. Process loss after projection but before model generation independently rechecks current freshness before new ModelInvocation.
-26. A policy change between projection and generation can invalidate the projection without mutating historical provenance.
-27. A durable GeneratedOutput/CompanionOutput that becomes stale before first presentation is not newly presented as an unqualified current answer; the first slice reacquires/regenerates unless an explicit as-of policy exists.
-28. Already-presented historical Timeline/evidence state is not deleted or rewritten when Permission or freshness later changes.
-29. Strong observational language is impossible without authorized, complete, evidence-backed, current-eligible personal-world support.
+15. Multi-page acquisition proves one coherent provider snapshot/revision (or equivalent change-fenced view); terminal pagination alone is insufficient.
+16. A concurrent calendar mutation between page requests cannot cause skipped/duplicated/mixed-snapshot results to be admitted; the acquisition restarts from a fresh bounded traversal or fails closed.
+17. Bounded pagination restart discards all prior partial page material and cannot mix snapshots.
+18. Partial or incoherent pages cannot produce a settled checked schedule.
+19. `WorldSourceCapture` retains acquisition/completeness/coherency provenance without retaining disallowed provider fields.
+20. Provider descriptions, attendee identities, conference data, attachments, reminders, private notes, locations, and unrelated metadata are discarded before canonical capture under the first-slice schema.
+21. Disallowed raw personal fields remain ephemeral inside the trusted adapter and never enter logs, traces, metrics payloads, caches, retry stores, crash diagnostics, analytics, or other non-canonical durable/telemetry paths.
+22. An adapter that cannot enforce non-canonical minimization is rejected for the first slice.
+23. Model context contains only the normalized schedule fields required for the answer and no credential secret.
+24. The answer remains traceable through Investigation → Observation → WorldSourceCapture → EvidenceItem → WorldResult → ContextProjection.
+25. Observation authority provenance durably records the exact capability/policy/resource/Permission/credential/time decisions used for the concrete acquisition.
+26. Calendar content creates no MemoryClaim/PersonClaim automatically.
+27. Another interaction cannot reuse the personal-world result as generic context.
+28. Process loss after capture/result but before projection evaluates current freshness before new projection construction.
+29. Tightening freshness policy invalidates recovered capture/result reuse even when historical admission metadata still says fresh.
+30. Process loss after projection but before model generation independently rechecks current freshness before new ModelInvocation.
+31. A policy change between projection and generation can invalidate the projection without mutating historical provenance.
+32. A durable GeneratedOutput/CompanionOutput that becomes stale before first presentation is not newly presented as an unqualified current answer; it is reacquired/regenerated only while current disclosure/read authority still permits that path.
+33. Permission revocation, resource unbinding, relationship mismatch, or disclosure-policy denial after generation but before first presentation blocks delivery of still-unpresented personal data even when freshness remains valid.
+34. Disclosure-authority failure does not delete historical generated/evidence state and does not trigger an unauthorized reacquisition.
+35. Already-presented historical Timeline/evidence state is not deleted or rewritten when Permission, disclosure authority, or freshness later changes.
+36. Strong observational language is impossible without authorized, coherent, complete, evidence-backed, current-eligible, disclosure-authorized personal-world support.
 
 Passing F5.A authorizes work on F5.B. It does not close F5.
 
@@ -714,7 +799,7 @@ Natural-language timezone inference, floating local times, recurrence, attendees
 
 Write Permission is separate from read Permission.
 
-A write Permission is authoritative only when admitted through the same trusted grant boundary principles as F5.A, with provenance binding:
+A write Permission is authoritative only when admitted through the same trusted grant-boundary principles as F5.A, with provenance binding:
 
 ```text
 holder CompanionPerson
@@ -852,49 +937,97 @@ An adapter whose only unique identifier is learned ephemerally after a successfu
 
 Retries of the same Action reuse the same external operation identity only when the trusted capability contract defines that behavior as safe.
 
-## 3.6 ExecutionAttempt and durable dispatch-start fence
+Action correlation is not a substitute for the Alsoul-side dispatch serialization fence defined below.
 
-Each concrete dispatch creates a distinct immutable `ExecutionAttempt` under the same Action.
+## 3.6 Per-Action dispatch serialization and terminal guard
+
+The first F5.B slice requires an atomic durable guard keyed by `action_id` that serializes dispatch eligibility across workers, retries, process restarts, and provider adapters.
+
+The implementation may use a unique row, compare-and-swap revision, transactional ownership record, database lock protocol, or equivalent mechanism, but its semantics must enforce:
+
+```text
+at most one dispatch-eligible / may-have-dispatched attempt for an Action at a time
+AND no new dispatch after CONFIRMED_EFFECT
+AND no new dispatch while any prior attempt is UNKNOWN_EFFECT / DISPATCH_FENCED without conclusive resolution
+```
+
+A conceptual state machine is:
+
+```text
+NO_ACTIVE_ATTEMPT
+    → atomically claim Action for PREPARED attempt
+
+PREPARED, no dispatch fence
+    → may be durably abandoned/released because transport could not have observed it
+    → a later attempt still requires a new current authority gate
+
+DISPATCH_FENCED / UNKNOWN_EFFECT
+    → Action remains dispatch-locked
+    → reconciliation only; no second mutation attempt
+
+CONFIRMED_EFFECT
+    → Action is terminal for mutation dispatch
+    → all future dispatch attempts are rejected
+
+CONFIRMED_NO_EFFECT
+    → retry may become eligible only through an explicit atomic retry transition
+    → new current authority/Approval validity/Action constraints are re-evaluated
+    → still only one new active attempt may be claimed
+```
+
+A correlated semantic mismatch or other divergent external consequence remains unresolved/unknown for the intended Action and therefore keeps the Action dispatch-locked.
+
+Creating a PREPARED `ExecutionAttempt` and claiming the per-Action dispatch slot must be atomic enough that two workers cannot both obtain dispatch eligibility. Committing `DISPATCH_FENCED` must preserve that exclusive Action ownership across crashes.
+
+Provider idempotency support does not weaken this requirement. `K(A1)` may reduce duplicate external consequences, but Alsoul must not rely on optional provider idempotency to serialize its own concurrent workers.
+
+## 3.7 ExecutionAttempt and durable dispatch-start fence
+
+Each actual transport dispatch is represented by one distinct immutable `ExecutionAttempt` under the same Action.
 
 Conceptually:
 
 ```text
 Action A1
 ├── ExecutionAttempt X1 → K(A1)
-└── ExecutionAttempt X2 → K(A1)
+└── ExecutionAttempt X2 → K(A1)   # only after X1 is conclusively no-effect and the Action guard permits retry
 ```
 
-The trusted executor persists the attempt and Action correlation before dispatch.
+The trusted executor persists the attempt, Action correlation, and exclusive Action dispatch claim before dispatch.
 
 Immediately before transport:
 
 ```text
 ExecutionAttempt PREPARED with K(A1)
 ↓
+exclusive per-Action dispatch claim is current
+↓
 revalidate complete current authority gate
 ↓
 persist attempt-level authority provenance
 ↓
-commit dispatch_started_at / DISPATCH_FENCED
+commit dispatch_started_at / DISPATCH_FENCED while preserving Action lock
 ↓
 only then may provider transport observe the request
 ```
 
-A transport adapter must never be called from an unfenced attempt.
+A transport adapter must never be called from an unfenced attempt or from an attempt that no longer owns the exclusive per-Action dispatch claim.
 
 Recovery distinguishes:
 
 ```text
 PREPARED, no dispatch fence
     → provider could not have observed this attempt
+    → durable abandon/release is possible before a new attempt
 
 DISPATCH_FENCED, no conclusive evidence
-    → UNKNOWN_EFFECT; reconcile through K(A1); no blind retry
+    → UNKNOWN_EFFECT; Action remains dispatch-locked
+    → reconcile through K(A1); no blind retry
 ```
 
 The fence is conservative: a crash after the fence but before actual transport still recovers as may-have-dispatched.
 
-## 3.7 Effect confirmation requires correlation and semantic equivalence
+## 3.8 Effect confirmation requires correlation and semantic equivalence
 
 `CONFIRMED_EFFECT` requires evidence that establishes **both**:
 
@@ -917,11 +1050,11 @@ AND capability-specific create semantics otherwise match the intended Action
 
 A correlated event with the wrong resource, wrong title, wrong start/end instant, or other material semantic mismatch is **not** `CONFIRMED_EFFECT` for the intended Action.
 
-Because an unintended correlated external consequence may nevertheless exist, such a mismatch is also not automatically `CONFIRMED_NO_EFFECT`. Under the first slice it remains unresolved for the intended Action, is recorded with divergent evidence, remains effectively `UNKNOWN_EFFECT`, and blocks blind retry pending explicit reconciliation or a later compensation contract.
+Because an unintended correlated external consequence may nevertheless exist, such a mismatch is also not automatically `CONFIRMED_NO_EFFECT`. Under the first slice it remains unresolved for the intended Action, is recorded with divergent evidence, remains effectively `UNKNOWN_EFFECT`, keeps the Action dispatch-locked, and blocks blind retry pending explicit reconciliation or a later compensation contract.
 
 Visible field similarity without unique Action correlation is also insufficient, because an identical event may pre-exist or be independently created.
 
-## 3.8 Durable Effect evidence ordering
+## 3.9 Durable Effect evidence ordering
 
 After transport begins, provider response/reconciliation evidence becomes durable before Effect admission.
 
@@ -944,7 +1077,11 @@ The storage design may use one transaction, dependent insertion with integrity c
 
 If sufficient evidence is durable but the process dies before Effect admission, recovery admits the corresponding Effect state from that evidence without redispatch.
 
-## 3.9 UNKNOWN_EFFECT and reconciliation
+A committed `CONFIRMED_EFFECT` atomically or transactionally advances the per-Action dispatch guard to terminal so no concurrent or later worker can dispatch the Action again.
+
+A committed `CONFIRMED_NO_EFFECT` may release the Action for a later retry only through the explicit retry transition defined in §3.6; it is not an implicit redispatch signal.
+
+## 3.10 UNKNOWN_EFFECT and reconciliation
 
 A timeout or ambiguous transport after possible dispatch produces:
 
@@ -954,7 +1091,7 @@ UNKNOWN_EFFECT
 
 not failure and not success.
 
-`UNKNOWN_EFFECT` survives restart and blocks blind mutation retry.
+`UNKNOWN_EFFECT` survives restart, retains the per-Action dispatch lock, and blocks blind mutation retry.
 
 Reconciliation uses separately authorized read-side observation:
 
@@ -963,7 +1100,7 @@ UNKNOWN_EFFECT
 ↓
 current authority for calendar.events.read
 ↓
-Investigation / Observation / bounded complete acquisition
+Investigation / Observation / bounded coherent complete acquisition
 ↓
 Action-correlated capability-specific evidence
 ↓
@@ -974,7 +1111,7 @@ OR still UNKNOWN_EFFECT
 
 Reconciliation is observation, not a second create Action. If current read authority is unavailable, reconciliation remains blocked/unknown rather than bypassing authority.
 
-## 3.10 Capability-sufficient `CONFIRMED_NO_EFFECT`
+## 3.11 Capability-sufficient `CONFIRMED_NO_EFFECT`
 
 Absence from an ordinary calendar listing is not automatically proof that a create Action had no effect.
 
@@ -1015,32 +1152,40 @@ If the provider offers only eventual visibility with no bounded authoritative no
 
 A delayed-visibility event that appears after an early empty read must never allow a premature `CONFIRMED_NO_EFFECT` or duplicate retry.
 
-## 3.11 Required crash-boundary behavior
+When `CONFIRMED_NO_EFFECT` is authoritative, a later retry still requires the per-Action atomic retry transition, a new current authority evaluation, current Approval validity, and a new `ExecutionAttempt`. Concurrent workers cannot both consume the same no-effect state to create separate retries.
+
+## 3.12 Required crash and concurrency behavior
 
 ```text
 crash while PREPARED, before dispatch fence
     → no external dispatch possible for this attempt
-    → ordinary retry may occur only after a new current authority gate
+    → abandon/release PREPARED claim durably
+    → later retry requires a new current authority gate
 
 crash after dispatch fence, before transport invocation
     → UNKNOWN_EFFECT conservatively
+    → Action remains dispatch-locked
     → reconcile using K(A1); no blind retry
 
 crash after transport invocation, before conclusive evidence commit
     → UNKNOWN_EFFECT
+    → Action remains dispatch-locked
     → reconcile using K(A1); no blind retry
 
 crash after sufficient evidence commit, before Effect-state commit
     → recover evidence and admit the justified Effect state
     → do not redispatch
 
-crash after Effect-state commit
-    → Effect state and its SUPPORTS evidence are already recoverable
+crash after CONFIRMED_EFFECT commit
+    → Effect state and SUPPORTS evidence are recoverable
+    → Action guard is terminal; no redispatch
 ```
+
+Two workers racing to execute the same Action cannot both create dispatch-eligible attempts. A worker that loses the Action claim performs no transport call.
 
 Presentation/model failure after a confirmed external Effect never causes the Action to execute again.
 
-## 3.12 Strong completion language
+## 3.13 Strong completion language and fail-closed dispatch
 
 ```text
 "I created the event."
@@ -1048,11 +1193,9 @@ Presentation/model failure after a confirmed external Effect never causes the Ac
 
 is allowed only after `CONFIRMED_EFFECT` has durable evidence satisfying both Action correlation and semantic equivalence.
 
-A timeout, ambiguous provider state, early empty reconciliation read, correlated semantic mismatch, or incomplete evidence cannot justify strong completion language.
+A timeout, ambiguous provider state, early empty reconciliation read, correlated semantic mismatch, incomplete evidence, or concurrent losing worker cannot justify strong completion language.
 
-## 3.13 F5.B fail-closed dispatch cases
-
-No mutation transport dispatch occurs when any required layer is absent, unreadable, denied, expired, revoked, unusable, or mismatched, including:
+No mutation transport dispatch occurs when any required layer is absent, unreadable, denied, expired, revoked, unusable, mismatched, or not exclusively owned, including:
 
 - semantic capability unavailable or effect contract untrusted;
 - AI policy denial;
@@ -1066,6 +1209,9 @@ No mutation transport dispatch occurs when any required layer is absent, unreada
 - provider technical scope insufficient;
 - durable Action correlation unavailable;
 - attempt-level authority provenance cannot be committed;
+- exclusive per-Action dispatch claim cannot be acquired or is already held by a may-have-dispatched attempt;
+- Action already has `CONFIRMED_EFFECT`;
+- Action has unresolved `UNKNOWN_EFFECT`/divergent-effect evidence;
 - dispatch-start fence cannot be committed.
 
 These conditions are re-evaluated before every retry.
@@ -1090,24 +1236,30 @@ F5.B is complete only when executable tests prove all of the following:
 14. Historical attempt authority provenance can explain the prior dispatch without consulting mutable current configuration and does not authorize a later dispatch.
 15. Action-specific external correlation is durably established before mutation dispatch.
 16. An adapter relying only on a response-learned unrecoverable unique identifier is ineligible.
-17. Transport is impossible before a durable dispatch-start fence.
-18. Crash before the fence is known not to have reached transport; crash after the fence is conservatively `UNKNOWN_EFFECT`.
-19. `UNKNOWN_EFFECT` survives restart and blocks blind retry.
-20. An identical pre-existing event cannot be mistaken for this Action's Effect.
-21. `CONFIRMED_EFFECT` requires unique Action correlation **and** semantic equality with the normalized intended resource/title/start/end/effect semantics.
-22. A uniquely correlated event on the wrong resource, with wrong title, wrong start, or wrong end cannot produce `CONFIRMED_EFFECT` or strong completion language.
-23. Correlated semantic mismatch remains unresolved for the intended Action and cannot unlock blind retry.
-24. Provider response/reconciliation evidence is durable before Effect-state admission.
-25. The first visible confirmed Effect state already has its required SUPPORTS evidence.
-26. Crash after evidence commit but before Effect-state commit recovers from evidence without redispatch.
-27. `CONFIRMED_NO_EFFECT` is admitted only under an explicit capability-specific authoritative negative-evidence predicate.
-28. Provider settling/read-after-write consistency requirements are mechanically enforced before negative confirmation.
-29. An early empty read during delayed visibility remains `UNKNOWN_EFFECT` and cannot unlock retry.
-30. If authoritative negative proof is unavailable, absence remains `UNKNOWN_EFFECT` indefinitely rather than being guessed into no-effect.
-31. Reconciliation requires current read authority and uses bounded complete personal-calendar acquisition semantics from F5.A.
-32. Presentation/model failure after confirmed Effect cannot execute the Action again.
-33. Credential rotation may change execution binding without redefining Action or Person.
-34. Strong completion language is mechanically blocked until the corresponding evidence-backed `CONFIRMED_EFFECT` exists.
+17. At most one worker can atomically claim dispatch eligibility for one Action at a time; a concurrent loser cannot create/fence/dispatch a second active attempt.
+18. Provider idempotency does not substitute for the per-Action Alsoul dispatch guard.
+19. Transport is impossible before a durable dispatch-start fence and without current ownership of the Action dispatch claim.
+20. Crash before the fence is known not to have reached transport; crash after the fence is conservatively `UNKNOWN_EFFECT` and keeps the Action locked.
+21. `UNKNOWN_EFFECT` survives restart and blocks all competing/retry dispatches until conclusive reconciliation.
+22. `CONFIRMED_EFFECT` atomically makes the Action terminal for future mutation dispatch.
+23. A later worker after `CONFIRMED_EFFECT` cannot create or dispatch a new attempt for that Action.
+24. `CONFIRMED_NO_EFFECT` permits at most one later retry claim, only through an explicit atomic retry transition and new current authority validation.
+25. Two workers cannot both consume one `CONFIRMED_NO_EFFECT` state to create duplicate retries.
+26. An identical pre-existing event cannot be mistaken for this Action's Effect.
+27. `CONFIRMED_EFFECT` requires unique Action correlation **and** semantic equality with the normalized intended resource/title/start/end/effect semantics.
+28. A uniquely correlated event on the wrong resource, with wrong title, wrong start, or wrong end cannot produce `CONFIRMED_EFFECT` or strong completion language.
+29. Correlated semantic mismatch remains unresolved for the intended Action, retains the dispatch lock, and cannot unlock blind retry.
+30. Provider response/reconciliation evidence is durable before Effect-state admission.
+31. The first visible confirmed Effect state already has its required SUPPORTS evidence.
+32. Crash after evidence commit but before Effect-state commit recovers from evidence without redispatch.
+33. `CONFIRMED_NO_EFFECT` is admitted only under an explicit capability-specific authoritative negative-evidence predicate.
+34. Provider settling/read-after-write consistency requirements are mechanically enforced before negative confirmation.
+35. An early empty read during delayed visibility remains `UNKNOWN_EFFECT` and cannot unlock retry.
+36. If authoritative negative proof is unavailable, absence remains `UNKNOWN_EFFECT` rather than being guessed into no-effect.
+37. Reconciliation requires current read authority and uses bounded coherent complete personal-calendar acquisition semantics from F5.A.
+38. Presentation/model failure after confirmed Effect cannot execute the Action again.
+39. Credential rotation may change execution binding without redefining Action or Person.
+40. Strong completion language is mechanically blocked until the corresponding evidence-backed `CONFIRMED_EFFECT` exists.
 
 # 4. F5 closure bar
 
@@ -1119,15 +1271,19 @@ F5 closes only when F5.A and F5.B are both green and executable evidence demonst
 - calendar membership is provider-independent and boundary-correct;
 - recurrence expansion is concrete, bounded, and complete;
 - pagination/truncation completeness is provable before settled schedule claims;
+- multi-page reads prove one coherent snapshot/revision or fail closed on concurrent mutation;
 - personal-world capture is field-minimized before canonical admission/model exposure;
+- disallowed raw personal fields remain ephemeral and cannot leak into non-canonical logs, traces, caches, queues, diagnostics, or analytics;
 - personal data does not silently broaden memory scope;
 - freshness is revalidated across capture/result/projection/model boundaries that create new cognition;
-- stale unpresented current-state output cannot be newly presented as current without reacquisition or an explicit historical/as-of policy;
+- first presentation of unpresented personal data requires both current freshness and current disclosure authority;
+- revocation/resource-unbinding after generation blocks first disclosure without rewriting history;
 - read and write authority are independently scoped;
 - Permission and Approval come from trusted authorized grant/approval paths;
 - approval consent is bound to the exact semantic content actually presented to the counterpart;
 - every effectful dispatch persists exact attempt-level authority provenance;
 - authority is re-evaluated at every external dispatch;
+- a durable per-Action guard serializes concurrent dispatch and blocks redispatch after possible/confirmed effect;
 - attempted operation and established external Effect remain distinct;
 - dispatch uncertainty survives restart and blocks blind replay;
 - effect confirmation requires Action correlation and semantic equivalence;
@@ -1158,4 +1314,4 @@ This checkpoint does not authorize:
 - shared-resource or delegated approval semantics;
 - rich modality or embodiment.
 
-Each later expansion must inherit the same identity, authority, provenance, minimization, freshness, approval, execution, effect, and recovery boundaries rather than bypassing them.
+Each later expansion must inherit the same identity, authority, provenance, minimization, freshness, disclosure, approval, execution, effect, concurrency, and recovery boundaries rather than bypassing them.
