@@ -55,8 +55,12 @@ prepared attempt ≠ transport may have started
 provider response ≠ durable Effect evidence
 one logical Observation ≠ one transport request
 terminal page token ≠ coherent snapshot
+snapshot completion time ≠ snapshot freshness age
 canonical minimization ≠ permission to persist raw provider payload elsewhere
 first generation ≠ indefinitely authorized first presentation
+presentation payload dispatch ≠ sink acceptance
+unknown presentation outcome ≠ presented
+unknown presentation outcome ≠ definitely undisclosed
 Action correlation ≠ concurrency/idempotency fence
 ```
 
@@ -80,7 +84,7 @@ F5.A  personal-world observation
 F5.B  bounded external action + effect reconciliation
 ```
 
-F5.A is the immediate implementation target. F5.B starts only after the read-side authority, provenance, minimization, completeness, coherent-snapshot, disclosure, and recovery boundary is executable. F5 is not closed until both tranches satisfy their acceptance bars.
+F5.A is the immediate implementation target. F5.B starts only after the read-side authority, provenance, minimization, completeness, coherent-snapshot, disclosure, presentation-reconciliation, and recovery boundary is executable. F5 is not closed until both tranches satisfy their acceptance bars.
 
 # 2. F5.A — Read-only personal calendar observation
 
@@ -135,10 +139,12 @@ CompanionOutput adoption
 ↓
 current freshness + personal-data disclosure eligibility
 ↓
-first-party presentation
+first-party presentation dispatch / acceptance reconciliation
+↓
+first accepted presentation
 ```
 
-The connector performs acquisition only. It does not decide semantic routing, resource selection, permission, memory admission, time interpretation, completeness policy, projection eligibility, disclosure authority, or what the model may see.
+The connector performs acquisition only. It does not decide semantic routing, resource selection, permission, memory admission, time interpretation, completeness policy, projection eligibility, disclosure authority, presentation truth, or what the model may see.
 
 ## 2.3 Capability contract
 
@@ -161,6 +167,7 @@ request constraints
 response semantics
 pagination/completeness semantics
 pagination snapshot/coherency semantics
+snapshot as-of / freshness-anchor semantics
 recurrence-expansion semantics
 field-normalization schema version
 raw-response minimization/telemetry contract
@@ -169,7 +176,7 @@ freshness-policy binding/version
 
 A missing or unreadable capability declaration blocks dispatch. The runtime must not infer read/write/effect class from a tool or function name.
 
-An adapter is ineligible for the first slice when it cannot provide a bounded complete and coherent view of the requested window, cannot enforce the field-minimization contract before persistence/telemetry, or cannot prove the required authority and provenance semantics.
+An adapter is ineligible for the first slice when it cannot provide a bounded complete and coherent view of the requested window, cannot provide a trustworthy freshness anchor for that coherent view, cannot enforce the field-minimization contract before persistence/telemetry, or cannot prove the required authority and provenance semantics.
 
 ## 2.4 Personal resource identity and trusted time semantics
 
@@ -386,7 +393,7 @@ The first slice requires:
 - occurrence identity to prevent master/instance/exception duplication;
 - master-only or incomplete recurrence expansion to fail closed rather than return a knowingly partial schedule.
 
-## 2.10 Complete, bounded, and coherent acquisition
+## 2.10 Complete, bounded, coherent, and time-anchored acquisition
 
 Provider query behavior is not authoritative for Alsoul membership semantics.
 
@@ -446,15 +453,52 @@ new traversal establishes one fresh coherent snapshot/revision lineage
 
 The restart may remain under the same semantic Observation only as a failed internal traversal followed by a fresh bounded traversal for the same user interaction; it cannot make partial earlier pages canonical evidence.
 
-The `WorldSourceCapture` retains completeness/coherency provenance sufficient to establish:
+### Snapshot as-of and freshness anchor
+
+Coherent pagination is not enough to establish freshness age. A long traversal can finish much later than the snapshot it is enumerating.
+
+Before the first page transport, the host durably records:
+
+```text
+acquisition_started_at
+```
+
+The capability contract also declares whether the coherent provider view exposes an authoritative:
+
+```text
+snapshot_as_of
+```
+
+or equivalent exact instant for the state represented by the snapshot/revision.
+
+The canonical freshness anchor is:
+
+```text
+if authoritative snapshot_as_of exists and is trusted for this snapshot:
+    freshness_anchor_at = snapshot_as_of
+else:
+    freshness_anchor_at = acquisition_started_at
+```
+
+`capture_committed_at`, terminal-page time, normalization-completion time, or model-invocation time must never be substituted as a newer freshness anchor merely because pagination took time.
+
+If the provider exposes a stable revision but no trustworthy as-of instant, `acquisition_started_at` is the required conservative anchor. If the provider exposes a timestamp whose relationship to the coherent snapshot is ambiguous or untrusted, it is ignored for freshness and the conservative acquisition-start anchor applies.
+
+A calendar mutation that occurs after a snapshot is pinned may correctly be absent from that coherent snapshot; freshness policy must age the result from the snapshot's actual as-of instant (or conservative acquisition start), not from traversal completion. A sufficiently long traversal can therefore yield a complete coherent result that is already stale and ineligible for current-state cognition by the time capture completes.
+
+The `WorldSourceCapture` retains completeness/coherency/time provenance sufficient to establish:
 
 ```text
 one Observation/acquisition identity
+acquisition_started_at
 snapshot/session/revision identity or equivalent coherency proof
+authoritative snapshot_as_of when available
+freshness_anchor_at and how it was derived
 ordered page/cursor chain or equivalent page lineage
 bounded request scope for every page
 terminal completeness proof
 provider count/cap signals needed to detect truncation
+capture_committed_at
 normalization schema version
 ```
 
@@ -529,7 +573,11 @@ selected resource identity
 requested date
 trusted timezone/rules version
 exact requested interval
-captured_at
+acquisition_started_at
+snapshot/revision/coherency identity
+authoritative snapshot_as_of when available
+freshness_anchor_at
+capture_committed_at
 normalized allowlisted event material
 completeness/coherency provenance
 normalization contract/version
@@ -556,12 +604,15 @@ CURRENT_PERSONAL_OBSERVATION
 A current-state result carries historical freshness provenance such as:
 
 ```text
-captured_at
+freshness_anchor_at
+freshness_anchor_basis = PROVIDER_SNAPSHOT_AS_OF | ACQUISITION_STARTED_AT
 freshness_policy_version_at_admission
 fresh_until_at_admission?
 ```
 
 Those values explain historical admission. They are not permanent eligibility tokens.
+
+All current-policy freshness predicates in this checkpoint evaluate age from `freshness_anchor_at`, never from capture commit or page-traversal completion.
 
 ## 2.13 No silent memory admission
 
@@ -600,7 +651,7 @@ same originating interaction
 AND same selected PersonalResourceBinding
 AND same exact requested interval
 AND current freshness policy is readable/trusted
-AND current policy considers captured_at/result eligible now
+AND current policy considers freshness_anchor_at eligible now
 AND completeness/coherency/minimization/projection invariants remain valid
 ```
 
@@ -624,15 +675,19 @@ A stale recovered capture cannot be promoted into a newly admitted current-state
 
 ### Recovery from projection before model generation
 
-Before a new `ModelInvocation` from a previously committed personal-calendar `ContextProjection` with no durable `GeneratedOutput`, the runtime independently rechecks current freshness of the underlying observation/result.
+Before a new `ModelInvocation` from a previously committed personal-calendar `ContextProjection` with no durable `GeneratedOutput`, the runtime independently rechecks current freshness of the underlying observation/result from its `freshness_anchor_at`.
 
-A policy change between projection construction and model invocation may invalidate that immutable projection. The stale projection remains historical provenance; new authorized acquisition/result/projection state is required for new current-state cognition.
+A policy change or elapsed time between projection construction and model invocation may invalidate that immutable projection. The stale projection remains historical provenance; new authorized acquisition/result/projection state is required for new current-state cognition.
 
-## 2.15 First-presentation freshness and disclosure authority
+## 2.15 First-presentation freshness, disclosure authority, and uncertain sink acceptance
 
 A durable `GeneratedOutput` or unpresented `CompanionOutput` is immutable cognition, but it is not indefinitely eligible for **first presentation** of personal calendar material.
 
-Before the first accepted presentation of an unpresented personal-calendar output, the host evaluates two independent gates:
+The F5 personal-data presentation contract extends the F4 first-party idempotent presentation boundary with explicit uncertain-acceptance reconciliation. The objective is to avoid both unauthorized redisclosure and false historical claims when the sink may already have accepted a payload before an acknowledgement was lost.
+
+### 2.15.1 Before any payload-bearing presentation transport
+
+Immediately before every transport that would send the personal-data payload to the first-party sink, the host evaluates two independent gates:
 
 ```text
 A. current-state freshness eligibility
@@ -640,24 +695,9 @@ AND
 B. current personal-data disclosure authority
 ```
 
-### Current-state freshness eligibility
+Freshness is evaluated from the underlying `freshness_anchor_at` under the trusted current freshness policy.
 
-The underlying capture/result must still satisfy the trusted current freshness policy. If freshness fails while disclosure authority remains valid, the old generated/adopted output remains immutable historical provenance but must not be newly presented with unqualified current-state language.
-
-The preferred first-slice behavior is:
-
-```text
-re-evaluate current read authority
-→ reacquire
-→ build new projection
-→ generate/adopt a new current answer
-```
-
-A future explicit versioned presentation policy may allow mechanically bounded `as of <captured_at>` historical language, but stale current language is never silently relabeled.
-
-### Current personal-data disclosure authority
-
-First presentation also requires current trusted authority to disclose the still-unpresented personal material to the same counterpart/relationship. The gate includes at least:
+Current disclosure authority includes at least:
 
 ```text
 same trusted counterpart / RelationshipState remains valid for the output
@@ -669,11 +709,88 @@ AND no current policy or explicit revocation fence prohibits delivery of the cap
 
 Credential usability and provider technical scope are acquisition feasibility, not prerequisites for displaying already-captured data. They are rechecked only if a new acquisition is required.
 
-If current disclosure authority fails or is unreadable, the existing output is **not** first-presented and no reacquisition is attempted until authority is restored. Historical output/evidence remains immutable but undisclosed.
+If freshness fails while disclosure remains valid, the old generated/adopted output remains immutable historical provenance but is not sent with unqualified current-state language. The preferred first-slice path is new authorized acquisition/projection/generation. A future explicit versioned presentation policy may allow mechanically bounded `as of <freshness_anchor_at>` historical language.
 
-Permission revocation, resource unbinding, relationship mismatch, or policy denial after generation but before first presentation therefore blocks delivery even when the output is still fresh.
+If disclosure authority fails or is unreadable, no payload-bearing presentation transport occurs and no reacquisition is attempted until authority is restored.
 
-Once a presentation has already been durably accepted as presented, deterministic replay/recovery does not retroactively rewrite or delete that historical Timeline event because Permission, resource bindings, or calendar state later changes.
+### 2.15.2 Durable presentation attempt and dispatch uncertainty
+
+Before a payload-bearing presentation transport can observe the payload, the host durably records a presentation attempt/fence conceptually equivalent to:
+
+```text
+PersonalPresentationAttempt {
+    presentation_attempt_id
+    companion_output_id
+    presentation_key
+    surface_binding_id
+    channel_binding_id
+    presentation_contract_version
+    disclosure_authority_decision_ref/version
+    freshness_decision_ref/version
+    payload_digest
+    dispatch_fenced_at
+    sink_acceptance_state = UNKNOWN | ACCEPTED | NOT_ACCEPTED
+}
+```
+
+The exact schema may differ, but recovery must distinguish:
+
+```text
+no presentation dispatch fence
+    → sink could not have observed this payload through this attempt
+
+presentation dispatch fenced, no validated acceptance receipt
+    → UNKNOWN_PRESENTATION_ACCEPTANCE
+
+validated sink acceptance
+    → ACCEPTED
+
+authoritative content-free sink status proves no acceptance
+    → NOT_ACCEPTED
+```
+
+A transport timeout or lost acknowledgement after the presentation fence is not treated as definitely undisclosed and is not treated as presented.
+
+### 2.15.3 Required content-free acceptance-status lookup
+
+A first-party sink used for F5 personal-data presentation must preserve the F4 idempotent `presentation_key` contract **and** support an authoritative content-free acceptance-status lookup keyed only by the presentation identity.
+
+Conceptually:
+
+```text
+lookup_presentation_status(presentation_key)
+    → ACCEPTED + acceptance evidence
+    | NOT_ACCEPTED + authoritative evidence
+    | UNKNOWN
+```
+
+The lookup request must not resend, echo, hash-expand, or otherwise disclose the personal payload. The response may contain only structural acceptance metadata sufficient to establish presentation truth, such as the presentation key, acceptance state, sink receipt/reference, and acceptance timestamp.
+
+A sink that can recover acceptance only by resending the payload is ineligible for F5 personal-data presentation because revocation after an uncertain dispatch would otherwise force either unauthorized redisclosure or permanent ambiguity.
+
+### 2.15.4 Recovery of an uncertain presentation
+
+When recovery finds `UNKNOWN_PRESENTATION_ACCEPTANCE`, it first performs the content-free status lookup. It does **not** resend the payload merely to recover a receipt.
+
+If the status lookup establishes `ACCEPTED`:
+
+```text
+persist acceptance evidence
+↓
+commit/recover exactly one COMPANION_PRESENTED_OUTPUT Timeline event
+```
+
+This Timeline commit records a presentation that the sink already accepted before or during the earlier authorized payload dispatch. It does not constitute a new personal-data disclosure and therefore does not require current calendar read/disclosure Permission to be re-granted merely to record historical truth.
+
+The Timeline event/presentation provenance must point to the original presentation attempt and sink acceptance evidence, including the sink's acceptance time when available. Revocation after that acceptance does not erase the historical event.
+
+If the status lookup establishes `NOT_ACCEPTED`, no presentation event is committed. A later payload send is allowed only after fresh evaluation of current freshness and current disclosure authority. If either gate now fails, the output remains undisclosed and no payload retry occurs.
+
+If the status lookup remains `UNKNOWN`, no Timeline presentation event is fabricated. The runtime retains the unknown presentation state. It may retry the **content-free lookup** under its bounded technical policy, but it may not resend the payload while disclosure authority is denied or freshness is ineligible. Even when authority/freshness are still valid, the first F5 slice prefers status reconciliation over payload replay after an uncertain dispatch; any payload replay must still use the exact semantic `presentation_key`, exact content, and both current gates.
+
+### 2.15.5 Already-presented history
+
+Once sink acceptance has been durably established and the canonical Timeline presentation event committed, deterministic replay/recovery does not retroactively rewrite or delete that historical event because Permission, resource bindings, relationship state, disclosure policy, or calendar contents later change.
 
 ## 2.16 User-facing truth and fail-closed behavior
 
@@ -684,7 +801,7 @@ User-facing language such as:
 "I checked your calendar..."
 ```
 
-is allowed only after authorized acquisition, coherent completeness validation, evidence-backed `WorldResult` admission, current freshness eligibility, and current disclosure authority exist.
+is allowed only after authorized acquisition, coherent completeness validation, evidence-backed `WorldResult` admission, current freshness eligibility at cognition/payload-dispatch boundaries, current disclosure authority for each payload send, and validated presentation truth.
 
 The model may summarize only the selected normalized calendar window. It cannot select another calendar, broaden the date range, reinterpret timezone, fetch another resource, infer missing pages, expose disallowed provider fields, or convert observed events into memory.
 
@@ -710,10 +827,11 @@ No complete `WorldResult` is admitted when:
 - provider query cannot be overlap-complete within bounded access;
 - pagination/truncation completeness cannot be established;
 - pagination snapshot/coherency cannot be established;
+- a trustworthy freshness anchor cannot be established;
 - disallowed fields cannot be removed before canonical capture and prohibited from non-canonical persistence/telemetry;
 - event/time normalization cannot be completed deterministically.
 
-No new current-state cognition is allowed from stale personal-world evidence. No first presentation is allowed when either freshness or current disclosure authority fails.
+No new current-state cognition is allowed from stale personal-world evidence. No new payload disclosure is allowed when freshness or current disclosure authority fails. An uncertain prior presentation is reconciled content-free rather than guessed or forced through an unauthorized payload resend.
 
 ## 2.17 F5.A acceptance bar
 
@@ -737,24 +855,34 @@ F5.A is complete only when executable tests prove all of the following:
 16. A concurrent calendar mutation between page requests cannot cause skipped/duplicated/mixed-snapshot results to be admitted; the acquisition restarts from a fresh bounded traversal or fails closed.
 17. Bounded pagination restart discards all prior partial page material and cannot mix snapshots.
 18. Partial or incoherent pages cannot produce a settled checked schedule.
-19. `WorldSourceCapture` retains acquisition/completeness/coherency provenance without retaining disallowed provider fields.
-20. Provider descriptions, attendee identities, conference data, attachments, reminders, private notes, locations, and unrelated metadata are discarded before canonical capture under the first-slice schema.
-21. Disallowed raw personal fields remain ephemeral inside the trusted adapter and never enter logs, traces, metrics payloads, caches, retry stores, crash diagnostics, analytics, or other non-canonical durable/telemetry paths.
-22. An adapter that cannot enforce non-canonical minimization is rejected for the first slice.
-23. Model context contains only the normalized schedule fields required for the answer and no credential secret.
-24. The answer remains traceable through Investigation → Observation → WorldSourceCapture → EvidenceItem → WorldResult → ContextProjection.
-25. Observation authority provenance durably records the exact capability/policy/resource/Permission/credential/time decisions used for the concrete acquisition.
-26. Calendar content creates no MemoryClaim/PersonClaim automatically.
-27. Another interaction cannot reuse the personal-world result as generic context.
-28. Process loss after capture/result but before projection evaluates current freshness before new projection construction.
-29. Tightening freshness policy invalidates recovered capture/result reuse even when historical admission metadata still says fresh.
-30. Process loss after projection but before model generation independently rechecks current freshness before new ModelInvocation.
-31. A policy change between projection and generation can invalidate the projection without mutating historical provenance.
-32. A durable GeneratedOutput/CompanionOutput that becomes stale before first presentation is not newly presented as an unqualified current answer; it is reacquired/regenerated only while current disclosure/read authority still permits that path.
-33. Permission revocation, resource unbinding, relationship mismatch, or disclosure-policy denial after generation but before first presentation blocks delivery of still-unpresented personal data even when freshness remains valid.
-34. Disclosure-authority failure does not delete historical generated/evidence state and does not trigger an unauthorized reacquisition.
-35. Already-presented historical Timeline/evidence state is not deleted or rewritten when Permission, disclosure authority, or freshness later changes.
-36. Strong observational language is impossible without authorized, coherent, complete, evidence-backed, current-eligible, disclosure-authorized personal-world support.
+19. Acquisition records `acquisition_started_at`; an authoritative provider `snapshot_as_of` is retained when available and trusted.
+20. Freshness age uses `snapshot_as_of` when authoritative, otherwise conservatively uses `acquisition_started_at`; terminal-page/capture-commit time cannot make an older snapshot appear fresh.
+21. A mutation after snapshot pinning but before the terminal page does not change the snapshot's freshness anchor, and a long traversal can become stale before capture completion.
+22. `WorldSourceCapture` retains acquisition/completeness/coherency/freshness-anchor provenance without retaining disallowed provider fields.
+23. Provider descriptions, attendee identities, conference data, attachments, reminders, private notes, locations, and unrelated metadata are discarded before canonical capture under the first-slice schema.
+24. Disallowed raw personal fields remain ephemeral inside the trusted adapter and never enter logs, traces, metrics payloads, caches, retry stores, crash diagnostics, analytics, or other non-canonical durable/telemetry paths.
+25. An adapter that cannot enforce non-canonical minimization is rejected for the first slice.
+26. Model context contains only the normalized schedule fields required for the answer and no credential secret.
+27. The answer remains traceable through Investigation → Observation → WorldSourceCapture → EvidenceItem → WorldResult → ContextProjection.
+28. Observation authority provenance durably records the exact capability/policy/resource/Permission/credential/time decisions used for the concrete acquisition.
+29. Calendar content creates no MemoryClaim/PersonClaim automatically.
+30. Another interaction cannot reuse the personal-world result as generic context.
+31. Process loss after capture/result but before projection evaluates current freshness from `freshness_anchor_at` before new projection construction.
+32. Tightening freshness policy invalidates recovered capture/result reuse even when historical admission metadata still says fresh.
+33. Process loss after projection but before model generation independently rechecks current freshness from the same anchor before new ModelInvocation.
+34. A policy change or elapsed time between projection and generation can invalidate the projection without mutating historical provenance.
+35. A durable GeneratedOutput/CompanionOutput that becomes stale before any payload dispatch is not newly presented as an unqualified current answer; it is reacquired/regenerated only while current disclosure/read authority permits that path.
+36. Permission revocation, resource unbinding, relationship mismatch, or disclosure-policy denial after generation but before any payload dispatch blocks delivery even when freshness remains valid.
+37. Disclosure-authority failure does not delete historical generated/evidence state and does not trigger an unauthorized reacquisition.
+38. Before a payload-bearing presentation transport, a durable presentation attempt/fence exists and records the current freshness/disclosure decision provenance.
+39. A process loss after the sink accepts a payload but before the host receives/commits the acceptance receipt recovers as `UNKNOWN_PRESENTATION_ACCEPTANCE`, not definitely undisclosed and not presented.
+40. The F5 first-party sink supports content-free authoritative status lookup by `presentation_key`; a sink requiring payload resend to recover acceptance is rejected.
+41. If disclosure Permission is revoked after an uncertain presentation dispatch, recovery performs no payload resend; it may use only the content-free acceptance-status lookup.
+42. If the lookup proves the sink had already accepted the original authorized presentation, recovery commits exactly one historical `COMPANION_PRESENTED_OUTPUT` linked to the original attempt/acceptance evidence without redisclosing the payload.
+43. If the lookup proves `NOT_ACCEPTED` and current disclosure authority is revoked, no Timeline presentation is committed and no payload retry occurs.
+44. If lookup remains `UNKNOWN`, the runtime preserves uncertainty and does not fabricate presentation or violate current disclosure authority.
+45. Already-presented historical Timeline/evidence state is not deleted or rewritten when Permission, disclosure authority, or freshness later changes.
+46. Strong observational language is impossible without authorized, coherent, complete, evidence-backed, current-eligible personal-world support and mechanically truthful presentation provenance.
 
 Passing F5.A authorizes work on F5.B. It does not close F5.
 
@@ -1272,12 +1400,15 @@ F5 closes only when F5.A and F5.B are both green and executable evidence demonst
 - recurrence expansion is concrete, bounded, and complete;
 - pagination/truncation completeness is provable before settled schedule claims;
 - multi-page reads prove one coherent snapshot/revision or fail closed on concurrent mutation;
+- freshness age is anchored to the coherent snapshot's authoritative as-of instant or conservatively to acquisition start, never traversal completion;
 - personal-world capture is field-minimized before canonical admission/model exposure;
 - disallowed raw personal fields remain ephemeral and cannot leak into non-canonical logs, traces, caches, queues, diagnostics, or analytics;
 - personal data does not silently broaden memory scope;
 - freshness is revalidated across capture/result/projection/model boundaries that create new cognition;
-- first presentation of unpresented personal data requires both current freshness and current disclosure authority;
-- revocation/resource-unbinding after generation blocks first disclosure without rewriting history;
+- every payload-bearing first presentation attempt requires current freshness and current disclosure authority;
+- revocation/resource-unbinding after generation blocks new disclosure without rewriting history;
+- uncertain sink acceptance is represented durably and reconciled through content-free status lookup rather than forced payload resend;
+- a prior accepted presentation may be recorded as historical truth after revocation without redisclosing its payload;
 - read and write authority are independently scoped;
 - Permission and Approval come from trusted authorized grant/approval paths;
 - approval consent is bound to the exact semantic content actually presented to the counterpart;
@@ -1314,4 +1445,4 @@ This checkpoint does not authorize:
 - shared-resource or delegated approval semantics;
 - rich modality or embodiment.
 
-Each later expansion must inherit the same identity, authority, provenance, minimization, freshness, disclosure, approval, execution, effect, concurrency, and recovery boundaries rather than bypassing them.
+Each later expansion must inherit the same identity, authority, provenance, minimization, freshness, disclosure, presentation-truth, approval, execution, effect, concurrency, and recovery boundaries rather than bypassing them.
