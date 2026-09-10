@@ -1423,7 +1423,8 @@ Durable negative-effect evidence may retain only fields necessary to prove the c
 action_id / execution_attempt_id
 K(A1)
 authoritative operation/correlation status
-settling/visibility/cancellation proof refs and timestamps
+terminal non-application proof for every transport covered by the attempt
+settling/cancellation/drain proof refs and timestamps
 consistency/status contract version
 negative-evidence schema/version
 ```
@@ -1494,7 +1495,7 @@ If sufficient minimized evidence is durable but the process dies before Effect a
 
 A committed `CONFIRMED_EFFECT` atomically or transactionally advances the per-Action dispatch guard to terminal so no concurrent or later worker can dispatch the Action again.
 
-A committed `CONFIRMED_NO_EFFECT` may release the Action for a later retry only through the explicit retry transition in §3.6; it is not an implicit redispatch signal.
+A committed `CONFIRMED_NO_EFFECT` may release the Action for a later retry only through the explicit retry transition in §3.6 and only when the linked negative evidence includes the terminal non-application proof required by §3.12. It is not an implicit redispatch signal.
 
 ## 3.11 UNKNOWN_EFFECT and reconciliation
 
@@ -1528,11 +1529,11 @@ Reconciliation is observation, not a second create Action. If current read autho
 
 Read-side reconciliation inherits F5.A field minimization and non-canonical telemetry rules. F5.B does not create an exception to them.
 
-## 3.12 Capability-sufficient `CONFIRMED_NO_EFFECT`
+## 3.12 Capability-sufficient and terminal `CONFIRMED_NO_EFFECT`
 
-Absence from an ordinary calendar listing is not automatically proof that a create Action had no effect.
+Absence from an ordinary calendar listing is not automatically proof that a create Action had no effect. Neither is absence after a visibility horizon when an earlier mutation transport may still be queued or in flight.
 
-The trusted capability contract explicitly defines whether authoritative negative confirmation is supported and, if so, the exact predicate.
+The trusted capability contract explicitly defines whether authoritative negative confirmation is supported and, if so, the exact terminal predicate.
 
 Negative-confirmation metadata includes at least:
 
@@ -1540,19 +1541,36 @@ Negative-confirmation metadata includes at least:
 negative_confirmation_supported
 Action-correlation lookup semantics using K(A1)
 read-after-write consistency model
-settling/visibility requirement or authoritative operation-status semantics
-maximum authoritative observation horizon where applicable
-predicate that proves operation was not applied
+visibility semantics
+authoritative terminal operation-status semantics and/or cancellation + settling/drain semantics
+transport-generation / ExecutionAttempt scope covered by terminal proof
+predicate proving the intended consequence is absent
+predicate proving every transport covered by the fenced attempt can no longer apply the Action
 ```
 
-`CONFIRMED_NO_EFFECT` is permitted only when capability-specific minimized evidence establishes that the Action-correlated operation did not produce the intended external consequence after every required consistency/settling condition is satisfied.
-
-Examples of potentially sufficient proof, only when declared authoritative by the capability contract, include:
+`CONFIRMED_NO_EFFECT` is permitted only when capability-specific minimized evidence establishes both:
 
 ```text
-provider operation-status lookup for K(A1) says terminal NOT_APPLIED
-or
-provider correlation lookup after guaranteed visibility horizon proves no correlated event/operation exists
+1. the Action-correlated intended external consequence does not exist
+AND
+2. every dispatched, queued, or in-flight transport covered by the exact fenced ExecutionAttempt is terminal and can no longer later apply the Action
+```
+
+Visibility, read-after-write consistency, or an elapsed observation horizon can help establish the first predicate. They do not establish the second predicate by themselves.
+
+Potentially sufficient terminal proof, only when declared authoritative by the pinned negative-confirmation contract, includes:
+
+```text
+provider operation-status bound to K(A1) / the exact attempt says terminal NOT_APPLIED
+AND the status contract guarantees no transport for that attempt can later apply
+```
+
+or:
+
+```text
+authoritative cancellation + settling/drain fence covers every dispatched/queued/in-flight transport for the exact attempt
+AND proves those transports cannot later apply
+AND a capability-sufficient correlation observation proves no intended Effect exists
 ```
 
 The following are insufficient by themselves:
@@ -1561,15 +1579,26 @@ The following are insufficient by themselves:
 first read immediately after timeout finds no event
 ordinary event listing lacks a semantic match
 absence before provider consistency/visibility is guaranteed
+absence after a guaranteed visibility horizon while an older request may still be queued or in flight
 lack of a response
 transport failure
 ```
 
-If the provider offers only eventual visibility with no bounded authoritative no-effect predicate, absence remains `UNKNOWN_EFFECT`; the first slice does not unlock retry by waiting an arbitrary guessed delay.
+If terminal non-application cannot be proven for every transport covered by the fenced attempt, state remains `UNKNOWN_EFFECT`, the per-Action dispatch guard remains locked, and retry is prohibited even when current observation shows no event.
 
-A delayed-visibility event appearing after an early empty read must never allow premature `CONFIRMED_NO_EFFECT` or duplicate retry.
+An eligible first-slice negative-confirmation contract must make this sequence impossible:
 
-When `CONFIRMED_NO_EFFECT` is authoritative, a later retry still requires the per-Action atomic retry transition, a new current authority evaluation, current Approval validity, and a new `ExecutionAttempt`. Concurrent workers cannot both consume the same no-effect state to create separate retries.
+```text
+ExecutionAttempt X1 becomes CONFIRMED_NO_EFFECT
+↓
+the Action guard permits retry X2
+↓
+an old queued/in-flight transport from X1 later applies the Action
+```
+
+If the provider/executor semantics permit that sequence, the integration cannot support `CONFIRMED_NO_EFFECT` for the first F5.B slice; uncertainty remains until terminality can be established.
+
+When `CONFIRMED_NO_EFFECT` is authoritative, its durable minimized SUPPORTS evidence includes the exact terminal proof before the Action guard can enter the retry-eligible transition. A later retry still requires the per-Action atomic retry transition, a new current authority evaluation, current Approval validity, and a new `ExecutionAttempt`. Concurrent workers cannot both consume the same no-effect state to create separate retries.
 
 ## 3.13 Required crash and concurrency behavior
 
@@ -1604,15 +1633,51 @@ Two workers racing to execute the same Action cannot both create dispatch-eligib
 
 Presentation/model failure after a confirmed external Effect never causes the Action to execute again.
 
-## 3.14 Strong completion language and fail-closed dispatch
+## 3.14 Mechanically constrained mutation completion and fail-closed dispatch
+
+A confirmed external Effect is necessary for a success response, but the existence of some Effect does not by itself authorize arbitrary mutation-completion prose.
+
+For the first F5.B slice, any model-assisted mutation completion uses a bounded structured result plan conceptually equivalent to:
+
+```text
+CalendarMutationResultPlanV1 {
+    source_action_id
+    source_effect_id
+    result_kind = CREATED
+    rendering_contract_version = CALENDAR_CREATE_RESULT_V1
+    framing_mode?              # optional bounded trusted enum; no factual payload
+}
+```
+
+The plan carries no authoritative resource, title, time, effect-class, receipt, or other effect-relevant override. Those facts are resolved only from the exact immutable Action and its evidence-backed `CONFIRMED_EFFECT` lineage.
+
+Before any mutation `GeneratedOutput` can be adopted as `CompanionOutput`, the host mechanically verifies:
+
+```text
+source_action_id == exact immutable Action being completed
+AND source_effect_id == exact CONFIRMED_EFFECT admitted for that Action
+AND the Effect already has durable SUPPORTS evidence
+AND that evidence uniquely correlates the Effect to the Action / K(A1)
+AND the Effect evidence is semantically equivalent to Action.selected PersonalResourceBinding
+AND normalized Effect title/summary proof == Action title/summary
+AND normalized Effect start instant proof == Action normalized start instant
+AND normalized Effect end instant proof == Action normalized end instant
+AND result_kind == CREATED
+AND rendering_contract_version is trusted/current for this slice
+AND no model-supplied field can add or override an effect-relevant proposition
+```
+
+The host then deterministically renders all factual mutation-completion claims from the immutable Action plus the validated evidence-backed Effect. A bounded `framing_mode`, when supported, may affect only non-factual connective language and cannot add another effect, target, title, time, resource, status, or receipt claim.
+
+A malformed plan, an Effect from another Action, an unconfirmed or unsupported Effect, a wrong resource/title/time, an unsupported additional effect, or any attempted factual override remains unadopted. The runtime does not fall back to free-form model prose and does not present a truthful-looking success response from unvalidated generated text.
+
+Strong completion language such as:
 
 ```text
 "I created the event."
 ```
 
-is allowed only after `CONFIRMED_EFFECT` has durable minimized evidence satisfying both Action correlation and semantic equivalence.
-
-A timeout, ambiguous provider state, early empty reconciliation read, correlated semantic mismatch, incomplete evidence, or concurrent losing worker cannot justify strong completion language.
+is allowed only after this exact Action/Effect validation has succeeded and the resulting mutation completion has been adopted. A timeout, ambiguous provider state, early empty reconciliation read, correlated semantic mismatch, incomplete evidence, cross-Action Effect substitution, invalid mutation plan, or concurrent losing worker cannot justify strong completion language.
 
 No mutation transport dispatch occurs when any required layer is absent, unreadable, denied, expired, revoked, unusable, mismatched, inactive, unbound, or not exclusively owned, including:
 
@@ -1681,19 +1746,26 @@ F5.B is complete only when executable tests prove all of the following:
 35. Provider response/reconciliation evidence is durable before Effect-state admission.
 36. First visible confirmed Effect state already has required SUPPORTS evidence.
 37. Crash after minimized evidence commit but before Effect-state commit recovers from evidence without redispatch.
-38. `CONFIRMED_NO_EFFECT` is admitted only under explicit capability-specific authoritative negative-evidence predicate.
-39. Provider settling/read-after-write consistency requirements are mechanically enforced before negative confirmation.
-40. An early empty read during delayed visibility remains `UNKNOWN_EFFECT` and cannot unlock retry.
-41. If authoritative negative proof is unavailable, absence remains `UNKNOWN_EFFECT` rather than guessed into no-effect.
+38. `CONFIRMED_NO_EFFECT` is admitted only under an explicit capability-specific authoritative terminal negative-evidence predicate.
+39. Read-after-write visibility/consistency may contribute to negative proof but cannot establish terminal non-application of queued/in-flight mutation transports by itself.
+40. An early or post-horizon empty read remains `UNKNOWN_EFFECT` whenever an older mutation transport may still apply, and therefore cannot unlock retry.
+41. If terminal non-application proof is unavailable for every transport covered by the fenced attempt, state remains `UNKNOWN_EFFECT` and the Action remains dispatch-locked.
 42. Reconciliation requires current read authority and uses bounded coherent complete minimized personal-calendar acquisition semantics from F5.A.
 43. Presentation/model failure after confirmed Effect cannot execute the Action again.
 44. Credential rotation may change execution binding without redefining Action or Person.
-45. Strong completion language is mechanically blocked until corresponding evidence-backed `CONFIRMED_EFFECT` exists.
+45. Strong completion language is mechanically blocked until corresponding evidence-backed `CONFIRMED_EFFECT` exists and the exact Action/Effect completion plan validates.
 46. Immediately before every mutation dispatch/retry, the current `RelationshipState` remains valid and the selected `PersonalResourceBinding` remains ACTIVE and currently associated with the same counterpart/relationship.
 47. Relationship termination, resource deactivation, or unbinding after Action/Approval creation but before a dispatch or retry blocks transport even when Permission, Approval, Resource Scope, and credentials otherwise remain valid.
 48. Every `ExecutionAttempt` authority record durably preserves the current RelationshipState-validity and PersonalResourceBinding active-association decisions used for that concrete dispatch.
 49. The exact concrete adapter binding/version, executor contract/version, external correlation contract/version when distinct, and negative-confirmation contract/version when applicable are selected and validated before `DISPATCH_FENCED` and become durable in the same fence commit.
 50. Crash immediately after `DISPATCH_FENCED` but before provider invocation recovers all exact execution-semantic pins; a hot-swapped or mismatched implementation cannot substitute for the fenced attempt or reinterpret its recovery semantics.
+51. `CONFIRMED_NO_EFFECT` includes durable terminal non-application evidence proving every transport covered by the exact fenced `ExecutionAttempt` can no longer apply the Action before the per-Action guard becomes retry-eligible.
+52. A guaranteed visibility horizon or currently empty correlation lookup cannot release the Action guard while any older transport may still be queued or in flight.
+53. After `CONFIRMED_NO_EFFECT` unlocks retry X2, a transport from the earlier attempt X1 cannot later apply; an integration whose semantics permit that sequence is ineligible for authoritative no-effect confirmation in the first slice.
+54. Every mutation `GeneratedOutput` eligible for adoption conforms to `CalendarMutationResultPlanV1` and references the exact immutable Action plus its exact evidence-backed `CONFIRMED_EFFECT`.
+55. Mutation-output adoption rejects an Effect from another Action, an unconfirmed/unsupported Effect, wrong resource/title/start/end semantics, unsupported additional effects, or any model attempt to override effect-relevant facts.
+56. Deterministic mutation rendering derives all factual success claims from the exact Action and validated Effect evidence; raw free-form mutation prose cannot bypass the structured validator to become `CompanionOutput`.
+57. Cross-Action Effect substitution or wrong-title/wrong-time/wrong-resource completion text cannot become adopted output or justify strong completion language.
 
 # 4. F5 closure bar
 
@@ -1738,8 +1810,10 @@ F5 closes only when F5.A and F5.B are both green and executable evidence demonst
 - exact adapter/executor/correlation/negative-confirmation execution semantics are selected, trusted, and durably pinned with the mutation dispatch fence before transport can observe the request;
 - a fenced mutation attempt cannot silently switch execution semantics after a hot swap or process restart;
 - effect confirmation requires Action correlation and semantic equivalence;
-- no-effect confirmation requires capability-sufficient authoritative negative proof;
-- delayed provider visibility cannot prematurely unlock mutation retry;
+- no-effect confirmation requires capability-sufficient evidence plus terminal proof that every transport covered by the fenced attempt can no longer apply;
+- visibility or current absence cannot unlock mutation retry while an earlier transport may still apply;
+- mutation completion claims are mechanically constrained to the exact immutable Action and its evidence-backed confirmed Effect before `CompanionOutput` adoption;
+- cross-Action, wrong-resource, wrong-title, wrong-time, or unsupported additional mutation effects cannot become completion truth;
 - mutation responses are minimized to explicit evidence allowlists before durable admission;
 - disallowed mutation-response fields remain ephemeral and cannot leak into canonical evidence or non-canonical telemetry/persistence;
 - effect evidence precedes and supports first committed confirmed Effect state;
@@ -1911,7 +1985,7 @@ Action.capability_contract_version
 
 If the Action-pinned version is no longer trusted, available, or executable, the Action cannot dispatch or retry. A newer capability version does not inherit authority merely because its semantic operation name is unchanged.
 
-Any effect-relevant contract change—including target semantics, parameter normalization, idempotency/correlation behavior, provider dispatch semantics, positive-effect proof, negative-effect proof, consistency guarantees, or minimization obligations—requires a new immutable Action and a new faithful approval presentation/Approval. A later architecture decision may define explicit compatibility proofs; the first F5.B slice does not.
+Any effect-relevant contract change—including target semantics, parameter normalization, idempotency/correlation behavior, provider dispatch semantics, positive-effect proof, negative-effect proof, terminal non-application semantics, consistency guarantees, or minimization obligations—requires a new immutable Action and a new faithful approval presentation/Approval. A later architecture decision may define explicit compatibility proofs; the first F5.B slice does not.
 
 Every `ExecutionAttempt` additionally retains:
 
@@ -1925,6 +1999,8 @@ negative-confirmation contract/version when applicable
 ```
 
 These values are not eventual audit fields. Before `DISPATCH_FENCED` can commit, the trusted executor must select the exact concrete values, validate that each required binding/contract is trusted, current, and compatible with the Action-pinned capability semantics, and include them durably in the same transaction/CAS/serialization step that linearizes current authority, preserves the exclusive Action lock, and commits the dispatch fence.
+
+When authoritative no-effect confirmation is supported, the pinned negative-confirmation semantics include the exact terminal operation-status or cancellation/settling/drain proof required to show that every mutation transport covered by the fenced attempt can no longer apply. A later implementation or configuration cannot weaken that terminality predicate for an already-fenced attempt.
 
 Only the adapter/executor/correlation semantics pinned by that fenced `ExecutionAttempt` may perform its provider transport or interpret its post-dispatch response. A runtime hot swap, configuration reload, adapter replacement, or contract-version change after fencing cannot rewrite the attempt or substitute a different execution stack. If the exact pinned execution stack is unavailable or mismatched before transport, that attempt fails closed; because the fence already establishes may-have-dispatched status, recovery retains `UNKNOWN_EFFECT` semantics and uses only the durable pins to determine valid reconciliation behavior.
 
@@ -1953,5 +2029,9 @@ The F5.B acceptance bar additionally requires executable tests proving:
 6. Every ExecutionAttempt records the Action-pinned capability version plus concrete adapter and executor contract versions used at dispatch.
 7. The exact adapter binding/version, executor contract/version, external correlation contract/version when distinct, and negative-confirmation contract/version when applicable are selected, validated trusted/current, and durably committed in the same `DISPATCH_FENCED` linearization before provider transport can observe the request.
 8. A crash immediately after `DISPATCH_FENCED` but before provider invocation recovers those exact execution-semantic pins; a hot swap or version mismatch after fencing cannot substitute a new adapter/executor/correlation/negative-confirmation contract for the fenced attempt, and any such mismatch fails closed without transport under different semantics.
+9. `CONFIRMED_NO_EFFECT` cannot be admitted from an empty or post-horizon observation unless durable evidence also proves every transport covered by the exact fenced attempt is terminal and cannot later apply.
+10. A test provider that allows an old X1 transport to apply after X1 is declared `CONFIRMED_NO_EFFECT` and retry X2 becomes eligible fails first-slice qualification; the Action remains `UNKNOWN_EFFECT`/locked unless terminality is provable.
+11. `CalendarMutationResultPlanV1` can be adopted only when its Action and Effect references resolve to the exact immutable Action and that Action's evidence-backed `CONFIRMED_EFFECT`; cross-Action, unconfirmed, unsupported, or semantically mismatched references fail adoption.
+12. Deterministic mutation rendering takes factual resource/title/start/end/effect claims only from the validated Action/Effect lineage, and generated free-form factual overrides or unsupported additional-effect claims cannot become `CompanionOutput`.
 
-These requirements are part of the existing F5 closure bar: authority must be current **and linearized**, resource identity must be non-retargetable under existing authority, model references must remain Alsoul-owned and projection-local, reconciliation must be explicitly authorized, and approved Action semantics must not drift between consent and execution.
+These requirements are part of the existing F5 closure bar: authority must be current **and linearized**, resource identity must be non-retargetable under existing authority, model references must remain Alsoul-owned and projection-local, reconciliation must be explicitly authorized, approved Action semantics must not drift between consent and execution, no-effect must be terminal against delayed application before retry eligibility, and mutation completion truth must remain mechanically bound to the exact Action and evidence-backed Effect.
