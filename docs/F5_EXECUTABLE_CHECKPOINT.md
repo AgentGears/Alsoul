@@ -1343,14 +1343,16 @@ exclusive per-Action dispatch claim is current
 ↓
 revalidate complete current authority gate, including current RelationshipState and active resource binding
 ↓
-persist attempt-level authority provenance
+select and validate the exact trusted adapter / executor / correlation / negative-confirmation contracts for this attempt
 ↓
-commit dispatch_started_at / DISPATCH_FENCED while preserving Action lock
+commit attempt-level authority provenance + exact execution-semantic pins + dispatch_started_at / DISPATCH_FENCED atomically while preserving Action lock
 ↓
-only then may provider transport observe the request
+only then may the exactly pinned provider transport observe the request
 ```
 
-A transport adapter must never be called from an unfenced attempt or from an attempt that no longer owns the exclusive per-Action dispatch claim.
+The execution-semantic pins committed with `DISPATCH_FENCED` include the Action-pinned capability contract/version, concrete adapter binding/ref and adapter contract/version, trusted executor contract/version, external correlation contract/version when distinct, and negative-confirmation contract/version when applicable. Each selected pin must be trusted, current, and compatible with the immutable Action at the fence linearization point.
+
+A transport adapter must never be called from an unfenced attempt, from an attempt that no longer owns the exclusive per-Action dispatch claim, or through an adapter/executor/correlation contract different from the exact versions durably pinned by that fence. A hot swap after fencing cannot rewrite or substitute the attempt's execution semantics.
 
 Recovery distinguishes:
 
@@ -1360,11 +1362,12 @@ PREPARED, no dispatch fence
     → durable abandon/release possible before a new attempt
 
 DISPATCH_FENCED, no conclusive evidence
+    → exact execution-semantic pins are already durable
     → UNKNOWN_EFFECT; Action remains dispatch-locked
-    → reconcile through K(A1); no blind retry
+    → reconcile through K(A1) under the pinned semantics; no blind retry
 ```
 
-The fence is conservative: a crash after the fence but before actual transport still recovers as may-have-dispatched.
+The fence is conservative: a crash after the fence but before actual transport still recovers as may-have-dispatched. If a pinned adapter/executor becomes unavailable or mismatched after the fence but before transport, another implementation/version cannot be substituted for that attempt; transport fails closed and recovery preserves the fenced uncertainty semantics.
 
 ## 3.8 Effect confirmation requires correlation and semantic equivalence
 
@@ -1577,9 +1580,10 @@ crash while PREPARED, before dispatch fence
     → later retry requires new current authority gate
 
 crash after dispatch fence, before transport invocation
+    → exact execution-semantic pins remain recoverable
     → UNKNOWN_EFFECT conservatively
     → Action remains dispatch-locked
-    → reconcile using K(A1); no blind retry
+    → reconcile using K(A1) under pinned semantics; no blind retry
 
 crash after transport invocation, before minimized conclusive evidence commit
     → UNKNOWN_EFFECT
@@ -1626,6 +1630,7 @@ No mutation transport dispatch occurs when any required layer is absent, unreada
 - provider technical scope insufficient;
 - durable Action correlation unavailable;
 - attempt-level authority provenance cannot be committed;
+- exact adapter/executor/correlation/negative-confirmation execution-semantic pins cannot be selected, validated, or durably fenced;
 - exclusive per-Action dispatch claim cannot be acquired or is already held by a may-have-dispatched attempt;
 - Action already has `CONFIRMED_EFFECT`;
 - Action has unresolved `UNKNOWN_EFFECT`/divergent-effect evidence;
@@ -1687,6 +1692,8 @@ F5.B is complete only when executable tests prove all of the following:
 46. Immediately before every mutation dispatch/retry, the current `RelationshipState` remains valid and the selected `PersonalResourceBinding` remains ACTIVE and currently associated with the same counterpart/relationship.
 47. Relationship termination, resource deactivation, or unbinding after Action/Approval creation but before a dispatch or retry blocks transport even when Permission, Approval, Resource Scope, and credentials otherwise remain valid.
 48. Every `ExecutionAttempt` authority record durably preserves the current RelationshipState-validity and PersonalResourceBinding active-association decisions used for that concrete dispatch.
+49. The exact concrete adapter binding/version, executor contract/version, external correlation contract/version when distinct, and negative-confirmation contract/version when applicable are selected and validated before `DISPATCH_FENCED` and become durable in the same fence commit.
+50. Crash immediately after `DISPATCH_FENCED` but before provider invocation recovers all exact execution-semantic pins; a hot-swapped or mismatched implementation cannot substitute for the fenced attempt or reinterpret its recovery semantics.
 
 # 4. F5 closure bar
 
@@ -1728,6 +1735,8 @@ F5 closes only when F5.A and F5.B are both green and executable evidence demonst
 - durable per-Action guard serializes concurrent dispatch and blocks redispatch after possible/confirmed effect;
 - attempted operation and established external Effect remain distinct;
 - dispatch uncertainty survives restart and blocks blind replay;
+- exact adapter/executor/correlation/negative-confirmation execution semantics are selected, trusted, and durably pinned with the mutation dispatch fence before transport can observe the request;
+- a fenced mutation attempt cannot silently switch execution semantics after a hot swap or process restart;
 - effect confirmation requires Action correlation and semantic equivalence;
 - no-effect confirmation requires capability-sufficient authoritative negative proof;
 - delayed provider visibility cannot prematurely unlock mutation retry;
@@ -1915,6 +1924,12 @@ external correlation contract/version when distinct
 negative-confirmation contract/version when applicable
 ```
 
+These values are not eventual audit fields. Before `DISPATCH_FENCED` can commit, the trusted executor must select the exact concrete values, validate that each required binding/contract is trusted, current, and compatible with the Action-pinned capability semantics, and include them durably in the same transaction/CAS/serialization step that linearizes current authority, preserves the exclusive Action lock, and commits the dispatch fence.
+
+Only the adapter/executor/correlation semantics pinned by that fenced `ExecutionAttempt` may perform its provider transport or interpret its post-dispatch response. A runtime hot swap, configuration reload, adapter replacement, or contract-version change after fencing cannot rewrite the attempt or substitute a different execution stack. If the exact pinned execution stack is unavailable or mismatched before transport, that attempt fails closed; because the fence already establishes may-have-dispatched status, recovery retains `UNKNOWN_EFFECT` semantics and uses only the durable pins to determine valid reconciliation behavior.
+
+A crash immediately after the fence but before provider invocation must recover the complete exact execution-semantic pins together with `K(A1)` and the Action guard. Recovery must never need to consult whichever adapter/executor happens to be current merely to determine what the fenced attempt meant.
+
 The attempt may use a different credential binding after rotation only when the immutable resource target and Action semantics are unchanged and the complete current authority gate passes. Adapter/executor replacement never changes the Action meaning silently.
 
 ## 6.6 Additional mandatory acceptance cases
@@ -1936,5 +1951,7 @@ The F5.B acceptance bar additionally requires executable tests proving:
 4. Reconciliation Observation/evidence provenance records the exact semantic probe capability and version actually used.
 5. A `calendar.event.create` capability-version change after Action approval blocks dispatch under the old Action in the first slice, even when the operation name and provider account remain unchanged.
 6. Every ExecutionAttempt records the Action-pinned capability version plus concrete adapter and executor contract versions used at dispatch.
+7. The exact adapter binding/version, executor contract/version, external correlation contract/version when distinct, and negative-confirmation contract/version when applicable are selected, validated trusted/current, and durably committed in the same `DISPATCH_FENCED` linearization before provider transport can observe the request.
+8. A crash immediately after `DISPATCH_FENCED` but before provider invocation recovers those exact execution-semantic pins; a hot swap or version mismatch after fencing cannot substitute a new adapter/executor/correlation/negative-confirmation contract for the fenced attempt, and any such mismatch fails closed without transport under different semantics.
 
 These requirements are part of the existing F5 closure bar: authority must be current **and linearized**, resource identity must be non-retargetable under existing authority, model references must remain Alsoul-owned and projection-local, reconciliation must be explicitly authorized, and approved Action semantics must not drift between consent and execution.
