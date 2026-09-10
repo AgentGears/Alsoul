@@ -1759,3 +1759,182 @@ This checkpoint does not authorize:
 - rich modality or embodiment.
 
 Each later expansion must inherit the same identity, authority, provenance, minimization, freshness, model-egress, disclosure, presentation-truth, approval, execution, effect, concurrency, and recovery boundaries rather than bypassing them.
+
+# 6. Cross-cutting execution invariants for F5 closure
+
+The following requirements are part of this same normative checkpoint and are required by the F5.A and F5.B acceptance bars above. They close transport-race, resource-identity, model-reference, reconciliation-authority, and execution-contract drift cases without creating a separate amendment or precedence document.
+
+## 6.1 Authority linearization at every external transport boundary
+
+A current-authority check that merely happens before transport is insufficient. Every external transport that can acquire, disclose, present, or mutate personal-world state has one durable authority linearization point immediately before the external boundary.
+
+This applies independently to:
+
+```text
+calendar read page transport
+personal-data model transport
+personal-data first-party presentation transport
+calendar mutation transport / retry
+external reconciliation probe
+```
+
+For each transport attempt, the trusted host records or references the exact current authority state used by that attempt, including every mutable authority head, revision, epoch, or policy decision whose change could make the transport invalid. At minimum, as applicable:
+
+```text
+RelationshipState head/revision
+PersonalResourceBinding lifecycle head/revision
+Capability contract/version and availability epoch
+AI policy decision/version
+Resource Scope decision/version
+Permission state/revision and grant provenance
+Approval state/revision and approver eligibility for mutation
+CredentialBinding state/revision and provider-scope snapshot
+freshness decision for current-state personal data
+model-route eligibility for model egress
+first-party disclosure decision for presentation
+```
+
+The durable dispatch fence, `ModelInvocation` dispatch admission, `PersonalPresentationAttempt` fence, read-page dispatch record, or reconciliation-probe dispatch record must be committed through a transaction/CAS/serialization mechanism that validates those exact current heads or epochs at the same logical linearization point. Revocation, relationship termination, resource unbinding/deactivation, policy changes, Approval revocation, and credential/scope invalidation that participate in those authority states must update through the same ordering discipline.
+
+The required race semantics are:
+
+```text
+revocation / invalidation linearizes first
+    → stale authority CAS/fence fails
+    → external transport cannot start
+
+dispatch authority fence linearizes first
+    → that exact attempt is the already-authorized may-have-dispatched unit
+    → later revocation does not rewrite its historical authorization
+    → later revocation blocks every later transport attempt/retry
+```
+
+The fence is not a durable bearer token for arbitrary delayed reuse. If process loss occurs before a definitely unstarted transport can be resumed, a new transport attempt requires a new current authority linearization. If the old fenced transport may have crossed the boundary, recovery preserves the appropriate uncertainty state and does not redispatch merely because the historical fence exists.
+
+For F5.A pagination, an authority race on any page aborts that page and prevents partial prior pages from being promoted into a complete result. For model egress, a stale authority snapshot cannot create a new personal-data `ModelInvocation`. For presentation, the existing attempt-generation/fence identity carries the linearized disclosure decision and uncertain-acceptance semantics. For F5.B, the authority linearization composes with the exclusive per-Action dispatch guard and `DISPATCH_FENCED`; neither substitutes for the other.
+
+## 6.2 PersonalResourceBinding target identity is immutable within one binding identity
+
+For the first F5 slice, `personal_resource_binding_id` identifies one immutable semantic target. The following target-defining fields cannot be changed in place under the same binding identity:
+
+```text
+counterpart_id
+relationship_id
+resource_kind
+external_system_ref
+external_resource_ref
+calendar_timezone
+timezone_rules_version
+```
+
+Lifecycle state such as ACTIVE/inactive/revoked may advance through append-oriented or revisioned state, and a non-authoritative display label may change, but those lifecycle/display changes do not retarget the binding.
+
+Changing any target-defining field creates a new `PersonalResourceBinding` identity. The new binding does not inherit standing Permission, Approval, Action target identity, acquisition authority, evidence eligibility, or presentation authority from the old binding merely because the provider account, credential, display label, or relationship is the same.
+
+Every Permission, Observation/acquisition, `ContextProjection`, Action, ApprovalPresentation/Approval, ExecutionAttempt, Effect proof, model-egress decision, and presentation-disclosure decision that depends on a personal resource pins the exact immutable binding identity. A provider-side alias or mutable account default cannot redirect that identity silently.
+
+An implementation that models resource bindings with immutable complete revisions instead may do so only when every dependent authority/evidence object pins the exact target revision and retargeting creates a new non-inheriting semantic target revision. The first executable slice SHOULD prefer immutable binding identity plus separate lifecycle state because it makes stale-authority rejection simpler.
+
+## 6.3 Projection-local schedule item references
+
+`CalendarAnswerPlanV1.ordered_occurrence_refs[]` is fulfilled by Alsoul-owned projection-local handles, not by provider identifiers and not by matching generated title/time text back to events.
+
+When constructing a personal-calendar `ContextProjection`, the host creates exactly one opaque `schedule_item_ref` for each selected normalized occurrence and retains a host-side mapping:
+
+```text
+ContextProjection
+    schedule_item_ref
+        → exactly one normalized selected occurrence
+```
+
+The model-visible schedule item contains only:
+
+```text
+schedule_item_ref
+normalized title/summary
+normalized time or all-day semantics
+source classification required by the answer contract
+```
+
+Provider event IDs, provider occurrence IDs, recurrence master IDs, resource credentials, and other provider-side authority/correlation identifiers remain outside model context.
+
+A `schedule_item_ref`:
+
+```text
+is scoped to exactly one ContextProjection
+is opaque to the model
+carries no Resource Scope, Permission, or execution authority
+is not a provider identity
+is invalid when presented against another projection
+cannot be resolved by title/time similarity
+```
+
+The host may derive the handle from projection identity plus a collision-free local ordinal/nonce under a versioned renderer contract, but the external/model-visible form must not leak the provider identifier. Deterministic schedule rendering resolves plan entries only through the exact host-side projection mapping. Unknown, forged, duplicate, stale, or cross-projection handles fail adoption.
+
+## 6.4 Every external reconciliation probe has explicit semantic read authority
+
+Reconciliation does not gain authority from its usefulness to an existing write Action. Every external probe used to resolve `UNKNOWN_EFFECT`, `CONFIRMED_NO_EFFECT`, or divergent-effect evidence must be represented by a trusted READ_ONLY semantic capability and must pass its own current authority linearization before transport.
+
+A provider operation-status or K(A1)-correlation lookup may execute under `calendar.events.read` only when the exact trusted `calendar.events.read` contract version explicitly declares that probe semantics, request/resource scope, minimization, completeness/consistency behavior, and Permission coverage.
+
+Otherwise the probe is a separate semantic read capability with separate current:
+
+```text
+Capability availability / contract version
+AI policy decision
+Resource Scope
+Permission and trusted grant provenance
+RelationshipState / PersonalResourceBinding validity
+CredentialBinding / provider technical scope
+transport authority fence
+```
+
+The `Observation` and Effect-evidence provenance record the exact reconciliation capability/contract/version and concrete probe lineage. A provider status endpoint, correlation API, or transport method name is never self-authorizing. If the required semantic read capability is absent or not currently authorized, reconciliation remains blocked and Effect state remains unresolved.
+
+## 6.5 Action-pinned capability and concrete executor semantics cannot drift silently
+
+The immutable F5.B Action pins the exact `calendar.event.create` capability contract version whose semantics were normalized and approved. In the first executable slice, mutation dispatch requires exact version equality:
+
+```text
+Action.capability_contract_version
+== current trusted executable calendar.event.create contract version
+```
+
+If the Action-pinned version is no longer trusted, available, or executable, the Action cannot dispatch or retry. A newer capability version does not inherit authority merely because its semantic operation name is unchanged.
+
+Any effect-relevant contract change—including target semantics, parameter normalization, idempotency/correlation behavior, provider dispatch semantics, positive-effect proof, negative-effect proof, consistency guarantees, or minimization obligations—requires a new immutable Action and a new faithful approval presentation/Approval. A later architecture decision may define explicit compatibility proofs; the first F5.B slice does not.
+
+Every `ExecutionAttempt` additionally retains:
+
+```text
+Action-pinned capability contract/version
+concrete adapter binding/ref
+adapter contract/version
+trusted executor contract/version
+external correlation contract/version when distinct
+negative-confirmation contract/version when applicable
+```
+
+The attempt may use a different credential binding after rotation only when the immutable resource target and Action semantics are unchanged and the complete current authority gate passes. Adapter/executor replacement never changes the Action meaning silently.
+
+## 6.6 Additional mandatory acceptance cases
+
+The F5.A acceptance bar additionally requires executable tests proving:
+
+1. A Permission revocation, RelationshipState termination, or resource unbinding racing a calendar page authority fence has deterministic linearized behavior: if invalidation wins, no page transport occurs; if the fence wins, that exact attempt is historical/may-have-dispatched and no later page/retry inherits its authority.
+2. A model-egress policy/Permission/route change racing `ModelInvocation` dispatch admission cannot allow personal data to leave under a stale authority snapshot.
+3. A first-party disclosure revocation racing a personal-presentation fence cannot allow a new payload transport when revocation linearizes first; an already-fenced uncertain attempt follows content-free reconciliation and never becomes a bearer authorization for a later resend.
+4. Retargeting an external calendar, timezone/rules target, or relationship association cannot occur under the same immutable PersonalResourceBinding identity; a replacement binding cannot reuse the old binding's Permission or current-state evidence eligibility.
+5. Model context contains an Alsoul-owned projection-local `schedule_item_ref` for each schedule item while provider event/occurrence identifiers remain absent.
+6. Forged, stale, duplicate, or cross-projection `schedule_item_ref` values fail mechanical adoption, and deterministic rendering resolves only through the exact projection-local mapping.
+
+The F5.B acceptance bar additionally requires executable tests proving:
+
+1. Permission/Approval/resource/policy/credential invalidation racing mutation dispatch has deterministic linearized behavior; invalidation winning first prevents `DISPATCH_FENCED`, while a fence winning first yields exactly one may-have-dispatched attempt and later invalidation blocks later retry.
+2. Same-ID PersonalResourceBinding retargeting is impossible; creating a replacement binding for another external calendar cannot authorize an Action or Approval that pinned the old binding.
+3. A provider operation-status or correlation endpoint cannot be called for reconciliation unless the exact authorized semantic read capability contract includes that probe or a separate trusted read capability is currently authorized.
+4. Reconciliation Observation/evidence provenance records the exact semantic probe capability and version actually used.
+5. A `calendar.event.create` capability-version change after Action approval blocks dispatch under the old Action in the first slice, even when the operation name and provider account remain unchanged.
+6. Every ExecutionAttempt records the Action-pinned capability version plus concrete adapter and executor contract versions used at dispatch.
+
+These requirements are part of the existing F5 closure bar: authority must be current **and linearized**, resource identity must be non-retargetable under existing authority, model references must remain Alsoul-owned and projection-local, reconciliation must be explicitly authorized, and approved Action semantics must not drift between consent and execution.
