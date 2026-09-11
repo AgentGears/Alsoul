@@ -4,13 +4,15 @@ from dataclasses import asdict, dataclass
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from alsoul.domain.errors import fail
 from alsoul.domain.personal_calendar import (
     CALENDAR_EVENTS_READ,
     AuthorityStateRevisionResult,
+    CalendarReadPageFenceResult,
+    FencePersonalCalendarReadPageCommand,
     GrantCalendarReadPermissionCommand,
     GrantCalendarReadPermissionResult,
     PrepareCalendarObservationResult,
@@ -41,6 +43,8 @@ CALENDAR_READ_PERMISSION_GRANT_TEXT = "Allow my companion to read my calendar."
 _CALENDAR_READ_PERMISSION_GRANT_CONTRACT = "CALENDAR_READ_PERMISSION_GRANT_V1"
 _GRANT_SOURCE_CONSUMPTION_SCOPE = "ConsumeCalendarReadPermissionGrantEvent"
 _RESOURCE_REGISTRATION_SCOPE = "RegisterPersonalCalendarResource"
+_OBSERVATION_SOURCE_BINDING_SCOPE = "BindPersonalCalendarObservationRequest"
+_PAGE_FENCE_ATTEMPT_SCOPE = "ReservePersonalCalendarReadPageAttempt"
 
 
 @dataclass(frozen=True, slots=True)
@@ -525,28 +529,54 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
             )
             return GrantCalendarReadPermissionResult(permission_id)
 
-    def prepare_observation(
+    def _bind_current_observation_request(
         self, command: PreparePersonalCalendarObservationCommand
-    ) -> PrepareCalendarObservationResult:
-        with self.engine.connect() as conn:
+    ) -> str:
+        binding_req = request_digest(
+            {
+                "observation_id": command.observation_id,
+                "source_interaction_event_id": command.source_interaction_event_id,
+            }
+        )
+        with self.engine.begin() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=_OBSERVATION_SOURCE_BINDING_SCOPE,
+                operation_id=command.observation_id,
+                expected_request_digest=binding_req,
+            )
+            if replay:
+                return (
+                    "What's on my calendar on "
+                    f"{replay['requested_local_date']}?"
+                )
+
             observation = conn.execute(
                 select(schema.observation).where(
                     schema.observation.c.observation_id == command.observation_id
                 )
             ).mappings().one_or_none()
-            if observation is None:
+            if observation is None or observation["status"] != "STARTED":
                 fail(
                     "CALENDAR_OBSERVATION_NOT_OPEN",
                     "calendar observation must exist in STARTED state",
                 )
+            if observation["acquisition_kind"] != "PERSONAL_CALENDAR_READ":
+                fail(
+                    "CALENDAR_OBSERVATION_KIND_MISMATCH",
+                    "observation is not a personal-calendar acquisition",
+                )
+
             investigation = conn.execute(
                 select(schema.investigation).where(
-                    schema.investigation.c.investigation_id == observation["investigation_id"]
+                    schema.investigation.c.investigation_id
+                    == observation["investigation_id"]
                 )
             ).mappings().one_or_none()
             source_event = conn.execute(
                 select(schema.interaction_event).where(
-                    schema.interaction_event.c.event_id == command.source_interaction_event_id
+                    schema.interaction_event.c.event_id
+                    == command.source_interaction_event_id
                 )
             ).mappings().one_or_none()
             relationship = None
@@ -563,6 +593,7 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                 or relationship is None
                 or source_event is None
                 or source_event["event_kind"] != "COUNTERPART_INPUT"
+                or source_event["actor_kind"] != "COUNTERPART"
                 or source_event["relationship_id"] != investigation["relationship_id"]
                 or source_event["actor_ref"] != relationship["counterpart_id"]
                 or source_event["surface_binding_id"] is None
@@ -572,8 +603,76 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                     "CALENDAR_SOURCE_INTERACTION_INVALID",
                     "calendar read must originate from the matching counterpart input",
                 )
-            canonical_question = source_event["content_text"]
 
+            requested_date = parse_personal_calendar_question(
+                source_event["content_text"]
+            )
+            timeline_head = conn.execute(
+                select(schema.relationship_timeline_head).where(
+                    schema.relationship_timeline_head.c.relationship_id
+                    == investigation["relationship_id"]
+                )
+            ).mappings().one_or_none()
+            source_timeline_seq = int(source_event["timeline_seq"])
+            if (
+                timeline_head is None
+                or source_timeline_seq != int(timeline_head["last_timeline_seq"])
+            ):
+                fail(
+                    "CALENDAR_SOURCE_INTERACTION_NOT_CURRENT",
+                    "calendar acquisition must bind the current relationship Timeline request",
+                )
+
+            # Linearize this observation's request binding against any newer Timeline
+            # append. Once admitted, retries may resume the same bound acquisition, but
+            # a fresh Observation cannot reuse this historical request.
+            changed = conn.execute(
+                update(schema.relationship_timeline_head)
+                .where(
+                    schema.relationship_timeline_head.c.relationship_id
+                    == investigation["relationship_id"],
+                    schema.relationship_timeline_head.c.last_timeline_seq
+                    == source_timeline_seq,
+                )
+                .values(last_timeline_seq=source_timeline_seq)
+            )
+            if changed.rowcount != 1:
+                fail(
+                    "CALENDAR_SOURCE_INTERACTION_NOT_CURRENT",
+                    "calendar request stopped being the Timeline frontier before admission",
+                )
+
+            now = self.clock.now()
+            try:
+                save_operation_receipt(
+                    conn,
+                    scope=_OBSERVATION_SOURCE_BINDING_SCOPE,
+                    operation_id=command.observation_id,
+                    req_digest=binding_req,
+                    result_kind="PersonalCalendarObservationRequestBinding",
+                    result_ref=command.source_interaction_event_id,
+                    result_json={
+                        "observation_id": str(command.observation_id),
+                        "source_interaction_event_id": str(
+                            command.source_interaction_event_id
+                        ),
+                        "source_timeline_frontier": source_timeline_seq,
+                        "requested_local_date": requested_date.isoformat(),
+                    },
+                    committed_at=now,
+                )
+            except IntegrityError:
+                fail(
+                    "CALENDAR_SOURCE_INTERACTION_BINDING_CONFLICT",
+                    "calendar observation request binding was admitted concurrently",
+                )
+
+            return source_event["content_text"]
+
+    def prepare_observation(
+        self, command: PreparePersonalCalendarObservationCommand
+    ) -> PrepareCalendarObservationResult:
+        canonical_question = self._bind_current_observation_request(command)
         return super().prepare_observation(
             _PreparedCalendarObservationCommand(
                 operation_id=command.operation_id,
@@ -582,6 +681,56 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                 question_text=canonical_question,
             )
         )
+
+    def fence_read_page(
+        self, command: FencePersonalCalendarReadPageCommand
+    ) -> CalendarReadPageFenceResult:
+        if command.page_ordinal < 0:
+            fail(
+                "CALENDAR_PAGE_ORDINAL_INVALID",
+                "page ordinal must be non-negative",
+            )
+
+        req = request_digest(asdict(command))
+        with self.engine.begin() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=_PAGE_FENCE_ATTEMPT_SCOPE,
+                operation_id=command.operation_id,
+                expected_request_digest=req,
+            )
+            if replay:
+                fail(
+                    "CALENDAR_PAGE_FENCE_REPLAY_NOT_AUTHORIZING",
+                    "a prior fence attempt cannot be replayed as current transport authority",
+                )
+
+            now = self.clock.now()
+            try:
+                save_operation_receipt(
+                    conn,
+                    scope=_PAGE_FENCE_ATTEMPT_SCOPE,
+                    operation_id=command.operation_id,
+                    req_digest=req,
+                    result_kind="PersonalCalendarReadPageAttemptReservation",
+                    result_ref=command.observation_id,
+                    result_json={
+                        "observation_id": str(command.observation_id),
+                        "page_ordinal": command.page_ordinal,
+                        "permission_id": str(command.permission_id),
+                        "credential_binding_id": str(
+                            command.credential_binding_id
+                        ),
+                    },
+                    committed_at=now,
+                )
+            except IntegrityError:
+                fail(
+                    "CALENDAR_PAGE_FENCE_REPLAY_NOT_AUTHORIZING",
+                    "calendar page fence attempt was already reserved",
+                )
+
+        return super().fence_read_page(command)
 
 
 __all__ = [
