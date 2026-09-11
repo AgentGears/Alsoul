@@ -18,7 +18,9 @@ _F5_RECEIPT_SCOPES = (
     "SetPersonalResourceBindingStatus",
     "SetCredentialBindingStatus",
     "SetPermissionStatus",
+    "BindPersonalCalendarObservationRequest",
     "PreparePersonalCalendarObservation",
+    "ReservePersonalCalendarReadPageAttempt",
     "FencePersonalCalendarReadPage",
 )
 
