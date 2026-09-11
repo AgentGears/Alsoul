@@ -27,7 +27,9 @@ _F5_RECEIPT_SCOPES = (
     "SetPersonalResourceBindingStatus",
     "SetCredentialBindingStatus",
     "SetPermissionStatus",
+    "BindPersonalCalendarObservationRequest",
     "PreparePersonalCalendarObservation",
+    "ReservePersonalCalendarReadPageAttempt",
     "FencePersonalCalendarReadPage",
 )
 
@@ -41,9 +43,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # F5 operation receipts can carry references to rows that disappear with this
-    # downgrade, and grant-source consumption receipts would otherwise survive as
-    # false single-use authority fences after a later re-upgrade. Remove exactly the
-    # v5-only replay state before dropping the canonical v5 tables.
+    # downgrade, and request/grant/fence replay receipts would otherwise survive as
+    # false authority state after a later re-upgrade. Remove exactly the v5-only
+    # replay state before dropping the canonical v5 tables.
     operation_receipt = sa.table(
         "operation_receipt",
         sa.column("operation_scope", sa.String(128)),
