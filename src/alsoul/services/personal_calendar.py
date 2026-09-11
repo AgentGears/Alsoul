@@ -8,10 +8,15 @@ from sqlalchemy import insert, select
 from alsoul.domain.errors import fail
 from alsoul.domain.personal_calendar import (
     CALENDAR_EVENTS_READ,
+    AuthorityStateRevisionResult,
     GrantCalendarReadPermissionCommand,
     GrantCalendarReadPermissionResult,
     PrepareCalendarObservationResult,
     PreparePersonalCalendarObservationCommand,
+    SetCredentialBindingStatusCommand,
+    SetPermissionStatusCommand,
+    SetPersonalResourceBindingStatusCommand,
+    SetPersonalWorldRelationshipStatusCommand,
 )
 from alsoul.services.common import (
     load_operation_receipt,
@@ -40,14 +45,93 @@ class _PreparedCalendarObservationCommand:
     question_text: str
 
 
+@dataclass(frozen=True, slots=True)
+class _RelationshipStatusCommand:
+    operation_id: UUID
+    companion_person_id: UUID
+    counterpart_id: UUID
+    relationship_id: UUID
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class _CredentialStatusCommand:
+    operation_id: UUID
+    credential_binding_id: UUID
+    status: str
+    provider_scopes: tuple[str, ...] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _PermissionStatusCommand:
+    operation_id: UUID
+    permission_id: UUID
+    status: str
+
+
 class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
-    """Hardened first-slice F5.A admission boundary.
+    """Hardened first-slice F5.A admission and revocation boundary.
 
     The lower-level implementation owns append-oriented authority state and read-page
-    fencing. This public service requires canonical counterpart-authored grant evidence
-    and derives calendar-question semantics from canonical first-party input rather
-    than accepting authority-relevant facts from callers.
+    fencing. This public service requires canonical counterpart-authored grant evidence,
+    derives calendar-question semantics from canonical first-party input, and prevents
+    revoked authority from being reactivated under the same semantic identity.
     """
+
+    def set_relationship_status(
+        self, command: SetPersonalWorldRelationshipStatusCommand
+    ) -> AuthorityStateRevisionResult:
+        return super().set_relationship_status(
+            _RelationshipStatusCommand(
+                operation_id=command.operation_id,
+                companion_person_id=command.companion_person_id,
+                counterpart_id=command.counterpart_id,
+                relationship_id=command.relationship_id,
+                status="ENDED",
+            )
+        )
+
+    def set_resource_status(
+        self, command: SetPersonalResourceBindingStatusCommand
+    ) -> AuthorityStateRevisionResult:
+        if command.status not in {"INACTIVE", "REVOKED"}:
+            fail(
+                "PERSONAL_RESOURCE_STATUS_INVALID",
+                "first-slice resource state cannot be reactivated in place",
+            )
+        with self.engine.connect() as conn:
+            _, current_state, _ = self._current_resource(
+                conn, command.personal_resource_binding_id
+            )
+            if current_state["status"] == "REVOKED" and command.status != "REVOKED":
+                fail(
+                    "PERSONAL_RESOURCE_REVOCATION_TERMINAL",
+                    "a revoked personal resource binding cannot become active or inactive again",
+                )
+        return super().set_resource_status(command)
+
+    def set_credential_status(
+        self, command: SetCredentialBindingStatusCommand
+    ) -> AuthorityStateRevisionResult:
+        return super().set_credential_status(
+            _CredentialStatusCommand(
+                operation_id=command.operation_id,
+                credential_binding_id=command.credential_binding_id,
+                status="REVOKED",
+                provider_scopes=None,
+            )
+        )
+
+    def set_permission_status(
+        self, command: SetPermissionStatusCommand
+    ) -> AuthorityStateRevisionResult:
+        return super().set_permission_status(
+            _PermissionStatusCommand(
+                operation_id=command.operation_id,
+                permission_id=command.permission_id,
+                status="REVOKED",
+            )
+        )
 
     def grant_read_permission(
         self, command: GrantCalendarReadPermissionCommand
