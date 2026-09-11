@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from uuid import UUID
 
 from sqlalchemy import insert, select
@@ -32,12 +32,21 @@ CALENDAR_READ_PERMISSION_GRANT_TEXT = "Allow my companion to read my calendar."
 _CALENDAR_READ_PERMISSION_GRANT_CONTRACT = "CALENDAR_READ_PERMISSION_GRANT_V1"
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedCalendarObservationCommand:
+    operation_id: UUID
+    observation_id: UUID
+    source_interaction_event_id: UUID
+    question_text: str
+
+
 class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
     """Hardened first-slice F5.A admission boundary.
 
     The lower-level implementation owns append-oriented authority state and read-page
-    fencing. This public service additionally requires canonical counterpart-authored
-    grant evidence and binds calendar-question scope to canonical first-party input.
+    fencing. This public service requires canonical counterpart-authored grant evidence
+    and derives calendar-question semantics from canonical first-party input rather
+    than accepting authority-relevant facts from callers.
     """
 
     def grant_read_permission(
@@ -61,11 +70,6 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                 counterpart_id=command.counterpart_id,
                 relationship_id=command.relationship_id,
             )
-            if command.grantor_ref != command.counterpart_id:
-                fail(
-                    "PERMISSION_GRANTOR_UNAUTHORIZED",
-                    "first-slice read Permission must be granted by the bound counterpart",
-                )
             if not command.capability_contract_version.strip() or not command.grant_policy_version.strip():
                 fail(
                     "PERMISSION_PROVENANCE_INVALID",
@@ -89,12 +93,6 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                 fail(
                     "PERMISSION_PROVENANCE_INVALID",
                     "calendar read Permission lacks the exact trusted counterpart grant evidence",
-                )
-
-            if command.expires_at is not None:
-                fail(
-                    "PERMISSION_EXPIRY_UNSUPPORTED",
-                    "time-bounded read Permission is outside the first F5.A slice",
                 )
 
             relationship_state, _ = self._current_relationship_authority(
@@ -145,12 +143,7 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                     "one counterpart grant event cannot mint another Permission",
                 )
 
-            if relationship["counterpart_id"] != command.grantor_ref:
-                fail(
-                    "PERMISSION_GRANTOR_UNAUTHORIZED",
-                    "grant evidence does not resolve to the relationship counterpart",
-                )
-
+            grantor_ref = relationship["counterpart_id"]
             permission_id = self.ids.new()
             now = self.clock.now()
             conn.execute(
@@ -163,7 +156,7 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                     capability_semantic_operation=CALENDAR_EVENTS_READ,
                     capability_contract_version=command.capability_contract_version,
                     operation_class="READ",
-                    grantor_ref=command.grantor_ref,
+                    grantor_ref=grantor_ref,
                     grant_source="FIRST_PARTY_COUNTERPART",
                     grant_policy_version=command.grant_policy_version,
                     constraints_json={
@@ -249,13 +242,16 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                     "CALENDAR_SOURCE_INTERACTION_INVALID",
                     "calendar read must originate from the matching counterpart input",
                 )
-            if command.question_text != source_event["content_text"]:
-                fail(
-                    "CALENDAR_SOURCE_INTERACTION_MISMATCH",
-                    "calendar question must exactly match its canonical counterpart input",
-                )
+            canonical_question = source_event["content_text"]
 
-        return super().prepare_observation(command)
+        return super().prepare_observation(
+            _PreparedCalendarObservationCommand(
+                operation_id=command.operation_id,
+                observation_id=command.observation_id,
+                source_interaction_event_id=command.source_interaction_event_id,
+                question_text=canonical_question,
+            )
+        )
 
 
 __all__ = [
