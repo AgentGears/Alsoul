@@ -94,10 +94,8 @@ class GrantCalendarReadPermissionCommand:
     relationship_id: UUID
     personal_resource_binding_id: UUID
     capability_contract_version: str
-    grantor_ref: UUID
     grant_policy_version: str
     source_interaction_event_id: UUID
-    expires_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,7 +149,6 @@ class PreparePersonalCalendarObservationCommand:
     operation_id: UUID
     observation_id: UUID
     source_interaction_event_id: UUID
-    question_text: str
 
 
 @dataclass(frozen=True, slots=True)
