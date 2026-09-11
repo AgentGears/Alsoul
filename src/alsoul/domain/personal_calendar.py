@@ -96,6 +96,7 @@ class GrantCalendarReadPermissionCommand:
     capability_contract_version: str
     grantor_ref: UUID
     grant_policy_version: str
+    source_interaction_event_id: UUID
     expires_at: datetime | None = None
 
 
