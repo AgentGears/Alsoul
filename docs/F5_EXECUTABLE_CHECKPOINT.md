@@ -1637,25 +1637,65 @@ Presentation/model failure after a confirmed external Effect never causes the Ac
 
 A confirmed external Effect is necessary for a success response, but the existence of some Effect does not by itself authorize arbitrary mutation-completion prose.
 
+Model-assisted mutation completion has a stricter input boundary than canonical Action/Effect state. Before any mutation-completion model transport, the host constructs a completion-local projection containing only opaque non-authority identity and bounded non-factual controls.
+
+Conceptually:
+
+```text
+CalendarMutationCompletionProjectionV1 {
+    mutation_completion_ref
+    result_kind = CREATED
+    rendering_contract_version = CALENDAR_CREATE_RESULT_V1
+    allowed_framing_modes[]?   # optional bounded trusted enums; no factual payload
+}
+```
+
+The host retains a private mapping:
+
+```text
+mutation_completion_ref
+    → exact immutable Action
+    → exact evidence-backed CONFIRMED_EFFECT for that Action
+```
+
+`mutation_completion_ref` is Alsoul-owned, opaque to the model, scoped to exactly one mutation-completion context, carries no execution/Resource Scope/Permission/Approval authority, is not a provider or resource identity, and is invalid outside that exact Action/Effect completion context.
+
+The model-visible mutation-completion input is an explicit allowlist. The first slice exposes no effect-relevant factual payload and no host-side proof/authority identifiers beyond the opaque completion-local reference and bounded rendering controls. In particular, model context excludes:
+
+```text
+action_id / action_digest
+effect_id / raw or durable Effect evidence
+ExecutionAttempt identifiers or dispatch-fence state
+K(A1) / external correlation identifiers
+provider event / operation identifiers
+provider receipts / proof references
+PersonalResourceBinding identifiers / external resource identifiers
+CredentialBinding / provider-scope material
+Permission / Approval / authority-decision provenance
+adapter / executor / reconciliation contract pins
+```
+
+Those values remain host-side even when they are required for validation, recovery, or deterministic rendering. A later contract may explicitly allow additional completion-facing fields; the first slice does not infer such eligibility from their presence in canonical Action or Effect state.
+
 For the first F5.B slice, any model-assisted mutation completion uses a bounded structured result plan conceptually equivalent to:
 
 ```text
 CalendarMutationResultPlanV1 {
-    source_action_id
-    source_effect_id
+    mutation_completion_ref
     result_kind = CREATED
     rendering_contract_version = CALENDAR_CREATE_RESULT_V1
     framing_mode?              # optional bounded trusted enum; no factual payload
 }
 ```
 
-The plan carries no authoritative resource, title, time, effect-class, receipt, or other effect-relevant override. Those facts are resolved only from the exact immutable Action and its evidence-backed `CONFIRMED_EFFECT` lineage.
+The plan carries no authoritative resource, title, time, effect-class, receipt, Action identifier, Effect identifier, or other effect-relevant override. Those facts are resolved only through the host-side `mutation_completion_ref` mapping to the exact immutable Action and its evidence-backed `CONFIRMED_EFFECT` lineage.
 
 Before any mutation `GeneratedOutput` can be adopted as `CompanionOutput`, the host mechanically verifies:
 
 ```text
-source_action_id == exact immutable Action being completed
-AND source_effect_id == exact CONFIRMED_EFFECT admitted for that Action
+mutation_completion_ref resolves in the exact current completion context
+AND the resolved Action is the exact immutable Action being completed
+AND the resolved Effect is the exact CONFIRMED_EFFECT admitted for that Action
 AND the Effect already has durable SUPPORTS evidence
 AND that evidence uniquely correlates the Effect to the Action / K(A1)
 AND the Effect evidence is semantically equivalent to Action.selected PersonalResourceBinding
@@ -1669,7 +1709,7 @@ AND no model-supplied field can add or override an effect-relevant proposition
 
 The host then deterministically renders all factual mutation-completion claims from the immutable Action plus the validated evidence-backed Effect. A bounded `framing_mode`, when supported, may affect only non-factual connective language and cannot add another effect, target, title, time, resource, status, or receipt claim.
 
-A malformed plan, an Effect from another Action, an unconfirmed or unsupported Effect, a wrong resource/title/time, an unsupported additional effect, or any attempted factual override remains unadopted. The runtime does not fall back to free-form model prose and does not present a truthful-looking success response from unvalidated generated text.
+An unknown, forged, stale, or cross-Action/cross-Effect `mutation_completion_ref`, a malformed plan, an unconfirmed or unsupported Effect, a wrong resource/title/time, an unsupported additional effect, or any attempted factual override remains unadopted. The runtime does not fall back to free-form model prose and does not present a truthful-looking success response from unvalidated generated text.
 
 Strong completion language such as:
 
@@ -1677,7 +1717,7 @@ Strong completion language such as:
 "I created the event."
 ```
 
-is allowed only after this exact Action/Effect validation has succeeded and the resulting mutation completion has been adopted. A timeout, ambiguous provider state, early empty reconciliation read, correlated semantic mismatch, incomplete evidence, cross-Action Effect substitution, invalid mutation plan, or concurrent losing worker cannot justify strong completion language.
+is allowed only after this exact completion-reference and Action/Effect validation has succeeded and the resulting mutation completion has been adopted. A timeout, ambiguous provider state, early empty reconciliation read, correlated semantic mismatch, incomplete evidence, cross-Action Effect substitution, invalid mutation plan, or concurrent losing worker cannot justify strong completion language.
 
 No mutation transport dispatch occurs when any required layer is absent, unreadable, denied, expired, revoked, unusable, mismatched, inactive, unbound, or not exclusively owned, including:
 
@@ -1762,10 +1802,14 @@ F5.B is complete only when executable tests prove all of the following:
 51. `CONFIRMED_NO_EFFECT` includes durable terminal non-application evidence proving every transport covered by the exact fenced `ExecutionAttempt` can no longer apply the Action before the per-Action guard becomes retry-eligible.
 52. A guaranteed visibility horizon or currently empty correlation lookup cannot release the Action guard while any older transport may still be queued or in flight.
 53. After `CONFIRMED_NO_EFFECT` unlocks retry X2, a transport from the earlier attempt X1 cannot later apply; an integration whose semantics permit that sequence is ineligible for authoritative no-effect confirmation in the first slice.
-54. Every mutation `GeneratedOutput` eligible for adoption conforms to `CalendarMutationResultPlanV1` and references the exact immutable Action plus its exact evidence-backed `CONFIRMED_EFFECT`.
-55. Mutation-output adoption rejects an Effect from another Action, an unconfirmed/unsupported Effect, wrong resource/title/start/end semantics, unsupported additional effects, or any model attempt to override effect-relevant facts.
-56. Deterministic mutation rendering derives all factual success claims from the exact Action and validated Effect evidence; raw free-form mutation prose cannot bypass the structured validator to become `CompanionOutput`.
+54. Every mutation `GeneratedOutput` eligible for adoption conforms to `CalendarMutationResultPlanV1` and carries a host-issued `mutation_completion_ref` that resolves only in the exact current completion context to the exact immutable Action and its exact evidence-backed `CONFIRMED_EFFECT`.
+55. Mutation-output adoption rejects an unknown, forged, stale, cross-Action, or cross-Effect `mutation_completion_ref`, an unconfirmed/unsupported Effect, wrong resource/title/start/end semantics, unsupported additional effects, or any model attempt to override effect-relevant facts.
+56. Deterministic mutation rendering derives all factual success claims from the host-side exact Action and validated Effect evidence; raw free-form mutation prose cannot bypass the structured validator to become `CompanionOutput`.
 57. Cross-Action Effect substitution or wrong-title/wrong-time/wrong-resource completion text cannot become adopted output or justify strong completion language.
+58. Mutation-completion model context is explicitly allowlisted to the opaque completion-local reference, fixed result/rendering semantics, and bounded non-factual framing controls required by the first slice.
+59. `action_id`, `effect_id`, `K(A1)`, provider operation/event identifiers, receipts/proof references, raw/durable Effect evidence, internal resource identifiers, credentials/provider scopes, execution/fence/correlation state, and authority provenance remain host-side and are absent from mutation-completion model context.
+60. A `mutation_completion_ref` is opaque and scoped to exactly one Action/Effect completion context; using it against another Action, Effect, resource, or completion context fails adoption and conveys no authority.
+61. Unknown, forged, stale, or cross-context completion references fail closed with no free-form fallback or factual success presentation.
 
 # 4. F5 closure bar
 
@@ -1812,6 +1856,8 @@ F5 closes only when F5.A and F5.B are both green and executable evidence demonst
 - effect confirmation requires Action correlation and semantic equivalence;
 - no-effect confirmation requires capability-sufficient evidence plus terminal proof that every transport covered by the fenced attempt can no longer apply;
 - visibility or current absence cannot unlock mutation retry while an earlier transport may still apply;
+- model-assisted mutation completion exposes only an allowlisted completion-local context; canonical Action/Effect identifiers, correlation/evidence/provider/resource-authority details, credentials, and execution proof remain host-side;
+- `mutation_completion_ref` is opaque, completion-context-scoped, carries no authority, and cannot transfer Action/Effect truth across contexts;
 - mutation completion claims are mechanically constrained to the exact immutable Action and its evidence-backed confirmed Effect before `CompanionOutput` adoption;
 - cross-Action, wrong-resource, wrong-title, wrong-time, or unsupported additional mutation effects cannot become completion truth;
 - mutation responses are minimized to explicit evidence allowlists before durable admission;
@@ -2031,7 +2077,9 @@ The F5.B acceptance bar additionally requires executable tests proving:
 8. A crash immediately after `DISPATCH_FENCED` but before provider invocation recovers those exact execution-semantic pins; a hot swap or version mismatch after fencing cannot substitute a new adapter/executor/correlation/negative-confirmation contract for the fenced attempt, and any such mismatch fails closed without transport under different semantics.
 9. `CONFIRMED_NO_EFFECT` cannot be admitted from an empty or post-horizon observation unless durable evidence also proves every transport covered by the exact fenced attempt is terminal and cannot later apply.
 10. A test provider that allows an old X1 transport to apply after X1 is declared `CONFIRMED_NO_EFFECT` and retry X2 becomes eligible fails first-slice qualification; the Action remains `UNKNOWN_EFFECT`/locked unless terminality is provable.
-11. `CalendarMutationResultPlanV1` can be adopted only when its Action and Effect references resolve to the exact immutable Action and that Action's evidence-backed `CONFIRMED_EFFECT`; cross-Action, unconfirmed, unsupported, or semantically mismatched references fail adoption.
-12. Deterministic mutation rendering takes factual resource/title/start/end/effect claims only from the validated Action/Effect lineage, and generated free-form factual overrides or unsupported additional-effect claims cannot become `CompanionOutput`.
+11. Mutation-completion model input contains only an Alsoul-owned opaque `mutation_completion_ref`, fixed result/rendering semantics, and bounded non-factual framing controls; canonical Action/Effect identifiers, `K(A1)`, provider IDs/receipts, Effect evidence, internal resource identifiers, credentials/scopes, execution/fence/correlation state, and authority provenance remain host-side.
+12. `mutation_completion_ref` resolves only within one exact Action/Effect completion context, conveys no authority, and forged, stale, unknown, cross-Action, or cross-Effect references fail mechanical adoption.
+13. `CalendarMutationResultPlanV1` can be adopted only when its completion-local reference resolves to the exact immutable Action and that Action's evidence-backed `CONFIRMED_EFFECT`; unconfirmed, unsupported, or semantically mismatched resolutions fail adoption.
+14. Deterministic mutation rendering takes factual resource/title/start/end/effect claims only from the validated host-side Action/Effect lineage, and generated free-form factual overrides or unsupported additional-effect claims cannot become `CompanionOutput`.
 
-These requirements are part of the existing F5 closure bar: authority must be current **and linearized**, resource identity must be non-retargetable under existing authority, model references must remain Alsoul-owned and projection-local, reconciliation must be explicitly authorized, approved Action semantics must not drift between consent and execution, no-effect must be terminal against delayed application before retry eligibility, and mutation completion truth must remain mechanically bound to the exact Action and evidence-backed Effect.
+These requirements are part of the existing F5 closure bar: authority must be current **and linearized**, resource identity must be non-retargetable under existing authority, model references must remain Alsoul-owned and projection-local or completion-local, reconciliation must be explicitly authorized, approved Action semantics must not drift between consent and execution, no-effect must be terminal against delayed application before retry eligibility, mutation-completion model input must remain minimized to opaque non-authority context, and mutation completion truth must remain mechanically bound to the exact Action and evidence-backed Effect.
