@@ -58,6 +58,7 @@ one logical Observation ≠ one transport request
 terminal page token ≠ coherent snapshot
 snapshot completion time ≠ snapshot freshness age
 canonical minimization ≠ permission to persist raw provider payload elsewhere
+canonical Action / dispatch state ≠ permission to duplicate mutation request payload into telemetry or transport caches
 projection freshness ≠ authority to disclose projection data to a model route
 prior model route authority ≠ authority for a later model dispatch or changed route
 model-generated schedule text ≠ adopted schedule truth
@@ -1396,7 +1397,49 @@ Because an unintended correlated external consequence may nevertheless exist, su
 
 Visible field similarity without unique Action correlation is insufficient because an identical event may pre-exist or be independently created.
 
-## 3.9 F5.B mutation-evidence minimization
+## 3.9 F5.B mutation request and evidence minimization
+
+Mutation minimization applies in **both** transport directions. The immutable `Action`, `ExecutionAttempt`, dispatch fence, and required correlation state are the canonical durable sources of mutation intent and execution provenance. Their existence does not authorize transport middleware to create additional durable copies of the provider-bound request or its authorization material.
+
+### Outbound mutation request boundary
+
+The trusted adapter constructs the provider-bound create request only after the exact Action, current authority, per-Action guard, execution-semantic pins, and `DISPATCH_FENCED` state required by §§3.4–3.7 are established.
+
+The first-slice provider-bound request is allowlisted to fields strictly required by the exact pinned create contract, for example:
+
+```text
+exact provider/resource routing required to reach Action.selected PersonalResourceBinding
+title/summary from the immutable Action
+provider representation of the Action's normalized start/end semantics
+K(A1) or equivalent provider-required Action correlation/idempotency identity
+provider-required operation metadata fixed by the pinned capability/adapter contract
+ephemeral authentication material resolved from the authorized CredentialBinding
+```
+
+No unrelated Action history, conversation content, Approval presentation text, Permission provenance, Effect evidence, personal-calendar read data, model output, memory, or other personal/resource material may be added to the outbound request merely because it is available to the runtime.
+
+Fields that must cross the authorized provider wire may exist ephemerally in the trusted adapter/transport path for the minimum time required to perform that exact dispatch. That wire eligibility does **not** make those fields eligible for non-canonical persistence or telemetry.
+
+Before request data reaches logging, tracing, metrics, retry middleware, generic HTTP diagnostics, exception serialization, crash reporting, caches, queues, analytics, or dead-letter infrastructure, the adapter/runtime must apply request-side redaction/allowlisting so those systems receive only non-sensitive structural metadata. In particular, non-canonical paths must not retain or emit:
+
+```text
+calendar title/summary
+start/end timestamps or normalized event-time payload
+external resource/calendar identifiers when they reveal the personal target
+K(A1) / provider correlation or idempotency values
+provider request body or serialized mutation payload
+raw request headers
+credential material, tokens, cookies, signatures, or Authorization headers
+Permission / Approval / authority-decision material
+```
+
+Canonical Action/fence state may retain the semantic fields and correlation/provenance explicitly required elsewhere in this checkpoint. The prohibition is against additional transport-layer copies outside that canonical lineage.
+
+A durable retry or transport queue used by the first slice may persist only opaque canonical references and non-sensitive structural state needed to resume orchestration, such as `action_id`, `execution_attempt_id`, the pinned adapter/executor version refs already required by the fence, and an integrity/version marker. It must not persist a ready-to-send raw request body, raw headers, bearer credentials, or a serialized payload copy containing title/time/resource/correlation values. On an authorized dispatch, the trusted adapter reconstructs the exact provider request from canonical Action/fence state and resolves credential secrets ephemerally.
+
+If a transport library, middleware stack, queue, cache, retry subsystem, or diagnostic facility cannot prevent raw provider-bound mutation request material from being persisted or emitted outside the canonical Action/fence lineage, that integration is ineligible for the first F5.B slice. Debug mode, verbose HTTP logging, automatic request capture, exception dumping, and transport retries create no exception.
+
+### Inbound mutation response / Effect evidence boundary
 
 Provider mutation responses are not permission to durably retain the provider's full response.
 
@@ -1464,9 +1507,9 @@ production-derived test fixtures
 
 Only non-sensitive structural telemetry may survive when it does not reveal disallowed personal content.
 
-If the adapter cannot establish sufficient correlation/semantic/negative proof without persisting disallowed raw response data, it is ineligible for the first F5.B slice.
+If the adapter cannot enforce either request-side mutation minimization/redaction or response-side mutation-evidence minimization before non-canonical persistence/telemetry, it is ineligible for the first F5.B slice.
 
-A crash after external transport but before normalized allowlisted evidence becomes durable recovers as `UNKNOWN_EFFECT`; raw provider response material is not retained merely to avoid uncertainty. Reconciliation proceeds through durable `K(A1)` and separately authorized observation.
+A crash after external transport but before normalized allowlisted evidence becomes durable recovers as `UNKNOWN_EFFECT`; raw provider request/response material is not retained merely to simplify retry or avoid uncertainty. Recovery uses canonical Action/fence state, durable `K(A1)`, and separately authorized reconciliation rather than a persisted raw request/response copy.
 
 ## 3.10 Durable Effect evidence ordering
 
@@ -1739,9 +1782,10 @@ No mutation transport dispatch occurs when any required layer is absent, unreada
 - exclusive per-Action dispatch claim cannot be acquired or is already held by a may-have-dispatched attempt;
 - Action already has `CONFIRMED_EFFECT`;
 - Action has unresolved `UNKNOWN_EFFECT`/divergent-effect evidence;
-- dispatch-start fence cannot be committed.
+- dispatch-start fence cannot be committed;
+- provider-bound request cannot be constructed under the request-side allowlist/redaction boundary without non-canonical raw request persistence or telemetry leakage.
 
-An adapter is also ineligible when it cannot enforce F5.B mutation-response minimization before canonical/non-canonical persistence.
+An adapter is also ineligible when it cannot enforce F5.B request-side mutation minimization/redaction or response-side mutation-evidence minimization before non-canonical persistence/telemetry.
 
 These conditions, including current RelationshipState and active resource-binding association, are re-evaluated before every retry.
 
@@ -1810,6 +1854,11 @@ F5.B is complete only when executable tests prove all of the following:
 59. `action_id`, `effect_id`, `K(A1)`, provider operation/event identifiers, receipts/proof references, raw/durable Effect evidence, internal resource identifiers, credentials/provider scopes, execution/fence/correlation state, and authority provenance remain host-side and are absent from mutation-completion model context.
 60. A `mutation_completion_ref` is opaque and scoped to exactly one Action/Effect completion context; using it against another Action, Effect, resource, or completion context fails adoption and conveys no authority.
 61. Unknown, forged, stale, or cross-context completion references fail closed with no free-form fallback or factual success presentation.
+62. The provider-bound mutation request is constructed from an explicit first-slice allowlist tied to the exact immutable Action, pinned resource target, `K(A1)`/required correlation semantics, pinned provider contract, and ephemeral authorized credential material; unrelated personal/context/authority data cannot be added.
+63. Calendar title/time payload, personal target identifiers, `K(A1)`/provider correlation values, raw request bodies/headers, credentials, tokens, cookies, signatures, and authorization material may cross only the exact authorized provider transport when required and never enter non-canonical logs, traces, metrics payloads, caches, retry stores, durable transport queues, crash diagnostics, analytics, dead-letter stores, or production-derived fixtures.
+64. Request-side redaction/allowlisting occurs before generic transport logging/tracing/metrics/retry/exception middleware can observe a persistable representation; debug or failure paths cannot bypass the boundary.
+65. A durable retry/orchestration queue stores only opaque canonical Action/ExecutionAttempt references, pinned execution-version refs, and non-sensitive structural/integrity state; it cannot persist a ready-to-send raw mutation body or authorization headers and reconstructs the request only inside the trusted adapter at authorized dispatch time.
+66. Crash/restart/retry recovery uses canonical Action/fence/correlation state rather than a durable raw outbound request copy, and an integration that requires raw request persistence to retry is rejected for the first F5.B slice.
 
 # 4. F5 closure bar
 
@@ -1853,6 +1902,9 @@ F5 closes only when F5.A and F5.B are both green and executable evidence demonst
 - dispatch uncertainty survives restart and blocks blind replay;
 - exact adapter/executor/correlation/negative-confirmation execution semantics are selected, trusted, and durably pinned with the mutation dispatch fence before transport can observe the request;
 - a fenced mutation attempt cannot silently switch execution semantics after a hot swap or process restart;
+- provider-bound mutation requests are explicitly allowlisted and assembled only from the exact canonical Action/fence/correlation state required by the pinned contract;
+- outbound mutation payload fields and authorization material remain ephemeral to the authorized provider transport and cannot leak into non-canonical logs, traces, caches, queues, diagnostics, analytics, or other middleware persistence;
+- mutation retry/recovery reconstructs provider requests from canonical Action/fence state rather than persisting raw ready-to-send request copies;
 - effect confirmation requires Action correlation and semantic equivalence;
 - no-effect confirmation requires capability-sufficient evidence plus terminal proof that every transport covered by the fenced attempt can no longer apply;
 - visibility or current absence cannot unlock mutation retry while an earlier transport may still apply;
@@ -2081,5 +2133,9 @@ The F5.B acceptance bar additionally requires executable tests proving:
 12. `mutation_completion_ref` resolves only within one exact Action/Effect completion context, conveys no authority, and forged, stale, unknown, cross-Action, or cross-Effect references fail mechanical adoption.
 13. `CalendarMutationResultPlanV1` can be adopted only when its completion-local reference resolves to the exact immutable Action and that Action's evidence-backed `CONFIRMED_EFFECT`; unconfirmed, unsupported, or semantically mismatched resolutions fail adoption.
 14. Deterministic mutation rendering takes factual resource/title/start/end/effect claims only from the validated host-side Action/Effect lineage, and generated free-form factual overrides or unsupported additional-effect claims cannot become `CompanionOutput`.
+15. The provider-bound create request is assembled only from the explicit first-slice request allowlist and the exact canonical Action/fence/correlation state required by the pinned contract; unrelated conversation, Approval text, read-side personal data, model output, or other available state cannot enter the request.
+16. Request title/time/resource/correlation payload and all credential/authorization material are absent from transport/debug/application logs, traces/spans, metrics payloads, caches, retry stores, durable transport queues, crash/exception diagnostics, analytics, dead-letter stores, and production-derived fixtures even when the provider wire legitimately requires those fields.
+17. Generic middleware sees only redacted/non-sensitive structural request metadata before any persistable logging/tracing/retry/error path; verbose/debug mode and transport exceptions cannot expose raw request bodies, headers, credentials, or correlation values.
+18. Durable retry/orchestration state contains only opaque canonical Action/ExecutionAttempt refs plus permitted pinned-version/integrity metadata; crash recovery reconstructs the request inside the trusted adapter and an implementation that requires a persisted raw request copy is ineligible.
 
-These requirements are part of the existing F5 closure bar: authority must be current **and linearized**, resource identity must be non-retargetable under existing authority, model references must remain Alsoul-owned and projection-local or completion-local, reconciliation must be explicitly authorized, approved Action semantics must not drift between consent and execution, no-effect must be terminal against delayed application before retry eligibility, mutation-completion model input must remain minimized to opaque non-authority context, and mutation completion truth must remain mechanically bound to the exact Action and evidence-backed Effect.
+These requirements are part of the existing F5 closure bar: authority must be current **and linearized**, resource identity must be non-retargetable under existing authority, model references must remain Alsoul-owned and projection-local or completion-local, reconciliation must be explicitly authorized, approved Action semantics must not drift between consent and execution, outbound mutation requests and inbound mutation evidence must both remain minimized outside their exact canonical/authorized boundaries, no-effect must be terminal against delayed application before retry eligibility, mutation-completion model input must remain minimized to opaque non-authority context, and mutation completion truth must remain mechanically bound to the exact Action and evidence-backed Effect.
