@@ -25,6 +25,7 @@ from alsoul.domain.personal_calendar import (
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services import FoundationBootstrapper, FoundationServices
 from alsoul.services.personal_calendar import (
+    CALENDAR_READ_PERMISSION_GRANT_TEXT,
     PersonalCalendarReadServices,
     ZoneInfoCalendarTimeResolver,
     all_day_event_interval,
@@ -43,6 +44,22 @@ def _assert_code(exc: pytest.ExceptionInfo[DomainError], code: str) -> None:
     assert exc.value.code == code
 
 
+def _append_counterpart_event(foundation, ids, now, content_text: str):
+    return foundation.append_counterpart_input(
+        AppendCounterpartInputCommand(
+            operation_id=uuid4(),
+            companion_person_id=ids.companion_person_id,
+            counterpart_id=ids.counterpart_id,
+            relationship_id=ids.relationship_id,
+            ingress_idempotency_key=str(uuid4()),
+            content_text=content_text,
+            occurred_at=now,
+            surface_binding_id=ids.surface_binding_id,
+            channel_binding_id=ids.channel_binding_id,
+        )
+    )
+
+
 def _bootstrap_calendar(engine, now):
     ids = FoundationBootstrapper(
         engine,
@@ -58,19 +75,7 @@ def _bootstrap_calendar(engine, now):
         ids=UUIDGenerator(),
     )
     question = "What's on my calendar on 2026-09-12?"
-    source_event = foundation.append_counterpart_input(
-        AppendCounterpartInputCommand(
-            operation_id=uuid4(),
-            companion_person_id=ids.companion_person_id,
-            counterpart_id=ids.counterpart_id,
-            relationship_id=ids.relationship_id,
-            ingress_idempotency_key=str(uuid4()),
-            content_text=question,
-            occurred_at=now,
-            surface_binding_id=ids.surface_binding_id,
-            channel_binding_id=ids.channel_binding_id,
-        )
-    )
+    source_event = _append_counterpart_event(foundation, ids, now, question)
     investigation = foundation.start_investigation(
         StartInvestigationCommand(
             operation_id=uuid4(),
@@ -115,6 +120,12 @@ def _bootstrap_calendar(engine, now):
             provider_scopes=(_PROVIDER_SCOPE,),
         )
     )
+    grant_event = _append_counterpart_event(
+        foundation,
+        ids,
+        now,
+        CALENDAR_READ_PERMISSION_GRANT_TEXT,
+    )
     permission = calendar.grant_read_permission(
         GrantCalendarReadPermissionCommand(
             operation_id=uuid4(),
@@ -125,6 +136,7 @@ def _bootstrap_calendar(engine, now):
             capability_contract_version=_CAPABILITY_VERSION,
             grantor_ref=ids.counterpart_id,
             grant_policy_version=_GRANT_POLICY_VERSION,
+            source_interaction_event_id=grant_event.event_id,
         )
     )
     calendar.set_read_policy(
@@ -149,7 +161,18 @@ def _bootstrap_calendar(engine, now):
             question_text=question,
         )
     )
-    return ids, foundation, calendar, observation, resource, credential, permission, prepared
+    return (
+        ids,
+        foundation,
+        calendar,
+        observation,
+        resource,
+        credential,
+        permission,
+        prepared,
+        source_event,
+        grant_event,
+    )
 
 
 def test_absolute_date_parser_and_half_open_calendar_membership():
@@ -191,7 +214,7 @@ def test_absolute_date_parser_and_half_open_calendar_membership():
 
 
 def test_calendar_page_fence_pins_current_authority_and_revocation_blocks_later_page(engine, now):
-    ids, _, calendar, observation, resource, credential, permission, prepared = _bootstrap_calendar(engine, now)
+    ids, _, calendar, observation, resource, credential, permission, prepared, _, _ = _bootstrap_calendar(engine, now)
 
     first = calendar.fence_read_page(
         FencePersonalCalendarReadPageCommand(
@@ -240,8 +263,81 @@ def test_calendar_page_fence_pins_current_authority_and_revocation_blocks_later_
     assert fences[0]["relationship_id"] == ids.relationship_id
 
 
+def test_permission_persists_exact_first_party_grant_provenance(engine, now):
+    _, _, _, _, _, _, permission, _, _, grant_event = _bootstrap_calendar(engine, now)
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(schema.permission_grant).where(
+                schema.permission_grant.c.permission_id == permission.permission_id
+            )
+        ).mappings().one()
+    assert row["grant_source"] == "FIRST_PARTY_COUNTERPART"
+    assert row["constraints_json"]["grant_contract_version"] == "CALENDAR_READ_PERMISSION_GRANT_V1"
+    assert row["constraints_json"]["grant_source_event_id"] == str(grant_event.event_id)
+    assert row["expires_at"] is None
+
+
+def test_permission_rejects_non_grant_counterpart_event(engine, now):
+    ids, foundation, calendar, _, resource, _, _, _, source_event, _ = _bootstrap_calendar(engine, now)
+    with pytest.raises(DomainError) as invalid:
+        calendar.grant_read_permission(
+            GrantCalendarReadPermissionCommand(
+                operation_id=uuid4(),
+                holder_companion_person_id=ids.companion_person_id,
+                counterpart_id=ids.counterpart_id,
+                relationship_id=ids.relationship_id,
+                personal_resource_binding_id=resource.personal_resource_binding_id,
+                capability_contract_version=_CAPABILITY_VERSION,
+                grantor_ref=ids.counterpart_id,
+                grant_policy_version=_GRANT_POLICY_VERSION,
+                source_interaction_event_id=source_event.event_id,
+            )
+        )
+    _assert_code(invalid, "PERMISSION_PROVENANCE_INVALID")
+
+
+def test_permission_rejects_time_bounded_expiry_in_first_slice(engine, now):
+    ids, foundation, calendar, _, resource, _, _, _, _, _ = _bootstrap_calendar(engine, now)
+    grant_event = _append_counterpart_event(
+        foundation,
+        ids,
+        now,
+        CALENDAR_READ_PERMISSION_GRANT_TEXT,
+    )
+    with pytest.raises(DomainError) as unsupported:
+        calendar.grant_read_permission(
+            GrantCalendarReadPermissionCommand(
+                operation_id=uuid4(),
+                holder_companion_person_id=ids.companion_person_id,
+                counterpart_id=ids.counterpart_id,
+                relationship_id=ids.relationship_id,
+                personal_resource_binding_id=resource.personal_resource_binding_id,
+                capability_contract_version=_CAPABILITY_VERSION,
+                grantor_ref=ids.counterpart_id,
+                grant_policy_version=_GRANT_POLICY_VERSION,
+                source_interaction_event_id=grant_event.event_id,
+                expires_at=now + timedelta(days=1),
+            )
+        )
+    _assert_code(unsupported, "PERMISSION_EXPIRY_UNSUPPORTED")
+
+
+def test_calendar_observation_rejects_question_text_substitution(engine, now):
+    _, _, calendar, observation, _, _, _, _, source_event, _ = _bootstrap_calendar(engine, now)
+    with pytest.raises(DomainError) as mismatch:
+        calendar.prepare_observation(
+            PreparePersonalCalendarObservationCommand(
+                operation_id=uuid4(),
+                observation_id=observation.observation_id,
+                source_interaction_event_id=source_event.event_id,
+                question_text="What's on my calendar on 2026-09-13?",
+            )
+        )
+    _assert_code(mismatch, "CALENDAR_SOURCE_INTERACTION_MISMATCH")
+
+
 def test_replacement_calendar_does_not_inherit_old_permission(engine, now):
-    ids, foundation, calendar, _, old_resource, credential, old_permission, _ = _bootstrap_calendar(engine, now)
+    ids, foundation, calendar, _, old_resource, credential, old_permission, _, _, _ = _bootstrap_calendar(engine, now)
 
     calendar.set_resource_status(
         SetPersonalResourceBindingStatusCommand(
@@ -278,19 +374,7 @@ def test_replacement_calendar_does_not_inherit_old_permission(engine, now):
     )
 
     question = "What do I have on my calendar on 2026-09-12?"
-    source_event = foundation.append_counterpart_input(
-        AppendCounterpartInputCommand(
-            operation_id=uuid4(),
-            companion_person_id=ids.companion_person_id,
-            counterpart_id=ids.counterpart_id,
-            relationship_id=ids.relationship_id,
-            ingress_idempotency_key=str(uuid4()),
-            content_text=question,
-            occurred_at=now,
-            surface_binding_id=ids.surface_binding_id,
-            channel_binding_id=ids.channel_binding_id,
-        )
-    )
+    source_event = _append_counterpart_event(foundation, ids, now, question)
     investigation = foundation.start_investigation(
         StartInvestigationCommand(
             operation_id=uuid4(),
