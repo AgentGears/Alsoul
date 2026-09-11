@@ -76,25 +76,6 @@ def _bootstrap_calendar(engine, now):
         clock=FixedClock(now),
         ids=UUIDGenerator(),
     )
-    question = "What's on my calendar on 2026-09-12?"
-    source_event = _append_counterpart_event(foundation, ids, now, question)
-    investigation = foundation.start_investigation(
-        StartInvestigationCommand(
-            operation_id=uuid4(),
-            initiated_by_companion_person_id=ids.companion_person_id,
-            relationship_id=ids.relationship_id,
-            objective="Answer one bounded personal calendar question.",
-            conversation_id="f5-calendar-test",
-        )
-    )
-    observation = foundation.start_observation(
-        StartObservationCommand(
-            operation_id=uuid4(),
-            investigation_id=investigation.investigation_id,
-            acquisition_kind="PERSONAL_CALENDAR_READ",
-            request_descriptor={"purpose": "calendar.events.read"},
-        )
-    )
     calendar = PersonalCalendarReadServices(
         engine,
         time_resolver=ZoneInfoCalendarTimeResolver(rules_version=_RULES_VERSION),
@@ -152,6 +133,26 @@ def _bootstrap_calendar(engine, now):
             required_provider_scope=_PROVIDER_SCOPE,
             permission_grant_policy_version=_GRANT_POLICY_VERSION,
             allowed_resource_binding_ids=(resource.personal_resource_binding_id,),
+        )
+    )
+
+    question = "What's on my calendar on 2026-09-12?"
+    source_event = _append_counterpart_event(foundation, ids, now, question)
+    investigation = foundation.start_investigation(
+        StartInvestigationCommand(
+            operation_id=uuid4(),
+            initiated_by_companion_person_id=ids.companion_person_id,
+            relationship_id=ids.relationship_id,
+            objective="Answer one bounded personal calendar question.",
+            conversation_id="f5-calendar-test",
+        )
+    )
+    observation = foundation.start_observation(
+        StartObservationCommand(
+            operation_id=uuid4(),
+            investigation_id=investigation.investigation_id,
+            acquisition_kind="PERSONAL_CALENDAR_READ",
+            request_descriptor={"purpose": "calendar.events.read"},
         )
     )
     prepared = calendar.prepare_observation(
@@ -262,6 +263,30 @@ def test_calendar_page_fence_pins_current_authority_and_revocation_blocks_later_
     assert fences[0]["relationship_id"] == ids.relationship_id
 
 
+def test_calendar_page_fence_replay_is_not_current_transport_authority(engine, now):
+    _, _, calendar, observation, _, credential, permission, _, _, _ = _bootstrap_calendar(engine, now)
+    operation_id = uuid4()
+    command = FencePersonalCalendarReadPageCommand(
+        operation_id=operation_id,
+        observation_id=observation.observation_id,
+        page_ordinal=0,
+        permission_id=permission.permission_id,
+        credential_binding_id=credential.credential_binding_id,
+    )
+
+    calendar.fence_read_page(command)
+    calendar.set_permission_status(
+        SetPermissionStatusCommand(
+            operation_id=uuid4(),
+            permission_id=permission.permission_id,
+        )
+    )
+
+    with pytest.raises(DomainError) as replayed:
+        calendar.fence_read_page(command)
+    _assert_code(replayed, "CALENDAR_PAGE_FENCE_REPLAY_NOT_AUTHORIZING")
+
+
 def test_permission_persists_exact_first_party_grant_provenance(engine, now):
     ids, _, _, _, _, _, permission, _, _, grant_event = _bootstrap_calendar(engine, now)
     with engine.connect() as conn:
@@ -369,6 +394,49 @@ def test_calendar_observation_derives_question_from_canonical_input(engine, now)
             )
         )
     _assert_code(unsupported, "PERSONAL_CALENDAR_QUESTION_UNSUPPORTED")
+
+
+def test_calendar_observation_binds_current_request_and_rejects_historical_reuse(engine, now):
+    ids, foundation, calendar, observation, _, _, _, _, source_event, _ = _bootstrap_calendar(engine, now)
+
+    with engine.connect() as conn:
+        binding = conn.execute(
+            select(schema.operation_receipt).where(
+                schema.operation_receipt.c.operation_scope
+                == "BindPersonalCalendarObservationRequest",
+                schema.operation_receipt.c.operation_id == observation.observation_id,
+            )
+        ).mappings().one()
+    assert binding["result_ref"] == source_event.event_id
+    assert binding["result_json"]["source_timeline_frontier"] == source_event.timeline_seq
+
+    _append_counterpart_event(foundation, ids, now, "Thanks.")
+    later_investigation = foundation.start_investigation(
+        StartInvestigationCommand(
+            operation_id=uuid4(),
+            initiated_by_companion_person_id=ids.companion_person_id,
+            relationship_id=ids.relationship_id,
+            objective="Reject reuse of a historical calendar request.",
+        )
+    )
+    later_observation = foundation.start_observation(
+        StartObservationCommand(
+            operation_id=uuid4(),
+            investigation_id=later_investigation.investigation_id,
+            acquisition_kind="PERSONAL_CALENDAR_READ",
+            request_descriptor={"purpose": "calendar.events.read"},
+        )
+    )
+
+    with pytest.raises(DomainError) as stale:
+        calendar.prepare_observation(
+            PreparePersonalCalendarObservationCommand(
+                operation_id=uuid4(),
+                observation_id=later_observation.observation_id,
+                source_interaction_event_id=source_event.event_id,
+            )
+        )
+    _assert_code(stale, "CALENDAR_SOURCE_INTERACTION_NOT_CURRENT")
 
 
 def test_revoked_resource_binding_cannot_return_to_inactive(engine, now):
