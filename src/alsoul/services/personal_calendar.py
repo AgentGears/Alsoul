@@ -546,10 +546,7 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                 expected_request_digest=binding_req,
             )
             if replay:
-                return (
-                    "What's on my calendar on "
-                    f"{replay['requested_local_date']}?"
-                )
+                return replay["question_text"]
 
             observation = conn.execute(
                 select(schema.observation).where(
@@ -658,6 +655,7 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                         ),
                         "source_timeline_frontier": source_timeline_seq,
                         "requested_local_date": requested_date.isoformat(),
+                        "question_text": source_event["content_text"],
                     },
                     committed_at=now,
                 )
