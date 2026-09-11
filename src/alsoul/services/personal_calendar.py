@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from uuid import UUID
 
 from sqlalchemy import insert, select
+from sqlalchemy.exc import IntegrityError
 
 from alsoul.domain.errors import fail
 from alsoul.domain.personal_calendar import (
@@ -35,6 +36,7 @@ from ._personal_calendar_base import (
 
 CALENDAR_READ_PERMISSION_GRANT_TEXT = "Allow my companion to read my calendar."
 _CALENDAR_READ_PERMISSION_GRANT_CONTRACT = "CALENDAR_READ_PERMISSION_GRANT_V1"
+_GRANT_SOURCE_CONSUMPTION_SCOPE = "ConsumeCalendarReadPermissionGrantEvent"
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,21 +96,94 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
     def set_resource_status(
         self, command: SetPersonalResourceBindingStatusCommand
     ) -> AuthorityStateRevisionResult:
+        scope = "SetPersonalResourceBindingStatus"
+        req = request_digest(asdict(command))
         if command.status not in {"INACTIVE", "REVOKED"}:
             fail(
                 "PERSONAL_RESOURCE_STATUS_INVALID",
                 "first-slice resource state cannot be reactivated in place",
             )
-        with self.engine.connect() as conn:
-            _, current_state, _ = self._current_resource(
-                conn, command.personal_resource_binding_id
+
+        with self.engine.begin() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=scope,
+                operation_id=command.operation_id,
+                expected_request_digest=req,
             )
-            if current_state["status"] == "REVOKED" and command.status != "REVOKED":
+            if replay:
+                return AuthorityStateRevisionResult(
+                    command.personal_resource_binding_id,
+                    int(replay["revision"]),
+                )
+
+            entity = conn.execute(
+                select(schema.personal_resource_binding).where(
+                    schema.personal_resource_binding.c.personal_resource_binding_id
+                    == command.personal_resource_binding_id
+                )
+            ).mappings().one_or_none()
+            if entity is None:
+                fail(
+                    "AUTHORITY_ENTITY_NOT_FOUND",
+                    "PersonalResourceBindingState target does not exist",
+                )
+
+            current, parent = self._current_state(
+                conn,
+                state_table=schema.personal_resource_binding_state,
+                head_table=schema.personal_resource_binding_head,
+                key_name="personal_resource_binding_id",
+                key_value=command.personal_resource_binding_id,
+            )
+            if current["status"] == "REVOKED" and command.status != "REVOKED":
                 fail(
                     "PERSONAL_RESOURCE_REVOCATION_TERMINAL",
                     "a revoked personal resource binding cannot become active or inactive again",
                 )
-        return super().set_resource_status(command)
+
+            if current["status"] == command.status:
+                revision = parent
+            else:
+                revision = parent + 1
+                now = self.clock.now()
+                conn.execute(
+                    insert(schema.personal_resource_binding_state).values(
+                        personal_resource_binding_id=command.personal_resource_binding_id,
+                        revision=revision,
+                        parent_revision=parent,
+                        status=command.status,
+                        committed_at=now,
+                    )
+                )
+                self._advance_head(
+                    conn,
+                    head_table=schema.personal_resource_binding_head,
+                    key_name="personal_resource_binding_id",
+                    key_value=command.personal_resource_binding_id,
+                    expected_revision=parent,
+                    new_revision=revision,
+                    conflict_code="PERSONAL_RESOURCE_BINDING_STATE_CONFLICT",
+                )
+
+            now = self.clock.now()
+            save_operation_receipt(
+                conn,
+                scope=scope,
+                operation_id=command.operation_id,
+                req_digest=req,
+                result_kind="PersonalResourceBindingState",
+                result_ref=command.personal_resource_binding_id,
+                result_json={
+                    "entity_id": str(command.personal_resource_binding_id),
+                    "revision": revision,
+                },
+                committed_at=now,
+            )
+            return AuthorityStateRevisionResult(
+                command.personal_resource_binding_id,
+                revision,
+            )
 
     def set_credential_status(
         self, command: SetCredentialBindingStatusCommand
@@ -211,17 +286,16 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                     "calendar grant evidence predates the selected resource binding",
                 )
 
-            prior_permissions = conn.execute(
-                select(schema.permission_grant).where(
-                    schema.permission_grant.c.relationship_id == command.relationship_id
-                )
-            ).mappings().all()
             source_event_ref = str(command.source_interaction_event_id)
-            if any(
-                isinstance(row["constraints_json"], dict)
-                and row["constraints_json"].get("grant_source_event_id") == source_event_ref
-                for row in prior_permissions
-            ):
+            consumed = conn.execute(
+                select(schema.operation_receipt).where(
+                    schema.operation_receipt.c.operation_scope
+                    == _GRANT_SOURCE_CONSUMPTION_SCOPE,
+                    schema.operation_receipt.c.operation_id
+                    == command.source_interaction_event_id,
+                )
+            ).mappings().one_or_none()
+            if consumed is not None:
                 fail(
                     "PERMISSION_PROVENANCE_REUSED",
                     "one counterpart grant event cannot mint another Permission",
@@ -230,6 +304,36 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
             grantor_ref = relationship["counterpart_id"]
             permission_id = self.ids.new()
             now = self.clock.now()
+            consumption_digest = request_digest(
+                {
+                    "source_interaction_event_id": command.source_interaction_event_id,
+                    "relationship_id": command.relationship_id,
+                    "personal_resource_binding_id": command.personal_resource_binding_id,
+                    "capability_semantic_operation": CALENDAR_EVENTS_READ,
+                    "capability_contract_version": command.capability_contract_version,
+                    "grant_policy_version": command.grant_policy_version,
+                }
+            )
+            try:
+                save_operation_receipt(
+                    conn,
+                    scope=_GRANT_SOURCE_CONSUMPTION_SCOPE,
+                    operation_id=command.source_interaction_event_id,
+                    req_digest=consumption_digest,
+                    result_kind="ConsumedCalendarReadPermissionGrantEvent",
+                    result_ref=permission_id,
+                    result_json={
+                        "source_interaction_event_id": source_event_ref,
+                        "permission_id": str(permission_id),
+                    },
+                    committed_at=now,
+                )
+            except IntegrityError:
+                fail(
+                    "PERMISSION_PROVENANCE_REUSED",
+                    "one counterpart grant event cannot mint another Permission",
+                )
+
             conn.execute(
                 insert(schema.permission_grant).values(
                     permission_id=permission_id,
