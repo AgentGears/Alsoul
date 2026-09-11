@@ -119,7 +119,6 @@ class SetPersonalWorldRelationshipStatusCommand:
     companion_person_id: UUID
     counterpart_id: UUID
     relationship_id: UUID
-    status: Literal["ENDED"] = "ENDED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,14 +132,12 @@ class SetPersonalResourceBindingStatusCommand:
 class SetCredentialBindingStatusCommand:
     operation_id: UUID
     credential_binding_id: UUID
-    status: Literal["REVOKED"] = "REVOKED"
 
 
 @dataclass(frozen=True, slots=True)
 class SetPermissionStatusCommand:
     operation_id: UUID
     permission_id: UUID
-    status: Literal["REVOKED"] = "REVOKED"
 
 
 @dataclass(frozen=True, slots=True)
