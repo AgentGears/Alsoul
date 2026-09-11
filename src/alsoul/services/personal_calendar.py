@@ -123,6 +123,28 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                     "Permission target is not the unique active calendar for this relationship",
                 )
 
+            if grant_event["recorded_at"] < binding["created_at"]:
+                fail(
+                    "PERMISSION_PROVENANCE_INVALID",
+                    "calendar grant evidence predates the selected resource binding",
+                )
+
+            prior_permissions = conn.execute(
+                select(schema.permission_grant).where(
+                    schema.permission_grant.c.relationship_id == command.relationship_id
+                )
+            ).mappings().all()
+            source_event_ref = str(command.source_interaction_event_id)
+            if any(
+                isinstance(row["constraints_json"], dict)
+                and row["constraints_json"].get("grant_source_event_id") == source_event_ref
+                for row in prior_permissions
+            ):
+                fail(
+                    "PERMISSION_PROVENANCE_REUSED",
+                    "one counterpart grant event cannot mint another Permission",
+                )
+
             if relationship["counterpart_id"] != command.grantor_ref:
                 fail(
                     "PERMISSION_GRANTOR_UNAUTHORIZED",
@@ -147,7 +169,7 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                     constraints_json={
                         "resource_kind": "CALENDAR",
                         "grant_contract_version": _CALENDAR_READ_PERMISSION_GRANT_CONTRACT,
-                        "grant_source_event_id": str(command.source_interaction_event_id),
+                        "grant_source_event_id": source_event_ref,
                     },
                     granted_at=now,
                     expires_at=None,
