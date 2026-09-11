@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
@@ -14,6 +15,8 @@ from alsoul.domain.personal_calendar import (
     GrantCalendarReadPermissionResult,
     PrepareCalendarObservationResult,
     PreparePersonalCalendarObservationCommand,
+    RegisterPersonalCalendarResourceCommand,
+    RegisterPersonalCalendarResourceResult,
     SetCredentialBindingStatusCommand,
     SetPermissionStatusCommand,
     SetPersonalResourceBindingStatusCommand,
@@ -37,6 +40,7 @@ from ._personal_calendar_base import (
 CALENDAR_READ_PERMISSION_GRANT_TEXT = "Allow my companion to read my calendar."
 _CALENDAR_READ_PERMISSION_GRANT_CONTRACT = "CALENDAR_READ_PERMISSION_GRANT_V1"
 _GRANT_SOURCE_CONSUMPTION_SCOPE = "ConsumeCalendarReadPermissionGrantEvent"
+_RESOURCE_REGISTRATION_SCOPE = "RegisterPersonalCalendarResource"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +83,121 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
     derives calendar-question semantics from canonical first-party input, and prevents
     revoked authority from being reactivated under the same semantic identity.
     """
+
+    def register_calendar_resource(
+        self, command: RegisterPersonalCalendarResourceCommand
+    ) -> RegisterPersonalCalendarResourceResult:
+        req = request_digest(asdict(command))
+        with self.engine.begin() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=_RESOURCE_REGISTRATION_SCOPE,
+                operation_id=command.operation_id,
+                expected_request_digest=req,
+            )
+            if replay:
+                return RegisterPersonalCalendarResourceResult(
+                    UUID(replay["personal_resource_binding_id"])
+                )
+
+            self._require_relationship(
+                conn,
+                companion_person_id=command.companion_person_id,
+                counterpart_id=command.counterpart_id,
+                relationship_id=command.relationship_id,
+            )
+            if command.timezone_rules_version != self.time_resolver.rules_version:
+                fail(
+                    "CALENDAR_TIME_RULES_VERSION_MISMATCH",
+                    "resource timezone rules do not match the trusted resolver",
+                )
+            try:
+                ZoneInfo(command.calendar_timezone)
+            except ZoneInfoNotFoundError:
+                fail(
+                    "CALENDAR_TIMEZONE_UNTRUSTED",
+                    "calendar timezone is not available to the trusted resolver",
+                )
+            if not command.external_system_ref.strip() or not command.external_resource_ref.strip():
+                fail(
+                    "PERSONAL_RESOURCE_TARGET_INVALID",
+                    "external system and resource references must be non-empty",
+                )
+
+            now = self.clock.now()
+            self._ensure_personal_world_relationship_active(
+                conn,
+                relationship_id=command.relationship_id,
+                committed_at=now,
+            )
+            if self._active_calendar_bindings(conn, command.relationship_id):
+                fail(
+                    "PERSONAL_CALENDAR_RESOURCE_AMBIGUOUS",
+                    "the first F5.A slice permits exactly one active calendar resource per relationship",
+                )
+
+            timeline_head = conn.execute(
+                select(schema.relationship_timeline_head).where(
+                    schema.relationship_timeline_head.c.relationship_id
+                    == command.relationship_id
+                )
+            ).mappings().one_or_none()
+            if timeline_head is None:
+                fail(
+                    "RELATIONSHIP_TIMELINE_HEAD_MISSING",
+                    "calendar resource activation requires the canonical relationship Timeline frontier",
+                )
+            activation_timeline_frontier = int(timeline_head["last_timeline_seq"])
+
+            binding_id = self.ids.new()
+            try:
+                conn.execute(
+                    insert(schema.personal_resource_binding).values(
+                        personal_resource_binding_id=binding_id,
+                        counterpart_id=command.counterpart_id,
+                        relationship_id=command.relationship_id,
+                        resource_kind="CALENDAR",
+                        external_system_ref=command.external_system_ref,
+                        external_resource_ref=command.external_resource_ref,
+                        calendar_timezone=command.calendar_timezone,
+                        timezone_rules_version=command.timezone_rules_version,
+                        created_at=now,
+                    )
+                )
+            except IntegrityError:
+                fail(
+                    "PERSONAL_RESOURCE_TARGET_ALREADY_BOUND",
+                    "external calendar target is already bound",
+                )
+            conn.execute(
+                insert(schema.personal_resource_binding_state).values(
+                    personal_resource_binding_id=binding_id,
+                    revision=1,
+                    parent_revision=None,
+                    status="ACTIVE",
+                    committed_at=now,
+                )
+            )
+            conn.execute(
+                insert(schema.personal_resource_binding_head).values(
+                    personal_resource_binding_id=binding_id,
+                    current_revision=1,
+                )
+            )
+            save_operation_receipt(
+                conn,
+                scope=_RESOURCE_REGISTRATION_SCOPE,
+                operation_id=command.operation_id,
+                req_digest=req,
+                result_kind="PersonalResourceBinding",
+                result_ref=binding_id,
+                result_json={
+                    "personal_resource_binding_id": str(binding_id),
+                    "activation_timeline_frontier": activation_timeline_frontier,
+                },
+                committed_at=now,
+            )
+            return RegisterPersonalCalendarResourceResult(binding_id)
 
     def set_relationship_status(
         self, command: SetPersonalWorldRelationshipStatusCommand
@@ -280,10 +399,32 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                     "Permission target is not the unique active calendar for this relationship",
                 )
 
-            if grant_event["recorded_at"] < binding["created_at"]:
+            registration_receipt = conn.execute(
+                select(schema.operation_receipt).where(
+                    schema.operation_receipt.c.operation_scope
+                    == _RESOURCE_REGISTRATION_SCOPE,
+                    schema.operation_receipt.c.result_ref
+                    == command.personal_resource_binding_id,
+                )
+            ).mappings().one_or_none()
+            if registration_receipt is None:
                 fail(
                     "PERMISSION_PROVENANCE_INVALID",
-                    "calendar grant evidence predates the selected resource binding",
+                    "calendar Permission requires trusted resource-activation provenance",
+                )
+            registration_result = registration_receipt["result_json"]
+            if not isinstance(registration_result, dict) or "activation_timeline_frontier" not in registration_result:
+                fail(
+                    "PERMISSION_PROVENANCE_INVALID",
+                    "calendar resource activation lacks a canonical Timeline frontier",
+                )
+            activation_timeline_frontier = int(
+                registration_result["activation_timeline_frontier"]
+            )
+            if int(grant_event["timeline_seq"]) <= activation_timeline_frontier:
+                fail(
+                    "PERMISSION_PROVENANCE_INVALID",
+                    "calendar grant evidence must follow activation of the selected resource",
                 )
 
             source_event_ref = str(command.source_interaction_event_id)
@@ -351,6 +492,7 @@ class PersonalCalendarReadServices(_BasePersonalCalendarReadServices):
                         "resource_kind": "CALENDAR",
                         "grant_contract_version": _CALENDAR_READ_PERMISSION_GRANT_CONTRACT,
                         "grant_source_event_id": source_event_ref,
+                        "resource_activation_timeline_frontier": activation_timeline_frontier,
                     },
                     granted_at=now,
                     expires_at=None,
