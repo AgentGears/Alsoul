@@ -134,7 +134,6 @@ def _bootstrap_calendar(engine, now):
             relationship_id=ids.relationship_id,
             personal_resource_binding_id=resource.personal_resource_binding_id,
             capability_contract_version=_CAPABILITY_VERSION,
-            grantor_ref=ids.counterpart_id,
             grant_policy_version=_GRANT_POLICY_VERSION,
             source_interaction_event_id=grant_event.event_id,
         )
@@ -158,7 +157,6 @@ def _bootstrap_calendar(engine, now):
             operation_id=uuid4(),
             observation_id=observation.observation_id,
             source_interaction_event_id=source_event.event_id,
-            question_text=question,
         )
     )
     return (
@@ -264,21 +262,29 @@ def test_calendar_page_fence_pins_current_authority_and_revocation_blocks_later_
 
 
 def test_permission_persists_exact_first_party_grant_provenance(engine, now):
-    _, _, _, _, _, _, permission, _, _, grant_event = _bootstrap_calendar(engine, now)
+    ids, _, _, _, _, _, permission, _, _, grant_event = _bootstrap_calendar(engine, now)
     with engine.connect() as conn:
         row = conn.execute(
             select(schema.permission_grant).where(
                 schema.permission_grant.c.permission_id == permission.permission_id
             )
         ).mappings().one()
+    assert row["grantor_ref"] == ids.counterpart_id
     assert row["grant_source"] == "FIRST_PARTY_COUNTERPART"
     assert row["constraints_json"]["grant_contract_version"] == "CALENDAR_READ_PERMISSION_GRANT_V1"
     assert row["constraints_json"]["grant_source_event_id"] == str(grant_event.event_id)
     assert row["expires_at"] is None
 
 
+def test_permission_authority_inputs_are_derived_not_caller_asserted():
+    fields = GrantCalendarReadPermissionCommand.__dataclass_fields__
+    assert "grantor_ref" not in fields
+    assert "expires_at" not in fields
+    assert "source_interaction_event_id" in fields
+
+
 def test_permission_rejects_non_grant_counterpart_event(engine, now):
-    ids, foundation, calendar, _, resource, _, _, _, source_event, _ = _bootstrap_calendar(engine, now)
+    ids, _, calendar, _, resource, _, _, _, source_event, _ = _bootstrap_calendar(engine, now)
     with pytest.raises(DomainError) as invalid:
         calendar.grant_read_permission(
             GrantCalendarReadPermissionCommand(
@@ -288,7 +294,6 @@ def test_permission_rejects_non_grant_counterpart_event(engine, now):
                 relationship_id=ids.relationship_id,
                 personal_resource_binding_id=resource.personal_resource_binding_id,
                 capability_contract_version=_CAPABILITY_VERSION,
-                grantor_ref=ids.counterpart_id,
                 grant_policy_version=_GRANT_POLICY_VERSION,
                 source_interaction_event_id=source_event.event_id,
             )
@@ -296,15 +301,9 @@ def test_permission_rejects_non_grant_counterpart_event(engine, now):
     _assert_code(invalid, "PERMISSION_PROVENANCE_INVALID")
 
 
-def test_permission_rejects_time_bounded_expiry_in_first_slice(engine, now):
-    ids, foundation, calendar, _, resource, _, _, _, _, _ = _bootstrap_calendar(engine, now)
-    grant_event = _append_counterpart_event(
-        foundation,
-        ids,
-        now,
-        CALENDAR_READ_PERMISSION_GRANT_TEXT,
-    )
-    with pytest.raises(DomainError) as unsupported:
+def test_one_grant_event_cannot_mint_a_second_permission(engine, now):
+    ids, _, calendar, _, resource, _, _, _, _, grant_event = _bootstrap_calendar(engine, now)
+    with pytest.raises(DomainError) as reused:
         calendar.grant_read_permission(
             GrantCalendarReadPermissionCommand(
                 operation_id=uuid4(),
@@ -313,27 +312,48 @@ def test_permission_rejects_time_bounded_expiry_in_first_slice(engine, now):
                 relationship_id=ids.relationship_id,
                 personal_resource_binding_id=resource.personal_resource_binding_id,
                 capability_contract_version=_CAPABILITY_VERSION,
-                grantor_ref=ids.counterpart_id,
                 grant_policy_version=_GRANT_POLICY_VERSION,
                 source_interaction_event_id=grant_event.event_id,
-                expires_at=now + timedelta(days=1),
             )
         )
-    _assert_code(unsupported, "PERMISSION_EXPIRY_UNSUPPORTED")
+    _assert_code(reused, "PERMISSION_PROVENANCE_REUSED")
 
 
-def test_calendar_observation_rejects_question_text_substitution(engine, now):
-    _, _, calendar, observation, _, _, _, _, source_event, _ = _bootstrap_calendar(engine, now)
-    with pytest.raises(DomainError) as mismatch:
+def test_calendar_observation_derives_question_from_canonical_input(engine, now):
+    assert "question_text" not in PreparePersonalCalendarObservationCommand.__dataclass_fields__
+
+    ids, foundation, calendar, _, _, _, _, _, _, _ = _bootstrap_calendar(engine, now)
+    unsupported_event = _append_counterpart_event(
+        foundation,
+        ids,
+        now,
+        "What's on my calendar tomorrow?",
+    )
+    investigation = foundation.start_investigation(
+        StartInvestigationCommand(
+            operation_id=uuid4(),
+            initiated_by_companion_person_id=ids.companion_person_id,
+            relationship_id=ids.relationship_id,
+            objective="Reject an out-of-slice calendar question.",
+        )
+    )
+    observation = foundation.start_observation(
+        StartObservationCommand(
+            operation_id=uuid4(),
+            investigation_id=investigation.investigation_id,
+            acquisition_kind="PERSONAL_CALENDAR_READ",
+            request_descriptor={"purpose": "calendar.events.read"},
+        )
+    )
+    with pytest.raises(DomainError) as unsupported:
         calendar.prepare_observation(
             PreparePersonalCalendarObservationCommand(
                 operation_id=uuid4(),
                 observation_id=observation.observation_id,
-                source_interaction_event_id=source_event.event_id,
-                question_text="What's on my calendar on 2026-09-13?",
+                source_interaction_event_id=unsupported_event.event_id,
             )
         )
-    _assert_code(mismatch, "CALENDAR_SOURCE_INTERACTION_MISMATCH")
+    _assert_code(unsupported, "PERSONAL_CALENDAR_QUESTION_UNSUPPORTED")
 
 
 def test_replacement_calendar_does_not_inherit_old_permission(engine, now):
@@ -396,7 +416,6 @@ def test_replacement_calendar_does_not_inherit_old_permission(engine, now):
             operation_id=uuid4(),
             observation_id=observation.observation_id,
             source_interaction_event_id=source_event.event_id,
-            question_text=question,
         )
     )
     assert prepared.personal_resource_binding_id == replacement.personal_resource_binding_id
