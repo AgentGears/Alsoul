@@ -119,29 +119,28 @@ class SetPersonalWorldRelationshipStatusCommand:
     companion_person_id: UUID
     counterpart_id: UUID
     relationship_id: UUID
-    status: Literal["ACTIVE", "ENDED"]
+    status: Literal["ENDED"] = "ENDED"
 
 
 @dataclass(frozen=True, slots=True)
 class SetPersonalResourceBindingStatusCommand:
     operation_id: UUID
     personal_resource_binding_id: UUID
-    status: Literal["ACTIVE", "INACTIVE", "REVOKED"]
+    status: Literal["INACTIVE", "REVOKED"]
 
 
 @dataclass(frozen=True, slots=True)
 class SetCredentialBindingStatusCommand:
     operation_id: UUID
     credential_binding_id: UUID
-    status: Literal["ACTIVE", "REVOKED"]
-    provider_scopes: tuple[str, ...] | None = None
+    status: Literal["REVOKED"] = "REVOKED"
 
 
 @dataclass(frozen=True, slots=True)
 class SetPermissionStatusCommand:
     operation_id: UUID
     permission_id: UUID
-    status: Literal["ACTIVE", "REVOKED"]
+    status: Literal["REVOKED"] = "REVOKED"
 
 
 @dataclass(frozen=True, slots=True)
