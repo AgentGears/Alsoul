@@ -19,8 +19,10 @@ from alsoul.domain.personal_calendar import (
     PreparePersonalCalendarObservationCommand,
     RegisterPersonalCalendarResourceCommand,
     SetCalendarReadPolicyCommand,
+    SetCredentialBindingStatusCommand,
     SetPermissionStatusCommand,
     SetPersonalResourceBindingStatusCommand,
+    SetPersonalWorldRelationshipStatusCommand,
 )
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services import FoundationBootstrapper, FoundationServices
@@ -235,7 +237,6 @@ def test_calendar_page_fence_pins_current_authority_and_revocation_blocks_later_
         SetPermissionStatusCommand(
             operation_id=uuid4(),
             permission_id=permission.permission_id,
-            status="REVOKED",
         )
     )
     with pytest.raises(DomainError) as revoked:
@@ -269,11 +270,19 @@ def test_permission_persists_exact_first_party_grant_provenance(engine, now):
                 schema.permission_grant.c.permission_id == permission.permission_id
             )
         ).mappings().one()
+        consumption = conn.execute(
+            select(schema.operation_receipt).where(
+                schema.operation_receipt.c.operation_scope
+                == "ConsumeCalendarReadPermissionGrantEvent",
+                schema.operation_receipt.c.operation_id == grant_event.event_id,
+            )
+        ).mappings().one()
     assert row["grantor_ref"] == ids.counterpart_id
     assert row["grant_source"] == "FIRST_PARTY_COUNTERPART"
     assert row["constraints_json"]["grant_contract_version"] == "CALENDAR_READ_PERMISSION_GRANT_V1"
     assert row["constraints_json"]["grant_source_event_id"] == str(grant_event.event_id)
     assert row["expires_at"] is None
+    assert consumption["result_ref"] == permission.permission_id
 
 
 def test_permission_authority_inputs_are_derived_not_caller_asserted():
@@ -281,6 +290,12 @@ def test_permission_authority_inputs_are_derived_not_caller_asserted():
     assert "grantor_ref" not in fields
     assert "expires_at" not in fields
     assert "source_interaction_event_id" in fields
+
+
+def test_revocation_command_surfaces_are_reduction_only():
+    assert "status" not in SetPersonalWorldRelationshipStatusCommand.__dataclass_fields__
+    assert "status" not in SetCredentialBindingStatusCommand.__dataclass_fields__
+    assert "status" not in SetPermissionStatusCommand.__dataclass_fields__
 
 
 def test_permission_rejects_non_grant_counterpart_event(engine, now):
@@ -354,6 +369,26 @@ def test_calendar_observation_derives_question_from_canonical_input(engine, now)
             )
         )
     _assert_code(unsupported, "PERSONAL_CALENDAR_QUESTION_UNSUPPORTED")
+
+
+def test_revoked_resource_binding_cannot_return_to_inactive(engine, now):
+    _, _, calendar, _, resource, _, _, _, _, _ = _bootstrap_calendar(engine, now)
+    calendar.set_resource_status(
+        SetPersonalResourceBindingStatusCommand(
+            operation_id=uuid4(),
+            personal_resource_binding_id=resource.personal_resource_binding_id,
+            status="REVOKED",
+        )
+    )
+    with pytest.raises(DomainError) as terminal:
+        calendar.set_resource_status(
+            SetPersonalResourceBindingStatusCommand(
+                operation_id=uuid4(),
+                personal_resource_binding_id=resource.personal_resource_binding_id,
+                status="INACTIVE",
+            )
+        )
+    _assert_code(terminal, "PERSONAL_RESOURCE_REVOCATION_TERMINAL")
 
 
 def test_replacement_calendar_does_not_inherit_old_permission(engine, now):
