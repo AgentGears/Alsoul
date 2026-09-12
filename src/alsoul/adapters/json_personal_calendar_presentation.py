@@ -19,7 +19,7 @@ from alsoul.domain.personal_calendar_presentation import (
 )
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class JsonPersonalCalendarPresentationAdapter:
     endpoint: str
     status_endpoint: str
