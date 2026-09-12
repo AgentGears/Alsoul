@@ -42,7 +42,7 @@ A durable `GeneratedOutput` or `CompanionOutput` is historical cognition, not an
 
 Credential usability and provider technical scope are not presentation prerequisites. They matter only if stale state requires a new authorized acquisition.
 
-The mutable heads used by the payload decision are linearized inside the same transaction that commits the presentation attempt/fence. A concurrent authority reduction that wins first prevents payload dispatch.
+The mutable heads used by the payload decision are linearized inside the same transaction that commits the presentation attempt/fence. A concurrent authority reduction that wins first prevents payload dispatch. Prospective generations for one immutable `CompanionOutput` are also serialized before the latest attempt is read, so distinct operation IDs cannot both dispatch the same next generation.
 
 ## Presentation identity
 
@@ -55,13 +55,13 @@ presentation_attempt_generation
 presentation_transport_fence_scope_id
 ```
 
-Acceptance, terminal-negative evidence, and status lookup must bind all three values. Evidence from another generation cannot satisfy the current attempt.
+The durable attempt additionally pins an opaque `sink_binding_ref` for the exact concrete payload/status sink configuration used by that transport. Acceptance, terminal-negative evidence, and status lookup must bind the stable key and exact generation/fence. Recovery of an uncertain generation is rejected if the currently configured sink binding differs from the sink that received the fenced payload.
 
 ## Uncertain acceptance
 
 The attempt is durably `UNKNOWN` before the payload transport starts. A lost acknowledgement therefore never means either “definitely undisclosed” or “presented.”
 
-Recovery of `UNKNOWN` uses only the exact-generation content-free status lookup. That request carries no schedule payload and no content digest.
+Recovery of `UNKNOWN` uses only the exact-generation content-free status lookup against the originally fenced sink binding. That request carries no schedule payload and no content digest.
 
 A lookup can establish:
 
@@ -73,7 +73,7 @@ UNKNOWN
 
 `NOT_ACCEPTED` is accepted only under the trusted status contract and requires explicit terminal proof plus a settled-through reference. A transient or point-in-time negative result is represented as `UNKNOWN` instead.
 
-Once `ACCEPTED` is durably established, recovery may append the canonical historical Timeline event without rechecking current disclosure Permission because that append records an already-observed sink acceptance; it does not redisclose the payload.
+Once `ACCEPTED` is durably established, recovery may append the canonical historical Timeline event without rechecking current disclosure Permission because that append records an already-observed sink acceptance; it does not redisclose the payload. Idempotent replay also repairs this final Timeline append if process loss occurred after acceptance evidence was committed but before canonical presentation history was written.
 
 A later payload transport is allowed only after the immediately prior generation is authoritatively `NOT_ACCEPTED`. It uses a new generation/fence identity, retains the stable semantic `presentation_key`, and re-evaluates current freshness/disclosure authority before sending any payload.
 
@@ -84,6 +84,7 @@ A later payload transport is allowed only after the immediately prior generation
 - Disclosure denial does not trigger reacquisition merely to bypass denial.
 - Unknown acceptance never authorizes a payload resend.
 - Status lookup never carries the personal payload or its digest.
+- Uncertain recovery cannot switch to a different concrete sink merely because contract versions match.
 - A mismatched presentation key, generation, fence scope, or status contract is rejected as untrusted evidence.
 - Terminal-negative state requires authoritative proof, not absence of acceptance.
 - At most one canonical Timeline presentation event is committed for the `CompanionOutput`.
