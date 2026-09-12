@@ -19,6 +19,15 @@ from .json_model import (
 from .json_personal_calendar_presentation import JsonPersonalCalendarPresentationAdapter
 from .json_presentation import JsonFirstPartyPresentationAdapter
 from .world_extract import F4JsonMemoryRequirementExtractor, https_origin
+from alsoul.domain.personal_calendar_presentation import (
+    PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS,
+)
+
+# The concrete personal-calendar sink's trusted status-contract version carries this
+# terminal-generation guarantee; expose it explicitly for host qualification.
+JsonPersonalCalendarPresentationAdapter.terminal_negative_semantics = (
+    PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS
+)
 
 __all__ = [
     "AdapterError",
