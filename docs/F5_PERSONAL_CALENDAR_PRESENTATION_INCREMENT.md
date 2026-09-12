@@ -57,6 +57,8 @@ presentation_transport_fence_scope_id
 
 The durable attempt additionally pins an opaque `sink_binding_ref` for the exact concrete payload/status sink configuration used by that transport. Acceptance, terminal-negative evidence, and status lookup must bind the stable key and exact generation/fence. Recovery of an uncertain generation is rejected if the currently configured sink binding differs from the sink that received the fenced payload.
 
+The qualified HTTPS adapter freezes its endpoint, status endpoint, timeout, and contract configuration after construction. The presentation service snapshots the exact adapter object and identity-bearing contract values before it commits the durable dispatch fence and uses that same object for the payload call. A later replacement of the service's configured adapter therefore cannot redirect the already-fenced dispatch.
+
 ## Uncertain acceptance
 
 The attempt is durably `UNKNOWN` before the payload transport starts. A lost acknowledgement therefore never means either “definitely undisclosed” or “presented.”
@@ -75,6 +77,8 @@ UNKNOWN
 
 Once `ACCEPTED` is durably established, recovery may append the canonical historical Timeline event without rechecking current disclosure Permission because that append records an already-observed sink acceptance; it does not redisclose the payload. Idempotent replay also repairs this final Timeline append if process loss occurred after acceptance evidence was committed but before canonical presentation history was written.
 
+The canonical presented event is accompanied by an immutable provenance binding that records its exact presentation attempt, generation, transport fence scope, sink binding, acceptance-evidence identifier, and sink receipt. If process loss occurs after the generic Timeline append but before that binding is committed, the same deterministic recovery path repairs the provenance binding without another payload transport.
+
 A later payload transport is allowed only after the immediately prior generation is authoritatively `NOT_ACCEPTED`. It uses a new generation/fence identity, retains the stable semantic `presentation_key`, and re-evaluates current freshness/disclosure authority before sending any payload.
 
 ## Fail-closed properties
@@ -87,5 +91,6 @@ A later payload transport is allowed only after the immediately prior generation
 - Uncertain recovery cannot switch to a different concrete sink merely because contract versions match.
 - A mismatched presentation key, generation, fence scope, or status contract is rejected as untrusted evidence.
 - Terminal-negative state requires authoritative proof, not absence of acceptance.
+- Accepted Timeline history retains an immutable event-to-attempt/evidence provenance association.
 - At most one canonical Timeline presentation event is committed for the `CompanionOutput`.
 - Later Permission, resource, relationship, disclosure-policy, or freshness changes do not erase an already accepted historical presentation event.
