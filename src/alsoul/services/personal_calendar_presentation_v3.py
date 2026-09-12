@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from uuid import UUID
 
-from sqlalchemy import insert, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from alsoul.adapters.contracts import AdapterOutcomeUnknown, AdapterRejected
@@ -25,6 +25,7 @@ from alsoul.services.runtime_identity import presentation_idempotency_key
 from alsoul.storage import schema
 
 _PRESENT_SCOPE = "PresentPersonalCalendarOutput"
+_EVENT_PROVENANCE_SCOPE = "BindPersonalCalendarPresentedEventProvenance"
 
 
 class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV2):
@@ -43,6 +44,11 @@ class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV
         self, command: PresentPersonalCalendarOutputCommand
     ) -> PersonalCalendarPresentationResult:
         self._require_adapter()
+        adapter = self.adapter
+        assert adapter is not None
+        sink_binding_ref = adapter.sink_binding_ref.strip()
+        presentation_contract_version = adapter.presentation_contract_version
+        status_contract_version = adapter.status_contract_version
         req = request_digest(asdict(command))
 
         # Idempotent replay must also repair the canonical Timeline if sink acceptance
@@ -84,8 +90,8 @@ class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV
                     return self._result_from_row(conn, row)
 
                 # One immutable CompanionOutput is the serialization row for prospective
-                # presentation generations.  This write precedes the latest-attempt
-                # read so distinct operation IDs cannot both authorize one generation.
+                # presentation generations. This write precedes the latest-attempt read
+                # so distinct operation IDs cannot both authorize one generation.
                 fenced = conn.execute(
                     update(schema.personal_calendar_companion_output)
                     .where(
@@ -186,15 +192,15 @@ class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV
                         presentation_attempt_id=attempt_id,
                         companion_output_id=command.companion_output_id,
                         presentation_key=key,
-                        sink_binding_ref=self.adapter.sink_binding_ref.strip(),
+                        sink_binding_ref=sink_binding_ref,
                         presentation_attempt_generation=generation,
                         presentation_transport_fence_scope_id=fence_scope_id,
                         disclosure_decision_id=disclosure_decision_id,
                         freshness_decision_id=freshness_decision_id,
                         surface_binding_id=command.surface_binding_id,
                         channel_binding_id=command.channel_binding_id,
-                        presentation_contract_version=self.adapter.presentation_contract_version,
-                        status_contract_version=self.adapter.status_contract_version,
+                        presentation_contract_version=presentation_contract_version,
+                        status_contract_version=status_contract_version,
                         payload_digest=lineage["output"]["content_digest"],
                         dispatch_fenced_at=now,
                         sink_acceptance_state="UNKNOWN",
@@ -213,7 +219,7 @@ class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV
                         "presentation_attempt_generation": generation,
                         "freshness_decision_id": str(freshness["freshness_decision_id"]),
                         "disclosure_decision_id": str(disclosure_decision_id),
-                        "sink_binding_ref": self.adapter.sink_binding_ref.strip(),
+                        "sink_binding_ref": sink_binding_ref,
                     },
                     committed_at=now,
                 )
@@ -223,8 +229,21 @@ class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV
                 "personal presentation generation was admitted concurrently",
             ) from exc
 
+        # The adapter object and all identity-bearing values above were snapshotted
+        # before the durable fence. The qualified JSON adapter is immutable, so the
+        # object used here cannot silently change endpoints between fence and dispatch.
+        if (
+            adapter.sink_binding_ref.strip() != sink_binding_ref
+            or adapter.presentation_contract_version != presentation_contract_version
+            or adapter.status_contract_version != status_contract_version
+        ):
+            raise DomainError(
+                "CALENDAR_PRESENTATION_OUTCOME_UNKNOWN",
+                "presentation adapter identity changed after the durable dispatch fence",
+            )
+
         try:
-            status = self.adapter.present_personal(
+            status = adapter.present_personal(
                 presentation_key=key,
                 presentation_attempt_generation=generation,
                 presentation_transport_fence_scope_id=fence_scope_id,
@@ -258,6 +277,10 @@ class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV
         self, command: RecoverPersonalCalendarPresentationCommand
     ) -> PersonalCalendarPresentationResult:
         self._require_adapter()
+        adapter = self.adapter
+        assert adapter is not None
+        sink_binding_ref = adapter.sink_binding_ref.strip()
+        status_contract_version = adapter.status_contract_version
         with self.engine.connect() as conn:
             lineage = super()._load_output_lineage(
                 conn, command.companion_output_id
@@ -286,14 +309,19 @@ class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV
             )
         if latest["sink_acceptance_state"] == "NOT_ACCEPTED":
             return self._result_for_attempt(latest["presentation_attempt_id"])
-        if latest["sink_binding_ref"] != self.adapter.sink_binding_ref.strip():
+        if latest["sink_binding_ref"] != sink_binding_ref:
             fail(
                 "CALENDAR_PRESENTATION_SINK_MISMATCH",
                 "uncertain presentation must be reconciled against the exact sink that received the fenced payload",
             )
+        if adapter.status_contract_version != status_contract_version:
+            fail(
+                "CALENDAR_PRESENTATION_SINK_MISMATCH",
+                "presentation status adapter changed before content-free reconciliation",
+            )
 
         try:
-            status = self.adapter.lookup_personal_status(
+            status = adapter.lookup_personal_status(
                 presentation_key=latest["presentation_key"],
                 presentation_attempt_generation=int(
                     latest["presentation_attempt_generation"]
@@ -324,6 +352,71 @@ class PersonalCalendarPresentationServices(PersonalCalendarPresentationServicesV
         return self._result_for_attempt(
             latest["presentation_attempt_id"], commit_accepted=True
         )
+
+    def _commit_accepted_presentation(self, attempt_id: UUID) -> None:
+        """Commit historical Timeline truth and bind it to exact acceptance evidence."""
+
+        super()._commit_accepted_presentation(attempt_id)
+        with self.engine.begin() as conn:
+            attempt = self._attempt(conn, attempt_id)
+            evidence = conn.execute(
+                select(schema.personal_calendar_presentation_status_evidence).where(
+                    schema.personal_calendar_presentation_status_evidence.c.presentation_attempt_id
+                    == attempt_id,
+                    schema.personal_calendar_presentation_status_evidence.c.state
+                    == "ACCEPTED",
+                )
+            ).mappings().one_or_none()
+            event_id = conn.execute(
+                select(schema.interaction_event.c.event_id).where(
+                    schema.interaction_event.c.companion_output_id
+                    == attempt["companion_output_id"]
+                )
+            ).scalar_one_or_none()
+            if evidence is None or event_id is None:
+                fail(
+                    "CALENDAR_PRESENTATION_PROVENANCE_INVALID",
+                    "accepted presentation lacks canonical event or sink evidence",
+                )
+
+            provenance = {
+                "interaction_event_id": str(event_id),
+                "presentation_attempt_id": str(attempt_id),
+                "presentation_attempt_generation": int(
+                    attempt["presentation_attempt_generation"]
+                ),
+                "presentation_transport_fence_scope_id": str(
+                    attempt["presentation_transport_fence_scope_id"]
+                ),
+                "presentation_key": attempt["presentation_key"],
+                "sink_binding_ref": attempt["sink_binding_ref"],
+                "status_evidence_id": str(evidence["status_evidence_id"]),
+                "receipt_ref": evidence["receipt_ref"],
+                "accepted_at": (
+                    evidence["accepted_at"].isoformat()
+                    if evidence["accepted_at"] is not None
+                    else None
+                ),
+            }
+            provenance_digest = request_digest(provenance)
+            replay = load_operation_receipt(
+                conn,
+                scope=_EVENT_PROVENANCE_SCOPE,
+                operation_id=event_id,
+                expected_request_digest=provenance_digest,
+            )
+            if replay:
+                return
+            save_operation_receipt(
+                conn,
+                scope=_EVENT_PROVENANCE_SCOPE,
+                operation_id=event_id,
+                req_digest=provenance_digest,
+                result_kind="PersonalCalendarPresentedEventProvenance",
+                result_ref=event_id,
+                result_json=provenance,
+                committed_at=self.clock.now(),
+            )
 
 
 __all__ = ["PersonalCalendarPresentationServices"]
