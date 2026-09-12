@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -256,6 +256,6 @@ def test_exit_long_traversal_preserves_old_anchor_and_stales_before_projection(e
                 == result.source_capture_id
             )
         ).mappings().one()
-    assert capture["snapshot_as_of"] == now
-    assert capture["freshness_anchor_at"] == now
-    assert capture["capture_committed_at"] == later
+    assert capture["snapshot_as_of"].replace(tzinfo=timezone.utc) == now
+    assert capture["freshness_anchor_at"].replace(tzinfo=timezone.utc) == now
+    assert capture["capture_committed_at"].replace(tzinfo=timezone.utc) == later
