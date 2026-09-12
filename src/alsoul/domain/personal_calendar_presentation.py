@@ -86,6 +86,7 @@ class PersonalCalendarPresentationResult:
 
 @runtime_checkable
 class PersonalCalendarPresentationAdapter(Protocol):
+    sink_binding_ref: str
     presentation_contract_version: str
     status_contract_version: str
 
