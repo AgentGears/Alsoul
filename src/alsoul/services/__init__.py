@@ -45,7 +45,7 @@ from . import personal_calendar_cognition as _personal_calendar_cognition
 from . import personal_calendar_presentation as _personal_calendar_presentation
 from .personal_calendar_acquisition import PersonalCalendarAcquisitionServices
 from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
-from .personal_calendar_presentation_v2 import PersonalCalendarPresentationServices
+from .personal_calendar_presentation_v3 import PersonalCalendarPresentationServices
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
