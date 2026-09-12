@@ -217,6 +217,7 @@ personal_calendar_presentation_attempt = Table(
         nullable=False,
     ),
     Column("presentation_key", String(128), nullable=False),
+    Column("sink_binding_ref", String(128), nullable=False),
     Column("presentation_attempt_generation", Integer, nullable=False),
     Column("presentation_transport_fence_scope_id", Uuid(as_uuid=True), nullable=False, unique=True),
     Column(
