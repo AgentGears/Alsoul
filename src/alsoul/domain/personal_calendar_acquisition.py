@@ -30,6 +30,8 @@ class CalendarReadCapabilityContract:
     pagination_mode: str = "OPAQUE_CURSOR"
     coherent_snapshot_mode: str = "STABLE_SNAPSHOT_REF"
     recurrence_expansion_mode: str = "CONCRETE_OCCURRENCES"
+    query_interval_semantics: str = "OVERLAP_COMPLETE_HALF_OPEN_WINDOW"
+    history_compensation_mode: str = "PROHIBITED"
     raw_response_minimization_mode: str = "EPHEMERAL_TO_ALLOWLIST"
 
 
@@ -79,6 +81,7 @@ class PersonalCalendarReadPage:
 class PersonalCalendarReadAdapter(Protocol):
     adapter_binding_ref: str
     adapter_version: str
+    capability_contract_version: str
 
     def read_page(self, request: PersonalCalendarReadPageRequest) -> PersonalCalendarReadPage:
         ...

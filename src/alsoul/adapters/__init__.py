@@ -16,9 +16,15 @@ from .json_model import (
     JsonModelProviderAdapter,
     UrllibJsonTransport,
 )
-from .json_personal_calendar_presentation import JsonPersonalCalendarPresentationAdapter
+from . import json_personal_calendar_presentation as _json_personal_calendar_presentation
+from .json_personal_calendar_presentation_v2 import JsonPersonalCalendarPresentationAdapter
 from .json_presentation import JsonFirstPartyPresentationAdapter
 from .world_extract import F4JsonMemoryRequirementExtractor, https_origin
+
+# Keep established submodule imports on the current qualified sink class.
+_json_personal_calendar_presentation.JsonPersonalCalendarPresentationAdapter = (
+    JsonPersonalCalendarPresentationAdapter
+)
 
 __all__ = [
     "AdapterError",

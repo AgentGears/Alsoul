@@ -10,6 +10,9 @@ PERSONAL_CALENDAR_PRESENTATION_CONTRACT_VERSION = "PERSONAL_CALENDAR_PRESENTATIO
 PERSONAL_CALENDAR_PRESENTATION_STATUS_CONTRACT_VERSION = (
     "PERSONAL_CALENDAR_PRESENTATION_STATUS_V1"
 )
+PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS = (
+    "LINEARIZABLE_SETTLED_GENERATION_V1"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +92,7 @@ class PersonalCalendarPresentationAdapter(Protocol):
     sink_binding_ref: str
     presentation_contract_version: str
     status_contract_version: str
+    terminal_negative_semantics: str
 
     def present_personal(
         self,
@@ -117,6 +121,7 @@ class PersonalCalendarPresentationAdapter(Protocol):
 __all__ = [
     "PERSONAL_CALENDAR_PRESENTATION_CONTRACT_VERSION",
     "PERSONAL_CALENDAR_PRESENTATION_STATUS_CONTRACT_VERSION",
+    "PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS",
     "PersonalCalendarDisclosurePolicyResult",
     "PersonalCalendarPresentationAdapter",
     "PersonalCalendarPresentationDispatchResult",
