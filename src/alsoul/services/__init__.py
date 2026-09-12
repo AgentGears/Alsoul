@@ -41,6 +41,7 @@ from .memory_admission import (
     extract_f4_memory_proposal,
     propose_f4_memory,
 )
+from .personal_calendar_acquisition import PersonalCalendarAcquisitionServices
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
@@ -72,6 +73,7 @@ __all__ = [
     "ModelContractProbeResult",
     "ModelGenerationRunner",
     "ModelRuntimeConfig",
+    "PersonalCalendarAcquisitionServices",
     "PresentationRuntimeConfig",
     "ProviderRecoveryCoordinator",
     "RuntimeSecrets",
