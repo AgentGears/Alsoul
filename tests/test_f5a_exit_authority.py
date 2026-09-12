@@ -145,7 +145,7 @@ def test_exit_permission_missing_expired_or_forged_grantor_blocks_dispatch(engin
         conn.execute(
             update(schema.permission_grant)
             .where(schema.permission_grant.c.permission_id == permission.permission_id)
-            .values(expires_at=None, grantor_ref="counterpart-account")
+            .values(expires_at=None, grantor_ref=uuid4())
         )
     with pytest.raises(DomainError) as forged:
         calendar.fence_read_page(
