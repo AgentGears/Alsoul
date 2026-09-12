@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -27,6 +26,19 @@ for _table in _schema_v5.metadata.sorted_tables:
 for _name, _value in vars(_schema_v5).items():
     if isinstance(_value, Table):
         globals()[_name] = metadata.tables[_value.name]
+
+# F5.A introduces personal-world observation as a first-class evidence origin. Replace
+# the frozen F4 constraint in the v6 metadata rather than misclassifying calendar
+# captures as public-world search results.
+for _constraint in tuple(evidence_item.constraints):
+    if _constraint.name == "ck_evidence_origin_f4":
+        evidence_item.constraints.remove(_constraint)
+evidence_item.append_constraint(
+    CheckConstraint(
+        "origin_kind IN ('COUNTERPART_STATEMENT', 'SEARCH_RESULT', 'PERSONAL_WORLD_CAPTURE')",
+        name="ck_evidence_origin_f5",
+    )
+)
 
 
 personal_calendar_acquisition_attempt = Table(
@@ -96,7 +108,8 @@ personal_calendar_acquisition_page = Table(
     Column("next_cursor_digest", String(64)),
     Column("snapshot_ref", Text, nullable=False),
     Column("snapshot_as_of", DateTime(timezone=True)),
-    Column("event_count", Integer, nullable=False),
+    Column("returned_event_count", Integer, nullable=False),
+    Column("included_event_count", Integer, nullable=False),
     Column("terminal", Boolean, nullable=False),
     Column("result_cap_hit", Boolean, nullable=False),
     Column("received_at", DateTime(timezone=True), nullable=False),
@@ -109,8 +122,8 @@ personal_calendar_acquisition_page = Table(
         name="ck_personal_calendar_acquisition_transport_ordinal_f5",
     ),
     CheckConstraint(
-        "event_count >= 0",
-        name="ck_personal_calendar_acquisition_event_count_f5",
+        "returned_event_count >= 0 AND included_event_count >= 0 AND included_event_count <= returned_event_count",
+        name="ck_personal_calendar_acquisition_event_counts_f5",
     ),
     UniqueConstraint(
         "acquisition_attempt_id",
