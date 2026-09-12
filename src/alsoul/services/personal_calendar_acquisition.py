@@ -9,7 +9,10 @@ from sqlalchemy.exc import IntegrityError
 
 from alsoul.adapters.contracts import AdapterOutcomeUnknown, AdapterRejected
 from alsoul.domain.errors import DomainError, fail
-from alsoul.domain.personal_calendar import CALENDAR_EVENTS_READ, FencePersonalCalendarReadPageCommand
+from alsoul.domain.personal_calendar import (
+    CALENDAR_EVENTS_READ,
+    FencePersonalCalendarReadPageCommand,
+)
 from alsoul.domain.personal_calendar_acquisition import (
     PERSONAL_CALENDAR_CAPTURE_SCHEMA_VERSION,
     PERSONAL_CALENDAR_DAY_EVENTS_PREDICATE,
@@ -44,15 +47,23 @@ _CAPTURE_SOURCE_TYPE = "PERSONAL_CALENDAR_WORLD_SOURCE_CAPTURE"
 
 
 def _as_aware_utc(value: datetime) -> datetime:
+    if not isinstance(value, datetime):
+        fail("CALENDAR_TIME_VALUE_INVALID", "calendar time value must be a datetime")
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
 
 
-def _require_provider_aware(value: datetime, *, code: str, message: str) -> datetime:
-    if value.tzinfo is None:
+def _require_provider_aware(value: Any, *, code: str, message: str) -> datetime:
+    if not isinstance(value, datetime) or value.tzinfo is None:
         fail(code, message)
     return value.astimezone(timezone.utc)
+
+
+def _require_nonempty_text(value: Any, *, code: str, message: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        fail(code, message)
+    return value
 
 
 def _iso_utc(value: datetime) -> str:
@@ -114,7 +125,7 @@ class PersonalCalendarAcquisitionServices:
 
         self._qualify_contract()
         context = self._load_acquisition_context(command)
-        attempt_id = self._start_attempt(command, context)
+        attempt_id = self._start_attempt(command)
 
         try:
             traversal = self._traverse(command, context, attempt_id)
@@ -155,9 +166,22 @@ class PersonalCalendarAcquisitionServices:
                 "CALENDAR_PROVIDER_OUTCOME_UNKNOWN",
                 "calendar page transport outcome is unknown; the acquisition is not complete",
             ) from exc
+        except IntegrityError as exc:
+            self._mark_failed(
+                attempt_id=attempt_id,
+                observation_id=command.observation_id,
+                investigation_id=context["investigation_id"],
+                failure_code="CALENDAR_CANONICAL_ADMISSION_CONFLICT",
+            )
+            raise DomainError(
+                "CALENDAR_CANONICAL_ADMISSION_CONFLICT",
+                "calendar canonical admission conflicted with concurrent durable state",
+            ) from exc
 
     def _qualify_contract(self) -> None:
         contract = self.capability_contract
+        adapter_binding_ref = getattr(self.adapter, "adapter_binding_ref", None)
+        adapter_version = getattr(self.adapter, "adapter_version", None)
         required_text = (
             contract.contract_version,
             contract.pagination_contract_version,
@@ -165,13 +189,18 @@ class PersonalCalendarAcquisitionServices:
             contract.normalization_schema_version,
             contract.field_minimization_contract_version,
             contract.freshness_policy_version,
-            self.adapter.adapter_binding_ref,
-            self.adapter.adapter_version,
+            adapter_binding_ref,
+            adapter_version,
         )
-        if any(not value.strip() for value in required_text):
+        if any(not isinstance(value, str) or not value.strip() for value in required_text):
             fail(
                 "CALENDAR_CAPABILITY_CONTRACT_INVALID",
                 "calendar acquisition contract and adapter version refs must be explicit",
+            )
+        if not callable(getattr(self.adapter, "read_page", None)):
+            fail(
+                "CALENDAR_ADAPTER_CONTRACT_INVALID",
+                "calendar adapter does not implement the trusted page-read contract",
             )
         if (
             contract.semantic_operation != CALENDAR_EVENTS_READ
@@ -203,14 +232,22 @@ class PersonalCalendarAcquisitionServices:
                 "calendar adapter must minimize raw provider material before host persistence or telemetry",
             )
         if (
-            contract.max_pages <= 0
+            not isinstance(contract.max_pages, int)
+            or isinstance(contract.max_pages, bool)
+            or contract.max_pages <= 0
+            or not isinstance(contract.max_events, int)
+            or isinstance(contract.max_events, bool)
             or contract.max_events < 0
+            or not isinstance(contract.max_events_per_page, int)
+            or isinstance(contract.max_events_per_page, bool)
             or contract.max_events_per_page <= 0
+            or not isinstance(contract.max_title_chars, int)
+            or isinstance(contract.max_title_chars, bool)
             or contract.max_title_chars <= 0
         ):
             fail(
                 "CALENDAR_CAPABILITY_BOUNDS_INVALID",
-                "calendar capability bounds must be positive and finite",
+                "calendar capability bounds must be finite integers in the trusted range",
             )
 
     def _load_acquisition_context(
@@ -298,7 +335,13 @@ class PersonalCalendarAcquisitionServices:
                     "current policy and trusted acquisition capability versions differ",
                 )
 
-            requested_date = date.fromisoformat(scope_row["requested_local_date"])
+            try:
+                requested_date = date.fromisoformat(scope_row["requested_local_date"])
+            except (TypeError, ValueError):
+                fail(
+                    "CALENDAR_OBSERVATION_SCOPE_DATE_INVALID",
+                    "persisted calendar scope has an invalid requested local date",
+                )
             if scope_row["timezone_rules_version"] != self.time_resolver.rules_version:
                 fail(
                     "CALENDAR_TIME_RULES_VERSION_MISMATCH",
@@ -319,8 +362,6 @@ class PersonalCalendarAcquisitionServices:
             acquisition_started_at = _as_aware_utc(scope_row["acquisition_started_at"])
             return {
                 "scope": dict(scope_row),
-                "observation": dict(observation),
-                "investigation": dict(investigation),
                 "investigation_id": investigation["investigation_id"],
                 "binding": dict(binding),
                 "credential": dict(credential),
@@ -329,9 +370,7 @@ class PersonalCalendarAcquisitionServices:
             }
 
     def _start_attempt(
-        self,
-        command: AcquirePersonalCalendarObservationCommand,
-        context: dict[str, Any],
+        self, command: AcquirePersonalCalendarObservationCommand
     ) -> UUID:
         contract = self.capability_contract
         with self.engine.begin() as conn:
@@ -366,7 +405,6 @@ class PersonalCalendarAcquisitionServices:
             ).scalar_one()
             generation = int(maximum_generation or 0) + 1
             attempt_id = self.ids.new()
-            now = self.clock.now()
             try:
                 conn.execute(
                     insert(schema.personal_calendar_acquisition_attempt).values(
@@ -381,7 +419,7 @@ class PersonalCalendarAcquisitionServices:
                         normalization_schema_version=contract.normalization_schema_version,
                         field_minimization_contract_version=contract.field_minimization_contract_version,
                         freshness_policy_version=contract.freshness_policy_version,
-                        started_at=now,
+                        started_at=self.clock.now(),
                         status="STARTED",
                     )
                 )
@@ -445,6 +483,14 @@ class PersonalCalendarAcquisitionServices:
                 if page.snapshot_as_of is not None
                 else None
             )
+            if (
+                current_snapshot_as_of is not None
+                and current_snapshot_as_of > _as_aware_utc(self.clock.now())
+            ):
+                fail(
+                    "CALENDAR_SNAPSHOT_TIME_FUTURE",
+                    "provider snapshot_as_of cannot be later than the trusted host clock",
+                )
             if snapshot_ref is None:
                 snapshot_ref = page.snapshot_ref
                 snapshot_as_of = current_snapshot_as_of
@@ -469,7 +515,8 @@ class PersonalCalendarAcquisitionServices:
                         "provider snapshot_as_of changed during pagination",
                     )
 
-            if len(page.events) > contract.max_events_per_page:
+            returned_event_count = len(page.events)
+            if returned_event_count > contract.max_events_per_page:
                 fail(
                     "CALENDAR_PAGE_EVENT_LIMIT_EXCEEDED",
                     "calendar page exceeds the trusted per-page event bound",
@@ -482,12 +529,22 @@ class PersonalCalendarAcquisitionServices:
 
             page_included = 0
             for event in page.events:
-                if event.occurrence_ref in seen_occurrences:
+                if not isinstance(event, NormalizedCalendarEvent):
+                    fail(
+                        "CALENDAR_EVENT_NORMALIZATION_INVALID",
+                        "calendar adapter returned material outside the normalized event contract",
+                    )
+                occurrence_ref = _require_nonempty_text(
+                    event.occurrence_ref,
+                    code="CALENDAR_OCCURRENCE_IDENTITY_MISSING",
+                    message="normalized calendar occurrence requires a stable provider identity",
+                )
+                if occurrence_ref in seen_occurrences:
                     fail(
                         "CALENDAR_OCCURRENCE_DUPLICATED",
                         "one provider occurrence identity appeared more than once in the traversal",
                     )
-                seen_occurrences.add(event.occurrence_ref)
+                seen_occurrences.add(occurrence_ref)
                 normalized = self._validate_event(event, context)
                 if normalized is not None:
                     included_events.append(normalized)
@@ -506,16 +563,12 @@ class PersonalCalendarAcquisitionServices:
                 request_page_token=page_token,
                 page=page,
                 snapshot_as_of=current_snapshot_as_of,
+                returned_event_count=returned_event_count,
                 included_event_count=page_included,
             )
             page_count += 1
 
             if page.terminal:
-                if snapshot_ref is None:
-                    fail(
-                        "CALENDAR_SNAPSHOT_MISSING",
-                        "calendar terminal page lacks coherent snapshot identity",
-                    )
                 included_events.sort(key=self._event_sort_key)
                 return {
                     "events": tuple(included_events),
@@ -524,42 +577,58 @@ class PersonalCalendarAcquisitionServices:
                     "page_count": page_count,
                 }
 
-            assert page.next_page_token is not None
-            if page.next_page_token in seen_tokens:
+            next_page_token = page.next_page_token
+            assert isinstance(next_page_token, str)
+            if next_page_token in seen_tokens:
                 fail(
                     "CALENDAR_PAGINATION_TOKEN_CYCLE",
                     "calendar pagination cursor repeated before terminal completeness",
                 )
-            seen_tokens.add(page.next_page_token)
-            page_token = page.next_page_token
+            seen_tokens.add(next_page_token)
+            page_token = next_page_token
 
         fail(
             "CALENDAR_PAGINATION_LIMIT_EXCEEDED",
             "calendar traversal did not prove completeness within the trusted page bound",
         )
 
-    def _validate_page_shape(self, page: PersonalCalendarReadPage) -> None:
+    def _validate_page_shape(self, page: Any) -> None:
         if not isinstance(page, PersonalCalendarReadPage):
             fail(
                 "CALENDAR_ADAPTER_RESPONSE_INVALID",
                 "calendar adapter must return normalized PersonalCalendarReadPage material",
             )
-        if not page.snapshot_ref.strip():
+        _require_nonempty_text(
+            page.snapshot_ref,
+            code="CALENDAR_SNAPSHOT_MISSING",
+            message="calendar page lacks a stable provider snapshot reference",
+        )
+        if not isinstance(page.events, tuple):
             fail(
-                "CALENDAR_SNAPSHOT_MISSING",
-                "calendar page lacks a stable provider snapshot reference",
+                "CALENDAR_ADAPTER_RESPONSE_INVALID",
+                "calendar page events must be an immutable normalized tuple",
             )
-        if page.terminal and page.next_page_token is not None:
+        if not isinstance(page.terminal, bool) or not isinstance(page.result_cap_hit, bool):
             fail(
-                "CALENDAR_PAGINATION_TERMINAL_INVALID",
-                "terminal calendar page must not expose another cursor",
+                "CALENDAR_ADAPTER_RESPONSE_INVALID",
+                "calendar page terminal/cap markers must be explicit booleans",
             )
-        if not page.terminal and (
-            page.next_page_token is None or not page.next_page_token.strip()
-        ):
+        if page.snapshot_as_of is not None and not isinstance(page.snapshot_as_of, datetime):
             fail(
-                "CALENDAR_PAGINATION_INCOMPLETE",
-                "non-terminal calendar page must expose a non-empty continuation cursor",
+                "CALENDAR_SNAPSHOT_TIME_UNTRUSTED",
+                "provider snapshot_as_of must be an offset-aware datetime",
+            )
+        if page.terminal:
+            if page.next_page_token is not None:
+                fail(
+                    "CALENDAR_PAGINATION_TERMINAL_INVALID",
+                    "terminal calendar page must not expose another cursor",
+                )
+        else:
+            _require_nonempty_text(
+                page.next_page_token,
+                code="CALENDAR_PAGINATION_INCOMPLETE",
+                message="non-terminal calendar page must expose a non-empty continuation cursor",
             )
 
     def _validate_event(
@@ -568,27 +637,28 @@ class PersonalCalendarAcquisitionServices:
         context: dict[str, Any],
     ) -> NormalizedCalendarEvent | None:
         contract = self.capability_contract
-        if not isinstance(event, NormalizedCalendarEvent):
-            fail(
-                "CALENDAR_EVENT_NORMALIZATION_INVALID",
-                "calendar adapter returned material outside the normalized event contract",
-            )
+        occurrence_ref = _require_nonempty_text(
+            event.occurrence_ref,
+            code="CALENDAR_OCCURRENCE_IDENTITY_MISSING",
+            message="normalized calendar occurrence requires a stable provider identity",
+        )
         if event.record_kind != "OCCURRENCE":
             fail(
                 "CALENDAR_RECURRENCE_EXPANSION_INCOMPLETE",
                 "series masters cannot be admitted as concrete day occurrences",
             )
-        if not event.occurrence_ref.strip():
-            fail(
-                "CALENDAR_OCCURRENCE_IDENTITY_MISSING",
-                "normalized calendar occurrence requires a stable provider identity",
-            )
         for optional_ref in (event.series_ref, event.exception_ref):
-            if optional_ref is not None and not optional_ref.strip():
-                fail(
-                    "CALENDAR_OCCURRENCE_IDENTITY_INVALID",
-                    "normalized recurrence provenance refs must be non-empty when present",
+            if optional_ref is not None:
+                _require_nonempty_text(
+                    optional_ref,
+                    code="CALENDAR_OCCURRENCE_IDENTITY_INVALID",
+                    message="normalized recurrence provenance refs must be non-empty when present",
                 )
+        if not isinstance(event.title, str):
+            fail(
+                "CALENDAR_EVENT_NORMALIZATION_INVALID",
+                "normalized calendar title must be text",
+            )
         if len(event.title) > contract.max_title_chars:
             fail(
                 "CALENDAR_EVENT_TITLE_LIMIT_EXCEEDED",
@@ -600,6 +670,11 @@ class PersonalCalendarAcquisitionServices:
             fail(
                 "CALENDAR_OCCURRENCE_STATUS_INVALID",
                 "normalized occurrence status is outside the first-slice contract",
+            )
+        if not isinstance(event.all_day, bool):
+            fail(
+                "CALENDAR_EVENT_NORMALIZATION_INVALID",
+                "normalized all-day marker must be an explicit boolean",
             )
         event_start = _require_provider_aware(
             event.start_at,
@@ -619,8 +694,10 @@ class PersonalCalendarAcquisitionServices:
 
         if event.all_day:
             if (
-                event.all_day_start_date is None
-                or event.all_day_end_date_exclusive is None
+                not isinstance(event.all_day_start_date, date)
+                or isinstance(event.all_day_start_date, datetime)
+                or not isinstance(event.all_day_end_date_exclusive, date)
+                or isinstance(event.all_day_end_date_exclusive, datetime)
             ):
                 fail(
                     "CALENDAR_ALL_DAY_INTERVAL_INVALID",
@@ -654,7 +731,7 @@ class PersonalCalendarAcquisitionServices:
             return None
 
         return NormalizedCalendarEvent(
-            occurrence_ref=event.occurrence_ref,
+            occurrence_ref=occurrence_ref,
             title=event.title,
             start_at=event_start,
             end_at=event_end,
@@ -669,7 +746,9 @@ class PersonalCalendarAcquisitionServices:
     def _next_transport_ordinal(self, observation_id: UUID) -> int:
         with self.engine.connect() as conn:
             maximum = conn.execute(
-                select(func.max(schema.personal_calendar_read_authority_fence.c.page_ordinal)).where(
+                select(
+                    func.max(schema.personal_calendar_read_authority_fence.c.page_ordinal)
+                ).where(
                     schema.personal_calendar_read_authority_fence.c.observation_id
                     == observation_id
                 )
@@ -686,6 +765,7 @@ class PersonalCalendarAcquisitionServices:
         request_page_token: str | None,
         page: PersonalCalendarReadPage,
         snapshot_as_of: datetime | None,
+        returned_event_count: int,
         included_event_count: int,
     ) -> None:
         with self.engine.begin() as conn:
@@ -708,7 +788,8 @@ class PersonalCalendarAcquisitionServices:
                         ),
                         snapshot_ref=page.snapshot_ref,
                         snapshot_as_of=snapshot_as_of,
-                        event_count=included_event_count,
+                        returned_event_count=returned_event_count,
+                        included_event_count=included_event_count,
                         terminal=page.terminal,
                         result_cap_hit=page.result_cap_hit,
                         received_at=self.clock.now(),
@@ -720,7 +801,9 @@ class PersonalCalendarAcquisitionServices:
                     "calendar page lineage was committed concurrently",
                 )
 
-    def _event_sort_key(self, event: NormalizedCalendarEvent) -> tuple[str, str, str, str]:
+    def _event_sort_key(
+        self, event: NormalizedCalendarEvent
+    ) -> tuple[str, str, str, str]:
         return (
             _iso_utc(event.start_at),
             _iso_utc(event.end_at),
@@ -922,7 +1005,7 @@ class PersonalCalendarAcquisitionServices:
             conn.execute(
                 insert(schema.evidence_item).values(
                     evidence_id=evidence_id,
-                    origin_kind="SEARCH_RESULT",
+                    origin_kind="PERSONAL_WORLD_CAPTURE",
                     source_type=_CAPTURE_SOURCE_TYPE,
                     source_id=source_capture_id,
                     source_locator=context["binding"]["external_resource_ref"],
@@ -978,7 +1061,7 @@ class PersonalCalendarAcquisitionServices:
                 )
                 .values(status="SUCCEEDED")
             )
-            conn.execute(
+            changed = conn.execute(
                 update(schema.personal_calendar_acquisition_attempt)
                 .where(
                     schema.personal_calendar_acquisition_attempt.c.acquisition_attempt_id
@@ -987,6 +1070,11 @@ class PersonalCalendarAcquisitionServices:
                 )
                 .values(status="SUCCEEDED", ended_at=now, failure_code=None)
             )
+            if changed.rowcount != 1:
+                fail(
+                    "CALENDAR_ACQUISITION_ATTEMPT_CONFLICT",
+                    "calendar acquisition attempt stopped being current during admission",
+                )
             result_json = {
                 "source_capture_id": str(source_capture_id),
                 "evidence_id": str(evidence_id),
