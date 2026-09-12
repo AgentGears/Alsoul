@@ -114,6 +114,11 @@ def downgrade() -> None:
             )
         )
 
+    # Model-egress decisions point at personal projections, so clear them only after
+    # specialized ModelInvocation rows no longer reference the decisions and before
+    # deleting projection lineage.
+    bind.execute(delete(schema_v7.personal_calendar_model_egress_decision))
+
     projection_ids = list(
         bind.execute(
             select(schema_v7.personal_calendar_context_projection.c.projection_id)
@@ -150,6 +155,9 @@ def downgrade() -> None:
                 schema_v7.context_projection.c.projection_id.in_(projection_ids)
             )
         )
+
+    # Projection rows hold the remaining freshness-decision references.
+    bind.execute(delete(schema_v7.personal_calendar_freshness_decision))
 
     bind.execute(
         delete(schema_v7.operation_receipt).where(
