@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -38,6 +39,20 @@ class JsonPersonalCalendarPresentationAdapter:
             raise ValueError("unsupported personal presentation contract version")
         if self.status_contract_version != PERSONAL_CALENDAR_PRESENTATION_STATUS_CONTRACT_VERSION:
             raise ValueError("unsupported personal presentation status contract version")
+
+    @property
+    def sink_binding_ref(self) -> str:
+        """Opaque stable identity for the exact payload/status sink configuration."""
+
+        material = "\n".join(
+            (
+                self.endpoint,
+                self.status_endpoint,
+                self.presentation_contract_version,
+                self.status_contract_version,
+            )
+        ).encode("utf-8")
+        return f"sha256:{hashlib.sha256(material).hexdigest()}"
 
     def present_personal(
         self,
@@ -124,9 +139,11 @@ class JsonPersonalCalendarPresentationAdapter:
             raise AdapterOutcomeUnknown("personal presentation outcome is unknown") from exc
         if not 200 <= response.status_code < 300:
             raise AdapterRejected("personal presentation endpoint returned a non-success response")
-        if _validated_origin(endpoint, "configured") != _validated_origin(
-            response.resolved_endpoint, "resolved"
-        ):
+        try:
+            resolved_origin = _validated_origin(response.resolved_endpoint, "resolved")
+        except ValueError as exc:
+            raise AdapterRejected("personal presentation endpoint resolved to an invalid route") from exc
+        if _validated_origin(endpoint, "configured") != resolved_origin:
             raise AdapterRejected("personal presentation endpoint resolved outside its configured origin")
         try:
             payload = json.loads(response.content)
@@ -151,6 +168,11 @@ class JsonPersonalCalendarPresentationAdapter:
             or payload.get("presentation_key") != key
             or payload.get("presentation_attempt_generation") != generation
             or payload.get("presentation_transport_fence_scope_id") != str(fence_id)
+            or (
+                not allow_unknown
+                and payload.get("presentation_contract_version")
+                != self.presentation_contract_version
+            )
         ):
             raise AdapterRejected("personal presentation status identity is invalid")
         state = payload.get("status")
