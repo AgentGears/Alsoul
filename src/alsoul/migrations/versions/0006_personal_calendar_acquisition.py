@@ -23,6 +23,15 @@ _CAPTURE_SOURCE_TYPE = "PERSONAL_CALENDAR_WORLD_SOURCE_CAPTURE"
 
 
 def upgrade() -> None:
+    # Personal-world observation is not a search result. Evolve the generic evidence
+    # origin vocabulary before any v6 calendar evidence can be admitted.
+    with op.batch_alter_table("evidence_item", recreate="always") as batch_op:
+        batch_op.drop_constraint("ck_evidence_origin_f4", type_="check")
+        batch_op.create_check_constraint(
+            "ck_evidence_origin_f5",
+            "origin_kind IN ('COUNTERPART_STATEMENT', 'SEARCH_RESULT', 'PERSONAL_WORLD_CAPTURE')",
+        )
+
     bind = op.get_bind()
     for table in v6_metadata.sorted_tables:
         if table.name in _NEW_TABLE_NAMES:
@@ -164,3 +173,12 @@ def downgrade() -> None:
     for table in reversed(v6_metadata.sorted_tables):
         if table.name in _NEW_TABLE_NAMES:
             table.drop(bind=bind, checkfirst=False)
+
+    # At this point all PERSONAL_WORLD_CAPTURE evidence has been removed, so the frozen
+    # v5 evidence vocabulary can be restored without losing representable state.
+    with op.batch_alter_table("evidence_item", recreate="always") as batch_op:
+        batch_op.drop_constraint("ck_evidence_origin_f5", type_="check")
+        batch_op.create_check_constraint(
+            "ck_evidence_origin_f4",
+            "origin_kind IN ('COUNTERPART_STATEMENT', 'SEARCH_RESULT')",
+        )
