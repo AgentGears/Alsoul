@@ -16,17 +16,14 @@ from .json_model import (
     JsonModelProviderAdapter,
     UrllibJsonTransport,
 )
-from .json_personal_calendar_presentation import JsonPersonalCalendarPresentationAdapter
+from . import json_personal_calendar_presentation as _json_personal_calendar_presentation
+from .json_personal_calendar_presentation_v2 import JsonPersonalCalendarPresentationAdapter
 from .json_presentation import JsonFirstPartyPresentationAdapter
 from .world_extract import F4JsonMemoryRequirementExtractor, https_origin
-from alsoul.domain.personal_calendar_presentation import (
-    PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS,
-)
 
-# The concrete personal-calendar sink's trusted status-contract version carries this
-# terminal-generation guarantee; expose it explicitly for host qualification.
-JsonPersonalCalendarPresentationAdapter.terminal_negative_semantics = (
-    PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS
+# Keep established submodule imports on the current qualified sink class.
+_json_personal_calendar_presentation.JsonPersonalCalendarPresentationAdapter = (
+    JsonPersonalCalendarPresentationAdapter
 )
 
 __all__ = [
