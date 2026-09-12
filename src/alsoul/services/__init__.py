@@ -42,6 +42,7 @@ from .memory_admission import (
     propose_f4_memory,
 )
 from .personal_calendar_acquisition import PersonalCalendarAcquisitionServices
+from .personal_calendar_cognition import PersonalCalendarCognitionServices
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
@@ -74,6 +75,7 @@ __all__ = [
     "ModelGenerationRunner",
     "ModelRuntimeConfig",
     "PersonalCalendarAcquisitionServices",
+    "PersonalCalendarCognitionServices",
     "PresentationRuntimeConfig",
     "ProviderRecoveryCoordinator",
     "RuntimeSecrets",
