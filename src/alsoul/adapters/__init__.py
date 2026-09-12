@@ -16,6 +16,7 @@ from .json_model import (
     JsonModelProviderAdapter,
     UrllibJsonTransport,
 )
+from .json_personal_calendar_presentation import JsonPersonalCalendarPresentationAdapter
 from .json_presentation import JsonFirstPartyPresentationAdapter
 from .world_extract import F4JsonMemoryRequirementExtractor, https_origin
 
@@ -36,6 +37,7 @@ __all__ = [
     "JsonHttpResponse",
     "JsonHttpTransport",
     "JsonModelProviderAdapter",
+    "JsonPersonalCalendarPresentationAdapter",
     "ModelProviderAdapter",
     "UrllibHttpTransport",
     "UrllibJsonTransport",

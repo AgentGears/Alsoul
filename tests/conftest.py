@@ -125,3 +125,18 @@ def _stable_f5_calendar_identity_for_repeated_scenarios(request, monkeypatch):
 
     monkeypatch.setattr(module, "_bootstrap_calendar", bootstrap_calendar)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _stable_f5_presentation_test_sink(request, monkeypatch):
+    """Give the local presentation fake one explicit concrete sink identity."""
+
+    module = request.module
+    if module.__name__ == "test_f5_personal_calendar_presentation":
+        monkeypatch.setattr(
+            module._PresentationAdapter,
+            "sink_binding_ref",
+            "presentation.test/primary",
+            raising=False,
+        )
+    yield
