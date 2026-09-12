@@ -187,4 +187,4 @@ def test_exit_model_route_change_requires_new_gate_and_records_full_invocation_p
     assert invocation["route_binding_id"] == new_route.route_binding_id
     assert generic["provider_binding_ref"] == new_provider
     assert generic["model_ref"] == new_model
-    assert freshness["purpose"] == "MODEL_EGRESS"
+    assert freshness["decision_purpose"] == "MODEL_EGRESS"
