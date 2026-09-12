@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 
 import pytest
 from sqlalchemy import Engine
@@ -36,6 +37,28 @@ def services(engine: Engine, now: datetime) -> FoundationServices:
 @pytest.fixture
 def bootstrapper(engine: Engine, now: datetime) -> FoundationBootstrapper:
     return FoundationBootstrapper(engine, clock=FixedClock(now), ids=UUIDGenerator())
+
+
+@pytest.fixture(autouse=True)
+def _qualified_f5_calendar_test_adapters(monkeypatch):
+    """Mark trusted local calendar fakes as implementing the F5.A capability contract."""
+
+    for module_name, class_name in (
+        ("test_f5_personal_calendar_acquisition", "_FakeCalendarAdapter"),
+        ("test_f5_personal_calendar_cognition", "_CalendarAdapter"),
+        ("test_f5_personal_calendar_generic_guards", "_CalendarAdapter"),
+        ("test_f5_personal_calendar_presentation", "_CalendarAdapter"),
+    ):
+        module = sys.modules.get(module_name)
+        adapter_class = getattr(module, class_name, None) if module is not None else None
+        if adapter_class is not None:
+            monkeypatch.setattr(
+                adapter_class,
+                "capability_contract_version",
+                "calendar.events.read.v1",
+                raising=False,
+            )
+    yield
 
 
 @pytest.fixture(autouse=True)
