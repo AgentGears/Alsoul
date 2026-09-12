@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from uuid import UUID, uuid4
+from dataclasses import FrozenInstanceError
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
 
 import test_f5_personal_calendar_presentation as presentation_cases
+from alsoul.adapters import JsonPersonalCalendarPresentationAdapter
 from alsoul.domain.errors import DomainError
 from alsoul.domain.personal_calendar_presentation import (
     PersonalCalendarPresentationStatusResult,
@@ -13,6 +15,9 @@ from alsoul.domain.personal_calendar_presentation import (
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services import PersonalCalendarPresentationServices
 from alsoul.storage import schema
+
+
+_EVENT_PROVENANCE_SCOPE = "BindPersonalCalendarPresentedEventProvenance"
 
 
 def test_accepted_receipt_replay_repairs_missing_timeline_commit(engine, now):
@@ -75,6 +80,33 @@ def test_accepted_receipt_replay_repairs_missing_timeline_commit(engine, now):
                 == ctx["adopted"].companion_output_id
             )
         ).scalar_one() == 1
+        evidence = conn.execute(
+            select(schema.personal_calendar_presentation_status_evidence).where(
+                schema.personal_calendar_presentation_status_evidence.c.presentation_attempt_id
+                == attempt["presentation_attempt_id"]
+            )
+        ).mappings().one()
+        provenance = conn.execute(
+            select(schema.operation_receipt).where(
+                schema.operation_receipt.c.operation_scope == _EVENT_PROVENANCE_SCOPE,
+                schema.operation_receipt.c.operation_id == replay.interaction_event_id,
+            )
+        ).mappings().one()
+
+    assert provenance["result_ref"] == replay.interaction_event_id
+    assert provenance["result_json"]["interaction_event_id"] == str(
+        replay.interaction_event_id
+    )
+    assert provenance["result_json"]["presentation_attempt_id"] == str(
+        attempt["presentation_attempt_id"]
+    )
+    assert provenance["result_json"]["presentation_attempt_generation"] == int(
+        attempt["presentation_attempt_generation"]
+    )
+    assert provenance["result_json"]["status_evidence_id"] == str(
+        evidence["status_evidence_id"]
+    )
+    assert provenance["result_json"]["sink_binding_ref"] == adapter.sink_binding_ref
 
 
 def test_unknown_attempt_cannot_reconcile_against_different_sink_binding(engine, now):
@@ -120,3 +152,17 @@ def test_unknown_attempt_cannot_reconcile_against_different_sink_binding(engine,
                 == ctx["adopted"].companion_output_id
             )
         ).scalar_one() == 0
+
+
+def test_qualified_json_presentation_adapter_freezes_sink_configuration():
+    adapter = JsonPersonalCalendarPresentationAdapter(
+        endpoint="https://presentation.invalid/payload",
+        status_endpoint="https://presentation.invalid/status",
+    )
+    sink_binding_ref = adapter.sink_binding_ref
+
+    with pytest.raises(FrozenInstanceError):
+        adapter.endpoint = "https://presentation.invalid/changed"
+
+    assert adapter.endpoint == "https://presentation.invalid/payload"
+    assert adapter.sink_binding_ref == sink_binding_ref
