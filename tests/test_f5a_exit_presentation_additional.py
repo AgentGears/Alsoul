@@ -119,13 +119,23 @@ def test_exit_old_terminal_generation_cannot_be_reclassified_as_accepted(engine,
     first = service.present_output(presentation_cases._present_command(ctx))
     assert first.state == "NOT_ACCEPTED"
 
+    with engine.connect() as conn:
+        attempt = conn.execute(
+            select(schema.personal_calendar_presentation_attempt).where(
+                schema.personal_calendar_presentation_attempt.c.presentation_attempt_id
+                == first.presentation_attempt_id
+            )
+        ).mappings().one()
+
     with pytest.raises(DomainError) as conflict:
         service._settle_attempt(
             first.presentation_attempt_id,
             PersonalCalendarPresentationStatusResult(
                 presentation_key=first.presentation_key,
                 presentation_attempt_generation=first.presentation_attempt_generation,
-                presentation_transport_fence_scope_id=first.presentation_transport_fence_scope_id,
+                presentation_transport_fence_scope_id=attempt[
+                    "presentation_transport_fence_scope_id"
+                ],
                 state="ACCEPTED",
                 receipt_ref="late-old-generation-acceptance",
                 accepted_at=now,
@@ -134,10 +144,10 @@ def test_exit_old_terminal_generation_cannot_be_reclassified_as_accepted(engine,
     assert conflict.value.code == "CALENDAR_PRESENTATION_SETTLEMENT_CONFLICT"
 
     with engine.connect() as conn:
-        attempt = conn.execute(
+        settled = conn.execute(
             select(schema.personal_calendar_presentation_attempt).where(
                 schema.personal_calendar_presentation_attempt.c.presentation_attempt_id
                 == first.presentation_attempt_id
             )
         ).mappings().one()
-    assert attempt["sink_acceptance_state"] == "NOT_ACCEPTED"
+    assert settled["sink_acceptance_state"] == "NOT_ACCEPTED"
