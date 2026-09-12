@@ -7,6 +7,9 @@ import sys
 import pytest
 from sqlalchemy import Engine
 
+from alsoul.domain.personal_calendar_presentation import (
+    PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS,
+)
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services import FoundationBootstrapper, FoundationServices
 from alsoul.storage import create_schema, create_sqlite_engine
@@ -41,7 +44,7 @@ def bootstrapper(engine: Engine, now: datetime) -> FoundationBootstrapper:
 
 @pytest.fixture(autouse=True)
 def _qualified_f5_calendar_test_adapters(monkeypatch):
-    """Mark trusted local calendar fakes as implementing the F5.A capability contract."""
+    """Mark trusted local F5.A fakes with their explicit executable contracts."""
 
     for module_name, class_name in (
         ("test_f5_personal_calendar_acquisition", "_FakeCalendarAdapter"),
@@ -58,6 +61,20 @@ def _qualified_f5_calendar_test_adapters(monkeypatch):
                 "calendar.events.read.v1",
                 raising=False,
             )
+
+    presentation_module = sys.modules.get("test_f5_personal_calendar_presentation")
+    presentation_class = (
+        getattr(presentation_module, "_PresentationAdapter", None)
+        if presentation_module is not None
+        else None
+    )
+    if presentation_class is not None:
+        monkeypatch.setattr(
+            presentation_class,
+            "terminal_negative_semantics",
+            PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS,
+            raising=False,
+        )
     yield
 
 
