@@ -21,6 +21,7 @@ _NEW_TABLE_NAMES = frozenset(v8_metadata.tables).difference(v7_metadata.tables)
 _RECEIPT_SCOPES = (
     "SetPersonalCalendarDisclosurePolicy",
     "PresentPersonalCalendarOutput",
+    "BindPersonalCalendarPresentedEventProvenance",
 )
 
 
