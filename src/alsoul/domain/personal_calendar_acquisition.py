@@ -23,7 +23,6 @@ class CalendarReadCapabilityContract:
     max_pages: int
     max_events: int
     max_events_per_page: int
-    max_restarts: int = 0
     max_title_chars: int = 1024
     semantic_operation: str = "calendar.events.read"
     effect_class: str = "READ_ONLY"
@@ -31,9 +30,10 @@ class CalendarReadCapabilityContract:
     pagination_mode: str = "OPAQUE_CURSOR"
     coherent_snapshot_mode: str = "STABLE_SNAPSHOT_REF"
     recurrence_expansion_mode: str = "CONCRETE_OCCURRENCES"
+    raw_response_minimization_mode: str = "EPHEMERAL_TO_ALLOWLIST"
+    max_restarts: int = 0
     query_interval_semantics: str = "OVERLAP_COMPLETE_HALF_OPEN_WINDOW"
     history_compensation_mode: str = "PROHIBITED"
-    raw_response_minimization_mode: str = "EPHEMERAL_TO_ALLOWLIST"
 
 
 @dataclass(frozen=True, slots=True)
