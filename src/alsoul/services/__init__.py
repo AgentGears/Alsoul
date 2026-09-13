@@ -46,6 +46,7 @@ from . import personal_calendar_cognition as _personal_calendar_cognition
 from . import personal_calendar_presentation as _personal_calendar_presentation
 from .personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionServices
 from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
+from .personal_calendar_mutation import PersonalCalendarMutationAuthorityServices
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
@@ -91,6 +92,7 @@ __all__ = [
     "ModelRuntimeConfig",
     "PersonalCalendarAcquisitionServices",
     "PersonalCalendarCognitionServices",
+    "PersonalCalendarMutationAuthorityServices",
     "PersonalCalendarPresentationServices",
     "PresentationRuntimeConfig",
     "ProviderRecoveryCoordinator",
