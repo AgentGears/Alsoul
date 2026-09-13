@@ -17,8 +17,12 @@ from alsoul.services.conversation_open_loop import (
     F4ConversationOpenLoopService,
 )
 from alsoul.services.conversational_runtime import FoundationConversationalResponseRunResult
-from alsoul.services.interaction_routing import F4InteractionPurpose
+from alsoul.services.interaction_routing_current import (
+    CurrentInteractionPurpose,
+    CurrentInteractionPurposeGate,
+)
 from alsoul.services.memory_admission import F4MemoryAdmissionResult
+from alsoul.services.personal_calendar_runtime import PersonalCalendarResponseRunResult
 from alsoul.services.runtime import FoundationResponseRunResult, RuntimeCheckpoint
 
 
@@ -26,22 +30,25 @@ from alsoul.services.runtime import FoundationResponseRunResult, RuntimeCheckpoi
 class FoundationInteractionRunResult:
     """Outcome of the current bounded interaction-purpose gate."""
 
-    interaction_purpose: F4InteractionPurpose
+    interaction_purpose: CurrentInteractionPurpose
     memory_admission: F4MemoryAdmissionResult | None = None
     open_loop_transition: F4ConversationOpenLoopResult | None = None
     response: (
         FoundationResponseRunResult
         | FoundationConversationalResponseRunResult
+        | PersonalCalendarResponseRunResult
         | None
     ) = None
 
 
 class ConfiguredFoundationRuntime(ConfiguredFoundationRuntimeV1):
-    """Current runtime with governed ConversationOpenLoop admission/closure."""
+    """Current runtime with F4 continuity and specialized F5.A calendar routing."""
 
-    def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+    def __init__(self, *args, personal_calendar_coordinator=None, **kwargs) -> None:  # noqa: ANN002, ANN003
         super().__init__(*args, **kwargs)
         self.open_loop_service = F4ConversationOpenLoopService(self.services)
+        self.interaction_gate = CurrentInteractionPurposeGate(self.services)
+        self.personal_calendar_coordinator = personal_calendar_coordinator
 
     def interact(
         self,
@@ -59,6 +66,23 @@ class ConfiguredFoundationRuntime(ConfiguredFoundationRuntimeV1):
             expected_surface_binding_id=surface_binding_id,
             expected_channel_binding_id=channel_binding_id,
         )
+        if classification.purpose == "PERSONAL_CALENDAR_QUESTION":
+            if self.personal_calendar_coordinator is None:
+                fail(
+                    "PERSONAL_CALENDAR_RUNTIME_UNCONFIGURED",
+                    "personal-calendar interaction requires the specialized F5.A runtime",
+                )
+            response = self.personal_calendar_coordinator.respond(
+                relationship_id=relationship_id,
+                current_input_event_id=current_input_event_id,
+                surface_binding_id=surface_binding_id,
+                channel_binding_id=channel_binding_id,
+                after_process_loss=after_process_loss,
+            )
+            return FoundationInteractionRunResult(
+                interaction_purpose=classification.purpose,
+                response=response,
+            )
         if classification.purpose == "MEMORY_STATEMENT":
             memory = self.memory_admission.consider_event(current_input_event_id)
             return FoundationInteractionRunResult(
@@ -97,7 +121,7 @@ class ConfiguredFoundationRuntime(ConfiguredFoundationRuntimeV1):
             )
         fail(
             "INTERACTION_PURPOSE_UNSUPPORTED",
-            "input is outside the bounded F4 interaction-purpose contract",
+            "input is outside the bounded current interaction-purpose contract",
         )
 
 
