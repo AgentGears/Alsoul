@@ -28,8 +28,8 @@ def generate_or_recover(
     *,
     source_event_id: UUID,
     projection_id: UUID,
-    permission_id: UUID,
-    route_binding_id: UUID,
+    permission_provider,
+    route_provider,
 ) -> PersonalCalendarGenerationResult:
     with engine.connect() as conn:
         rows = conn.execute(
@@ -76,12 +76,13 @@ def generate_or_recover(
                 "an unresolved personal-calendar model transport must be reconciled before retry",
             )
         generation = len(rows) + 1
+
     return cognition.generate_answer_plan(
         GeneratePersonalCalendarAnswerPlanCommand(
             operation_id=operation_id(source_event_id, f"generate:{generation}"),
             projection_id=projection_id,
-            permission_id=permission_id,
-            route_binding_id=route_binding_id,
+            permission_id=permission_provider(),
+            route_binding_id=route_provider(),
         )
     )
 
@@ -92,7 +93,7 @@ def present_or_recover(
     *,
     source_event_id: UUID,
     companion_output_id: UUID,
-    permission_id: UUID,
+    permission_provider,
     surface_binding_id: UUID,
     channel_binding_id: UUID,
 ):
@@ -129,7 +130,7 @@ def present_or_recover(
             PresentPersonalCalendarOutputCommand(
                 operation_id=operation_id(source_event_id, f"present:{generation}"),
                 companion_output_id=companion_output_id,
-                permission_id=permission_id,
+                permission_id=permission_provider(),
                 surface_binding_id=surface_binding_id,
                 channel_binding_id=channel_binding_id,
             )
