@@ -24,6 +24,7 @@ from alsoul.services.calendar_runtime_recovery import (
     present_or_recover,
 )
 from alsoul.services.calendar_runtime_selector import CalendarRuntimeSelector
+from alsoul.services.calendar_runtime_stage import select_observation_generation
 from alsoul.services.personal_calendar import PersonalCalendarReadServices
 from alsoul.services.personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionServices
 from alsoul.services.personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
@@ -104,9 +105,14 @@ class PersonalCalendarResponseCoordinator:
             surface_binding_id,
             channel_binding_id,
         )
+        generation = select_observation_generation(
+            self.engine, current_input_event_id
+        )
         investigation = self.services.start_investigation(
             StartInvestigationCommand(
-                operation_id=operation_id(current_input_event_id, "investigation"),
+                operation_id=operation_id(
+                    current_input_event_id, f"investigation:{generation}"
+                ),
                 initiated_by_companion_person_id=source["companion_person_id"],
                 relationship_id=relationship_id,
                 objective="Answer one bounded personal calendar question.",
@@ -115,15 +121,22 @@ class PersonalCalendarResponseCoordinator:
         )
         observation = self.services.start_observation(
             StartObservationCommand(
-                operation_id=operation_id(current_input_event_id, "observation"),
+                operation_id=operation_id(
+                    current_input_event_id, f"observation:{generation}"
+                ),
                 investigation_id=investigation.investigation_id,
                 acquisition_kind="PERSONAL_CALENDAR_READ",
-                request_descriptor={"purpose": CALENDAR_EVENTS_READ},
+                request_descriptor={
+                    "purpose": CALENDAR_EVENTS_READ,
+                    "source_interaction_event_id": str(current_input_event_id),
+                },
             )
         )
         prepared = self.read_services.prepare_observation(
             PreparePersonalCalendarObservationCommand(
-                operation_id=operation_id(current_input_event_id, "prepare"),
+                operation_id=operation_id(
+                    current_input_event_id, f"prepare:{generation}"
+                ),
                 observation_id=observation.observation_id,
                 source_interaction_event_id=current_input_event_id,
             )
@@ -141,7 +154,9 @@ class PersonalCalendarResponseCoordinator:
         if acquired is None:
             acquired = self.acquisition.acquire(
                 AcquirePersonalCalendarObservationCommand(
-                    operation_id=operation_id(current_input_event_id, "acquire"),
+                    operation_id=operation_id(
+                        current_input_event_id, f"acquire:{generation}"
+                    ),
                     observation_id=observation.observation_id,
                     permission_id=current_permission(),
                     credential_binding_id=self.selector.select_credential(
@@ -152,7 +167,9 @@ class PersonalCalendarResponseCoordinator:
             )
         projection = self.cognition.build_projection(
             BuildPersonalCalendarProjectionCommand(
-                operation_id=operation_id(current_input_event_id, "projection"),
+                operation_id=operation_id(
+                    current_input_event_id, f"projection:{generation}"
+                ),
                 world_result_id=acquired.world_result_id,
                 current_input_event_id=current_input_event_id,
             )
@@ -167,7 +184,10 @@ class PersonalCalendarResponseCoordinator:
         )
         adopted = self.cognition.adopt_schedule_output(
             AdoptPersonalCalendarScheduleOutputCommand(
-                operation_id=operation_id(current_input_event_id, "adopt"),
+                operation_id=operation_id(
+                    current_input_event_id,
+                    f"adopt:{generation}:{generated.generated_output_id}",
+                ),
                 generated_output_id=generated.generated_output_id,
             )
         )
