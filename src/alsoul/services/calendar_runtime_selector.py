@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from alsoul.services.calendar_runtime_model_selection import select_model_route
-from alsoul.services.calendar_runtime_read_selection import select_read_bindings
+from alsoul.services.calendar_runtime_read_selection import (
+    select_credential_binding,
+    select_read_permission,
+)
 
 
 class CalendarRuntimeSelector:
@@ -13,12 +16,20 @@ class CalendarRuntimeSelector:
         self.model_adapter = model_adapter
         self.clock = clock
 
-    def select_read_bindings(self, **kwargs):
-        return select_read_bindings(
+    def select_permission(self, **kwargs):
+        return select_read_permission(
             self.engine,
             capability_contract=self.capability_contract,
             clock=self.clock,
             **kwargs,
+        )
+
+    def select_credential(self, *, relationship_id, resource_id):
+        return select_credential_binding(
+            self.engine,
+            relationship_id=relationship_id,
+            resource_id=resource_id,
+            capability_contract=self.capability_contract,
         )
 
     def select_model_route(self, relationship_id):
