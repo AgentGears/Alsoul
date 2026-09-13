@@ -12,7 +12,7 @@ from alsoul.storage import create_sqlite_engine
 
 
 class FoundationHostApplication:
-    """Own the process lifetime of the configured F4 runtime host.
+    """Own the process lifetime of the current configured runtime host.
 
     The host opens only pre-existing compatible state. It never creates schema,
     CompanionPerson identity, CounterpartPerson identity, or RelationshipState.
@@ -24,6 +24,7 @@ class FoundationHostApplication:
         *,
         config: FoundationHostConfig,
         secrets: RuntimeSecrets | None = None,
+        personal_calendar_coordinator=None,
     ) -> None:
         self.config = config
         self.readiness: HostReadiness = require_host_readiness(config)
@@ -34,6 +35,7 @@ class FoundationHostApplication:
             self.services,
             config=config.runtime,
             secrets=secrets or RuntimeSecrets(),
+            personal_calendar_coordinator=personal_calendar_coordinator,
         )
 
     def close(self) -> None:
