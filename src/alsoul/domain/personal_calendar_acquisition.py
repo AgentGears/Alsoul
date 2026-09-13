@@ -23,6 +23,7 @@ class CalendarReadCapabilityContract:
     max_pages: int
     max_events: int
     max_events_per_page: int
+    max_restarts: int = 0
     max_title_chars: int = 1024
     semantic_operation: str = "calendar.events.read"
     effect_class: str = "READ_ONLY"
