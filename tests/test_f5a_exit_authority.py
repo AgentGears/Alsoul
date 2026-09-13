@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select, update
+from sqlalchemy import func, insert, select, update
 
 import test_f5_personal_calendar_authority as authority_cases
 from alsoul.domain.errors import DomainError
@@ -141,11 +141,18 @@ def test_exit_permission_missing_expired_or_forged_grantor_blocks_dispatch(engin
         )
     assert _code(expired) == "CALENDAR_READ_PERMISSION_EXPIRED"
 
+    forged_grantor = uuid4()
     with engine.begin() as conn:
+        conn.execute(
+            insert(schema.counterpart_person).values(
+                counterpart_id=forged_grantor,
+                created_at=now,
+            )
+        )
         conn.execute(
             update(schema.permission_grant)
             .where(schema.permission_grant.c.permission_id == permission.permission_id)
-            .values(expires_at=None, grantor_ref=uuid4())
+            .values(expires_at=None, grantor_ref=forged_grantor)
         )
     with pytest.raises(DomainError) as forged:
         calendar.fence_read_page(
