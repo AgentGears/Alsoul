@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 
 import test_f5_personal_calendar_authority as authority_cases
 from alsoul.domain.errors import DomainError
@@ -165,6 +165,104 @@ def test_exit_permission_missing_expired_or_forged_grantor_blocks_dispatch(engin
             )
         )
     assert _code(forged) == "CALENDAR_READ_PERMISSION_MISMATCH"
+
+    with engine.connect() as conn:
+        assert conn.execute(
+            select(func.count()).select_from(
+                schema.personal_calendar_read_authority_fence
+            )
+        ).scalar_one() == 0
+
+
+def test_exit_unreadable_permission_state_blocks_dispatch(engine, now):
+    (
+        _ids,
+        _foundation,
+        calendar,
+        observation,
+        _resource,
+        credential,
+        permission,
+        _prepared,
+        _source_event,
+        _grant_event,
+    ) = authority_cases._bootstrap_calendar(engine, now)
+
+    with engine.begin() as conn:
+        conn.execute(
+            delete(schema.permission_head).where(
+                schema.permission_head.c.permission_id == permission.permission_id
+            )
+        )
+
+    with pytest.raises(DomainError) as unreadable:
+        calendar.fence_read_page(
+            authority_cases.FencePersonalCalendarReadPageCommand(
+                operation_id=uuid4(),
+                observation_id=observation.observation_id,
+                page_ordinal=0,
+                permission_id=permission.permission_id,
+                credential_binding_id=credential.credential_binding_id,
+            )
+        )
+    assert _code(unreadable) == "AUTHORITY_STATE_MISSING"
+
+    with engine.connect() as conn:
+        assert conn.execute(
+            select(func.count()).select_from(
+                schema.personal_calendar_read_authority_fence
+            )
+        ).scalar_one() == 0
+
+
+def test_exit_cross_relationship_permission_blocks_dispatch(engine, now):
+    (
+        ids,
+        _foundation,
+        calendar,
+        observation,
+        _resource,
+        credential,
+        permission,
+        _prepared,
+        _source_event,
+        _grant_event,
+    ) = authority_cases._bootstrap_calendar(engine, now)
+
+    other_counterpart_id = uuid4()
+    other_relationship_id = uuid4()
+    with engine.begin() as conn:
+        conn.execute(
+            insert(schema.counterpart_person).values(
+                counterpart_id=other_counterpart_id,
+                created_at=now,
+            )
+        )
+        conn.execute(
+            insert(schema.relationship_identity).values(
+                relationship_id=other_relationship_id,
+                companion_person_id=ids.companion_person_id,
+                counterpart_id=other_counterpart_id,
+                created_at=now,
+            )
+        )
+        conn.execute(
+            update(schema.permission_grant)
+            .where(schema.permission_grant.c.permission_id == permission.permission_id)
+            .values(relationship_id=other_relationship_id)
+        )
+
+    with pytest.raises(DomainError) as cross_relationship:
+        calendar.fence_read_page(
+            authority_cases.FencePersonalCalendarReadPageCommand(
+                operation_id=uuid4(),
+                observation_id=observation.observation_id,
+                page_ordinal=0,
+                permission_id=permission.permission_id,
+                credential_binding_id=credential.credential_binding_id,
+            )
+        )
+    assert _code(cross_relationship) == "CALENDAR_READ_PERMISSION_MISMATCH"
 
     with engine.connect() as conn:
         assert conn.execute(
