@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 
 import pytest
 from sqlalchemy import Engine
 
+from alsoul.domain.personal_calendar_presentation import (
+    PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS,
+)
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services import FoundationBootstrapper, FoundationServices
 from alsoul.storage import create_schema, create_sqlite_engine
@@ -36,6 +40,42 @@ def services(engine: Engine, now: datetime) -> FoundationServices:
 @pytest.fixture
 def bootstrapper(engine: Engine, now: datetime) -> FoundationBootstrapper:
     return FoundationBootstrapper(engine, clock=FixedClock(now), ids=UUIDGenerator())
+
+
+@pytest.fixture(autouse=True)
+def _qualified_f5_calendar_test_adapters(monkeypatch):
+    """Mark trusted local F5.A fakes with their explicit executable contracts."""
+
+    for module_name, class_name in (
+        ("test_f5_personal_calendar_acquisition", "_FakeCalendarAdapter"),
+        ("test_f5_personal_calendar_cognition", "_CalendarAdapter"),
+        ("test_f5_personal_calendar_generic_guards", "_CalendarAdapter"),
+        ("test_f5_personal_calendar_presentation", "_CalendarAdapter"),
+    ):
+        module = sys.modules.get(module_name)
+        adapter_class = getattr(module, class_name, None) if module is not None else None
+        if adapter_class is not None:
+            monkeypatch.setattr(
+                adapter_class,
+                "capability_contract_version",
+                "calendar.events.read.v1",
+                raising=False,
+            )
+
+    presentation_module = sys.modules.get("test_f5_personal_calendar_presentation")
+    presentation_class = (
+        getattr(presentation_module, "_PresentationAdapter", None)
+        if presentation_module is not None
+        else None
+    )
+    if presentation_class is not None:
+        monkeypatch.setattr(
+            presentation_class,
+            "terminal_negative_semantics",
+            PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS,
+            raising=False,
+        )
+    yield
 
 
 @pytest.fixture(autouse=True)
