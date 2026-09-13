@@ -11,14 +11,13 @@ from alsoul.domain.personal_calendar import (
     CALENDAR_EVENTS_READ,
     PreparePersonalCalendarObservationCommand,
 )
-from alsoul.domain.personal_calendar_acquisition import (
-    AcquirePersonalCalendarObservationCommand,
-)
+from alsoul.domain.personal_calendar_acquisition import AcquirePersonalCalendarObservationCommand
 from alsoul.domain.personal_calendar_cognition import (
     AdoptPersonalCalendarScheduleOutputCommand,
     BuildPersonalCalendarProjectionCommand,
 )
 from alsoul.domain.types import Clock, IdGenerator, SystemClock, UUIDGenerator
+from alsoul.services.calendar_runtime_acquisition_recovery import recover_acquisition
 from alsoul.services.calendar_runtime_recovery import (
     generate_or_recover,
     operation_id,
@@ -129,20 +128,28 @@ class PersonalCalendarResponseCoordinator:
                 source_interaction_event_id=current_input_event_id,
             )
         )
-        permission_id, credential_id = self.selector.select_read_bindings(
-            relationship_id=relationship_id,
-            companion_person_id=source["companion_person_id"],
-            counterpart_id=source["counterpart_id"],
-            resource_id=prepared.personal_resource_binding_id,
-        )
-        acquired = self.acquisition.acquire(
-            AcquirePersonalCalendarObservationCommand(
-                operation_id=operation_id(current_input_event_id, "acquire"),
-                observation_id=observation.observation_id,
-                permission_id=permission_id,
-                credential_binding_id=credential_id,
+
+        def current_permission():
+            return self.selector.select_permission(
+                relationship_id=relationship_id,
+                companion_person_id=source["companion_person_id"],
+                counterpart_id=source["counterpart_id"],
+                resource_id=prepared.personal_resource_binding_id,
             )
-        )
+
+        acquired = recover_acquisition(self.engine, observation.observation_id)
+        if acquired is None:
+            acquired = self.acquisition.acquire(
+                AcquirePersonalCalendarObservationCommand(
+                    operation_id=operation_id(current_input_event_id, "acquire"),
+                    observation_id=observation.observation_id,
+                    permission_id=current_permission(),
+                    credential_binding_id=self.selector.select_credential(
+                        relationship_id=relationship_id,
+                        resource_id=prepared.personal_resource_binding_id,
+                    ),
+                )
+            )
         projection = self.cognition.build_projection(
             BuildPersonalCalendarProjectionCommand(
                 operation_id=operation_id(current_input_event_id, "projection"),
@@ -155,8 +162,8 @@ class PersonalCalendarResponseCoordinator:
             self.cognition,
             source_event_id=current_input_event_id,
             projection_id=projection.projection_id,
-            permission_id=permission_id,
-            route_binding_id=self.selector.select_model_route(relationship_id),
+            permission_provider=current_permission,
+            route_provider=lambda: self.selector.select_model_route(relationship_id),
         )
         adopted = self.cognition.adopt_schedule_output(
             AdoptPersonalCalendarScheduleOutputCommand(
@@ -169,7 +176,7 @@ class PersonalCalendarResponseCoordinator:
             self.presentation,
             source_event_id=current_input_event_id,
             companion_output_id=adopted.companion_output_id,
-            permission_id=permission_id,
+            permission_provider=current_permission,
             surface_binding_id=surface_binding_id,
             channel_binding_id=channel_binding_id,
         )
@@ -207,7 +214,10 @@ class PersonalCalendarResponseCoordinator:
             or event["surface_binding_id"] != surface_id
             or event["channel_binding_id"] != channel_id
         ):
-            fail("PERSONAL_CALENDAR_RUNTIME_SOURCE_INVALID", "calendar runtime source does not match the trusted relationship route")
+            fail(
+                "PERSONAL_CALENDAR_RUNTIME_SOURCE_INVALID",
+                "calendar runtime source does not match the trusted relationship route",
+            )
         return {
             "companion_person_id": relationship["companion_person_id"],
             "counterpart_id": relationship["counterpart_id"],
