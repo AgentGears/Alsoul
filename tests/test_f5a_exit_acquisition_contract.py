@@ -81,6 +81,48 @@ def test_exit_calendar_query_contract_requires_complete_bounded_overlap_semantic
     assert adapter.requests == []
 
 
+@pytest.mark.parametrize(
+    ("page", "expected_code"),
+    [
+        (
+            PersonalCalendarReadPage(
+                events=(),
+                snapshot_ref="snapshot-terminal-with-cursor",
+                snapshot_as_of=None,
+                next_page_token="unexpected-cursor",
+                terminal=True,
+            ),
+            "CALENDAR_PAGINATION_TERMINAL_INVALID",
+        ),
+        (
+            PersonalCalendarReadPage(
+                events=(),
+                snapshot_ref="snapshot-nonterminal-without-cursor",
+                snapshot_as_of=None,
+                next_page_token=None,
+                terminal=False,
+            ),
+            "CALENDAR_PAGINATION_INCOMPLETE",
+        ),
+    ],
+)
+def test_exit_calendar_pagination_requires_consistent_terminal_evidence(
+    engine, now, page, expected_code
+):
+    ctx = acquisition_cases._bootstrap_calendar(engine, now)
+    adapter = acquisition_cases._FakeCalendarAdapter([page])
+    with pytest.raises(DomainError) as invalid:
+        _service(engine, now, adapter, acquisition_cases._contract()).acquire(
+            acquisition_cases._command(ctx)
+        )
+    assert invalid.value.code == expected_code
+    assert len(adapter.requests) == 1
+    with engine.connect() as conn:
+        assert conn.execute(
+            select(schema.personal_calendar_world_result.c.world_result_id)
+        ).scalar_one_or_none() is None
+
+
 def test_exit_calendar_same_observation_restart_budget_is_bounded(engine, now):
     ctx = acquisition_cases._bootstrap_calendar(engine, now)
     contract = replace(acquisition_cases._contract(), max_pages=1, max_restarts=1)
