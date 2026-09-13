@@ -11,7 +11,7 @@ from alsoul.adapters.json_personal_calendar_presentation import (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class JsonPersonalCalendarPresentationAdapter(
     JsonPersonalCalendarPresentationAdapterV1
 ):
