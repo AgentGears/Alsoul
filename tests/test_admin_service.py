@@ -10,6 +10,9 @@ from alsoul.services import FoundationBootstrapper, FoundationServices
 from alsoul.storage import create_sqlite_engine
 
 
+_HEAD = "0009_personal_calendar_mutation_authority"
+
+
 def test_administrator_initializes_migrates_and_bootstraps_fresh_store(tmp_path):
     database = tmp_path / "alsoul.db"
     admin = FoundationAdministrator()
@@ -20,7 +23,7 @@ def test_administrator_initializes_migrates_and_bootstraps_fresh_store(tmp_path)
 
     initialized = admin.initialize_store(database)
     assert initialized.database_path == database.resolve()
-    assert initialized.schema_revision == "0008_personal_calendar_presentation"
+    assert initialized.schema_revision == _HEAD
 
     empty = admin.status(database)
     assert empty.schema_at_head
@@ -30,8 +33,8 @@ def test_administrator_initializes_migrates_and_bootstraps_fresh_store(tmp_path)
     assert empty.relationship_count == 0
 
     migrated = admin.migrate_store(database)
-    assert migrated.previous_revision == "0008_personal_calendar_presentation"
-    assert migrated.schema_revision == "0008_personal_calendar_presentation"
+    assert migrated.previous_revision == _HEAD
+    assert migrated.schema_revision == _HEAD
     assert migrated.changed is False
 
     external_subject = str(uuid4())
