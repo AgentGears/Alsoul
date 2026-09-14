@@ -55,7 +55,6 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
     def present_create_approval(
         self, command: PresentPersonalCalendarCreateApprovalCommand
     ) -> PersonalCalendarCreateApprovalPresentationResult:
-        adapter = self._require_approval_adapter()
         req = request_digest(asdict(command))
         with self.engine.connect() as conn:
             replay = load_operation_receipt(
@@ -66,6 +65,19 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
             )
             if replay:
                 return self._presentation_result_from_json(replay)
+            existing = conn.execute(
+                select(schema.personal_calendar_create_approval_presentation).where(
+                    schema.personal_calendar_create_approval_presentation.c.action_id
+                    == command.action_id
+                )
+            ).mappings().one_or_none()
+        if existing is not None:
+            return self._bind_existing_presentation_operation(
+                command=command, req=req, presentation=dict(existing)
+            )
+
+        adapter = self._require_approval_adapter()
+        with self.engine.connect() as conn:
             action, source_event, relationship, resource = self._load_action_lineage(
                 conn, command.action_id
             )
@@ -75,14 +87,6 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                 relationship=relationship,
                 resource=resource,
             )
-            existing = conn.execute(
-                select(schema.personal_calendar_create_approval_presentation).where(
-                    schema.personal_calendar_create_approval_presentation.c.action_id
-                    == command.action_id
-                )
-            ).mappings().one_or_none()
-            if existing is not None:
-                return self._presentation_result_from_row(existing)
             consent = self._consent_payload(action=action, resource=resource)
             surface_binding_id = source_event["surface_binding_id"]
             channel_binding_id = source_event["channel_binding_id"]
@@ -101,7 +105,6 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
         )
         consent_text = self._render_consent(consent)
         consent_digest = sha256_text(canonical_json(consent))
-
         try:
             acceptance = adapter.present_calendar_create_approval(
                 presentation_key=presentation_key,
@@ -143,15 +146,6 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
 
         presentation_id = self.ids.new()
         now = self.clock.now()
-        result_json = {
-            "approval_presentation_id": str(presentation_id),
-            "action_id": str(command.action_id),
-            "action_digest": action["action_digest"],
-            "consent_payload_digest": consent_digest,
-            "presentation_key": presentation_key,
-            "acceptance_ref": acceptance.receipt_ref.strip(),
-            "presented_at": now.isoformat(),
-        }
         try:
             with self.engine.begin() as conn:
                 replay = load_operation_receipt(
@@ -169,7 +163,13 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                     )
                 ).mappings().one_or_none()
                 if existing is not None:
-                    return self._presentation_result_from_row(existing)
+                    return self._bind_existing_presentation_operation_in_connection(
+                        conn,
+                        command=command,
+                        req=req,
+                        presentation=dict(existing),
+                    )
+
                 current_action, current_source, current_relationship, current_resource = (
                     self._load_action_lineage(conn, command.action_id)
                 )
@@ -192,6 +192,18 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                         "CALENDAR_CREATE_APPROVAL_PRESENTATION_STALE",
                         "Action semantics or trusted presentation route changed before consent acceptance was committed",
                     )
+                timeline = conn.execute(
+                    select(schema.relationship_timeline_head).where(
+                        schema.relationship_timeline_head.c.relationship_id
+                        == current_action["relationship_id"]
+                    )
+                ).mappings().one_or_none()
+                if timeline is None:
+                    fail(
+                        "CALENDAR_CREATE_APPROVAL_TIMELINE_MISSING",
+                        "calendar-create approval presentation lacks canonical Timeline state",
+                    )
+                frontier = int(timeline["last_timeline_seq"])
                 conn.execute(
                     insert(schema.personal_calendar_create_approval_presentation).values(
                         approval_presentation_id=presentation_id,
@@ -217,12 +229,21 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                         presented_to_counterpart_id=current_action["counterpart_id"],
                         surface_binding_id=surface_binding_id,
                         channel_binding_id=channel_binding_id,
+                        presentation_timeline_frontier=frontier,
                         presentation_key=presentation_key,
                         sink_binding_ref=sink_binding_ref,
                         presentation_contract_version=contract_version,
                         presentation_acceptance_ref=acceptance.receipt_ref.strip(),
                         presented_at=now,
                     )
+                )
+                result_json = self._presentation_result_json(
+                    presentation_id=presentation_id,
+                    action=current_action,
+                    consent_digest=consent_digest,
+                    presentation_key=presentation_key,
+                    acceptance_ref=acceptance.receipt_ref.strip(),
+                    presented_at=now,
                 )
                 save_operation_receipt(
                     conn,
@@ -234,12 +255,12 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                     result_json=result_json,
                     committed_at=now,
                 )
+                return self._presentation_result_from_json(result_json)
         except IntegrityError as exc:
             raise DomainError(
                 "CALENDAR_CREATE_APPROVAL_PRESENTATION_CONFLICT",
                 "calendar-create Action already has a competing consent presentation",
             ) from exc
-        return self._presentation_result_from_json(result_json)
 
     def admit_create_approval(
         self, command: AdmitPersonalCalendarCreateApprovalCommand
@@ -254,14 +275,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                     expected_request_digest=req,
                 )
                 if replay:
-                    return PersonalCalendarCreateApprovalResult(
-                        approval_id=UUID(replay["approval_id"]),
-                        action_id=UUID(replay["action_id"]),
-                        approval_presentation_id=UUID(
-                            replay["approval_presentation_id"]
-                        ),
-                        revision=int(replay["revision"]),
-                    )
+                    return self._approval_result_from_json(replay)
                 presentation = conn.execute(
                     select(schema.personal_calendar_create_approval_presentation).where(
                         schema.personal_calendar_create_approval_presentation.c.approval_presentation_id
@@ -300,11 +314,20 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                     or source["surface_binding_id"] != presentation["surface_binding_id"]
                     or source["channel_binding_id"] != presentation["channel_binding_id"]
                     or source["content_text"] != CALENDAR_CREATE_APPROVAL_TEXT
-                    or source["recorded_at"] < presentation["presented_at"]
                 ):
                     fail(
                         "CALENDAR_CREATE_APPROVAL_PROVENANCE_INVALID",
-                        "Approval must come from the authorized counterpart after the faithful consent presentation on the same trusted route",
+                        "Approval must come from the authorized counterpart on the same trusted route",
+                    )
+                source_seq = int(source["timeline_seq"])
+                if (
+                    source_seq <= int(presentation["presentation_timeline_frontier"])
+                    or _aware_utc(source["recorded_at"])
+                    < _aware_utc(presentation["presented_at"])
+                ):
+                    fail(
+                        "CALENDAR_CREATE_APPROVAL_PROVENANCE_INVALID",
+                        "Approval input must occur after the accepted faithful consent presentation",
                     )
                 timeline = conn.execute(
                     select(schema.relationship_timeline_head).where(
@@ -312,12 +335,12 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                         == action["relationship_id"]
                     )
                 ).mappings().one_or_none()
-                source_seq = int(source["timeline_seq"])
                 if timeline is None or int(timeline["last_timeline_seq"]) != source_seq:
                     fail(
                         "CALENDAR_CREATE_APPROVAL_SOURCE_NOT_CURRENT",
                         "Approval input must be the current counterpart Timeline event",
                     )
+
                 existing = conn.execute(
                     select(schema.personal_calendar_create_approval).where(
                         schema.personal_calendar_create_approval.c.action_id
@@ -325,6 +348,31 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                     )
                 ).mappings().one_or_none()
                 if existing is not None:
+                    if (
+                        existing["approval_presentation_id"]
+                        == command.approval_presentation_id
+                        and existing["source_interaction_event_id"]
+                        == command.source_interaction_event_id
+                    ):
+                        result_json = {
+                            "approval_id": str(existing["approval_id"]),
+                            "action_id": str(existing["action_id"]),
+                            "approval_presentation_id": str(
+                                existing["approval_presentation_id"]
+                            ),
+                            "revision": 1,
+                        }
+                        save_operation_receipt(
+                            conn,
+                            scope=_ADMIT_SCOPE,
+                            operation_id=command.operation_id,
+                            req_digest=req,
+                            result_kind="PersonalCalendarCreateApproval",
+                            result_ref=existing["approval_id"],
+                            result_json=result_json,
+                            committed_at=self.clock.now(),
+                        )
+                        return self._approval_result_from_json(result_json)
                     fail(
                         "CALENDAR_CREATE_APPROVAL_ALREADY_EXISTS",
                         "calendar-create Action already has an Approval",
@@ -397,9 +445,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                         effect_class=CALENDAR_CREATE_EFFECT_CLASS,
                         approval_ceremony_source=CALENDAR_CREATE_APPROVAL_CEREMONY,
                         approval_policy_revision=authority["policy_revision"],
-                        approval_policy_version=authority["policy"][
-                            "ai_policy_version"
-                        ],
+                        approval_policy_version=authority["policy"]["ai_policy_version"],
                         relationship_authority_revision=authority[
                             "relationship_revision"
                         ],
@@ -445,12 +491,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                     result_json=result_json,
                     committed_at=now,
                 )
-                return PersonalCalendarCreateApprovalResult(
-                    approval_id=approval_id,
-                    action_id=action["action_id"],
-                    approval_presentation_id=command.approval_presentation_id,
-                    revision=1,
-                )
+                return self._approval_result_from_json(result_json)
         except IntegrityError as exc:
             raise DomainError(
                 "CALENDAR_CREATE_APPROVAL_CONFLICT",
@@ -530,6 +571,47 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                 "calendar-create Approval state advanced concurrently",
             ) from exc
 
+    def _bind_existing_presentation_operation(self, *, command, req, presentation):
+        with self.engine.begin() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=_PRESENT_SCOPE,
+                operation_id=command.operation_id,
+                expected_request_digest=req,
+            )
+            if replay:
+                return self._presentation_result_from_json(replay)
+            current = conn.execute(
+                select(schema.personal_calendar_create_approval_presentation).where(
+                    schema.personal_calendar_create_approval_presentation.c.action_id
+                    == command.action_id
+                )
+            ).mappings().one_or_none()
+            if current is None:
+                fail(
+                    "CALENDAR_CREATE_APPROVAL_PRESENTATION_NOT_FOUND",
+                    "approval presentation disappeared during deterministic replay",
+                )
+            return self._bind_existing_presentation_operation_in_connection(
+                conn, command=command, req=req, presentation=dict(current)
+            )
+
+    def _bind_existing_presentation_operation_in_connection(
+        self, conn, *, command, req, presentation
+    ):
+        result_json = self._presentation_result_json_from_row(presentation)
+        save_operation_receipt(
+            conn,
+            scope=_PRESENT_SCOPE,
+            operation_id=command.operation_id,
+            req_digest=req,
+            result_kind="PersonalCalendarCreateApprovalPresentation",
+            result_ref=presentation["approval_presentation_id"],
+            result_json=result_json,
+            committed_at=self.clock.now(),
+        )
+        return self._presentation_result_from_json(result_json)
+
     def _require_approval_adapter(self) -> CalendarApprovalPresentationAdapter:
         adapter = self.approval_adapter
         if adapter is None or not isinstance(adapter, CalendarApprovalPresentationAdapter):
@@ -560,10 +642,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
             )
         ).mappings().one_or_none()
         if action is None:
-            fail(
-                "CALENDAR_CREATE_ACTION_NOT_FOUND",
-                "calendar-create Action does not exist",
-            )
+            fail("CALENDAR_CREATE_ACTION_NOT_FOUND", "calendar-create Action does not exist")
         source = conn.execute(
             select(schema.interaction_event).where(
                 schema.interaction_event.c.event_id
@@ -594,8 +673,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                 "CALENDAR_CREATE_ACTION_PROVENANCE_INVALID",
                 "calendar-create Action lineage is inconsistent",
             )
-        expected_digest = self._action_digest(action)
-        if expected_digest != action["action_digest"]:
+        if self._action_digest(action) != action["action_digest"]:
             fail(
                 "CALENDAR_CREATE_ACTION_DIGEST_INVALID",
                 "calendar-create Action digest does not match immutable semantics",
@@ -607,10 +685,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
             conn, action["relationship_id"]
         )
         if relationship_state["status"] != "ACTIVE":
-            fail(
-                "RELATIONSHIP_NOT_ACTIVE",
-                "calendar-create relationship authority is not active",
-            )
+            fail("RELATIONSHIP_NOT_ACTIVE", "calendar-create relationship authority is not active")
         current_resource, resource_state, resource_revision = self._current_resource(
             conn, action["personal_resource_binding_id"]
         )
@@ -627,15 +702,12 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                 "CALENDAR_CREATE_APPROVAL_RESOURCE_NOT_CURRENT",
                 "calendar-create Approval target is not the unique active calendar",
             )
-        policy, policy_revision = self._current_create_policy(
-            conn, action["relationship_id"]
-        )
+        policy, policy_revision = self._current_create_policy(conn, action["relationship_id"])
         if (
             policy["status"] != "ALLOW"
             or policy["capability_semantic_operation"] != CALENDAR_EVENT_CREATE
             or policy["capability_effect_class"] != CALENDAR_CREATE_EFFECT_CLASS
-            or policy["capability_contract_version"]
-            != action["capability_contract_version"]
+            or policy["capability_contract_version"] != action["capability_contract_version"]
             or str(action["personal_resource_binding_id"])
             not in policy["allowed_resource_binding_ids_json"]
         ):
@@ -660,19 +732,15 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
         now = _aware_utc(self.clock.now())
         if (
             permission_state["status"] != "ACTIVE"
-            or grant["holder_companion_person_id"]
-            != relationship["companion_person_id"]
+            or grant["holder_companion_person_id"] != relationship["companion_person_id"]
             or grant["counterpart_id"] != action["counterpart_id"]
             or grant["relationship_id"] != action["relationship_id"]
-            or grant["personal_resource_binding_id"]
-            != action["personal_resource_binding_id"]
+            or grant["personal_resource_binding_id"] != action["personal_resource_binding_id"]
             or grant["capability_semantic_operation"] != CALENDAR_EVENT_CREATE
-            or grant["capability_contract_version"]
-            != action["capability_contract_version"]
+            or grant["capability_contract_version"] != action["capability_contract_version"]
             or grant["operation_class"] != CALENDAR_CREATE_EFFECT_CLASS
             or grant["grantor_ref"] != action["counterpart_id"]
-            or grant["grant_policy_version"]
-            != policy["permission_grant_policy_version"]
+            or grant["grant_policy_version"] != policy["permission_grant_policy_version"]
             or (
                 grant["expires_at"] is not None
                 and _aware_utc(grant["expires_at"]) <= now
@@ -698,8 +766,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
             or presentation["action_digest"] != action["action_digest"]
             or presentation["capability_semantic_operation"] != CALENDAR_EVENT_CREATE
             or presentation["effect_class"] != CALENDAR_CREATE_EFFECT_CLASS
-            or presentation["personal_resource_binding_id"]
-            != action["personal_resource_binding_id"]
+            or presentation["personal_resource_binding_id"] != action["personal_resource_binding_id"]
             or presentation["target_calendar_display_identity"]
             != consent["target_calendar_display_identity"]
             or presentation["summary"] != action["summary"]
@@ -721,26 +788,18 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
 
     def _consent_payload(self, *, action, resource) -> dict[str, Any]:
         return {
-            "consent_rendering_version": (
-                CALENDAR_CREATE_APPROVAL_CONSENT_RENDERING_VERSION
-            ),
+            "consent_rendering_version": CALENDAR_CREATE_APPROVAL_CONSENT_RENDERING_VERSION,
             "action_id": str(action["action_id"]),
             "action_digest": action["action_digest"],
             "capability_semantic_operation": CALENDAR_EVENT_CREATE,
             "effect_class": CALENDAR_CREATE_EFFECT_CLASS,
-            "personal_resource_binding_id": str(
-                action["personal_resource_binding_id"]
-            ),
+            "personal_resource_binding_id": str(action["personal_resource_binding_id"]),
             "target_calendar_display_identity": self._display_identity(resource),
             "summary": action["summary"],
             "start_text": action["start_text"],
             "end_text": action["end_text"],
-            "normalized_start_at": _aware_utc(
-                action["normalized_start_at"]
-            ).isoformat(),
-            "normalized_end_at": _aware_utc(
-                action["normalized_end_at"]
-            ).isoformat(),
+            "normalized_start_at": _aware_utc(action["normalized_start_at"]).isoformat(),
+            "normalized_end_at": _aware_utc(action["normalized_end_at"]).isoformat(),
         }
 
     @staticmethod
@@ -749,8 +808,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
             "Approve this calendar mutation?\n"
             f"Calendar: {consent['target_calendar_display_identity']}\n"
             f"Title: {consent['summary']}\n"
-            f"Start: {consent['start_text']} "
-            f"({consent['normalized_start_at']})\n"
+            f"Start: {consent['start_text']} ({consent['normalized_start_at']})\n"
             f"End: {consent['end_text']} ({consent['normalized_end_at']})\n"
             f"Capability: {consent['capability_semantic_operation']}\n"
             f"Effect: {consent['effect_class']}"
@@ -783,32 +841,28 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
 
     @staticmethod
     def _action_digest(action) -> str:
-        payload = {
-            "action_schema_version": CALENDAR_CREATE_ACTION_SCHEMA_VERSION,
-            "relationship_id": str(action["relationship_id"]),
-            "personal_resource_binding_id": str(
-                action["personal_resource_binding_id"]
-            ),
-            "source_interaction_event_id": str(action["source_interaction_event_id"]),
-            "summary": action["summary"],
-            "start_text": action["start_text"],
-            "end_text": action["end_text"],
-            "normalized_start_at": _aware_utc(
-                action["normalized_start_at"]
-            ).isoformat(),
-            "normalized_end_at": _aware_utc(
-                action["normalized_end_at"]
-            ).isoformat(),
-            "capability_semantic_operation": CALENDAR_EVENT_CREATE,
-            "capability_contract_version": action["capability_contract_version"],
-        }
-        return sha256_text(canonical_json(payload))
+        return sha256_text(
+            canonical_json(
+                {
+                    "action_schema_version": CALENDAR_CREATE_ACTION_SCHEMA_VERSION,
+                    "relationship_id": str(action["relationship_id"]),
+                    "personal_resource_binding_id": str(action["personal_resource_binding_id"]),
+                    "source_interaction_event_id": str(action["source_interaction_event_id"]),
+                    "summary": action["summary"],
+                    "start_text": action["start_text"],
+                    "end_text": action["end_text"],
+                    "normalized_start_at": _aware_utc(action["normalized_start_at"]).isoformat(),
+                    "normalized_end_at": _aware_utc(action["normalized_end_at"]).isoformat(),
+                    "capability_semantic_operation": CALENDAR_EVENT_CREATE,
+                    "capability_contract_version": action["capability_contract_version"],
+                }
+            )
+        )
 
     def _current_approval(self, conn, approval_id: UUID):
         head = conn.execute(
             select(schema.personal_calendar_create_approval_head).where(
-                schema.personal_calendar_create_approval_head.c.approval_id
-                == approval_id
+                schema.personal_calendar_create_approval_head.c.approval_id == approval_id
             )
         ).mappings().one_or_none()
         if head is None:
@@ -819,8 +873,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
         revision = int(head["current_revision"])
         state = conn.execute(
             select(schema.personal_calendar_create_approval_state).where(
-                schema.personal_calendar_create_approval_state.c.approval_id
-                == approval_id,
+                schema.personal_calendar_create_approval_state.c.approval_id == approval_id,
                 schema.personal_calendar_create_approval_state.c.revision == revision,
             )
         ).mappings().one_or_none()
@@ -830,6 +883,32 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
                 "calendar-create Approval revision is missing",
             )
         return dict(state), revision
+
+    @staticmethod
+    def _presentation_result_json(
+        *, presentation_id, action, consent_digest, presentation_key, acceptance_ref, presented_at
+    ):
+        return {
+            "approval_presentation_id": str(presentation_id),
+            "action_id": str(action["action_id"]),
+            "action_digest": action["action_digest"],
+            "consent_payload_digest": consent_digest,
+            "presentation_key": presentation_key,
+            "acceptance_ref": acceptance_ref,
+            "presented_at": presented_at.isoformat(),
+        }
+
+    @staticmethod
+    def _presentation_result_json_from_row(row):
+        return {
+            "approval_presentation_id": str(row["approval_presentation_id"]),
+            "action_id": str(row["action_id"]),
+            "action_digest": row["action_digest"],
+            "consent_payload_digest": row["consent_payload_digest"],
+            "presentation_key": row["presentation_key"],
+            "acceptance_ref": row["presentation_acceptance_ref"],
+            "presented_at": row["presented_at"].isoformat(),
+        }
 
     @staticmethod
     def _presentation_result_from_json(payload: dict[str, Any]):
@@ -844,15 +923,12 @@ class PersonalCalendarApprovalServices(PersonalCalendarActionServices):
         )
 
     @staticmethod
-    def _presentation_result_from_row(row):
-        return PersonalCalendarCreateApprovalPresentationResult(
-            approval_presentation_id=row["approval_presentation_id"],
-            action_id=row["action_id"],
-            action_digest=row["action_digest"],
-            consent_payload_digest=row["consent_payload_digest"],
-            presentation_key=row["presentation_key"],
-            acceptance_ref=row["presentation_acceptance_ref"],
-            presented_at=row["presented_at"],
+    def _approval_result_from_json(payload: dict[str, Any]):
+        return PersonalCalendarCreateApprovalResult(
+            approval_id=UUID(payload["approval_id"]),
+            action_id=UUID(payload["action_id"]),
+            approval_presentation_id=UUID(payload["approval_presentation_id"]),
+            revision=int(payload["revision"]),
         )
 
 
