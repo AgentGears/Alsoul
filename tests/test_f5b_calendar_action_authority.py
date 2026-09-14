@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select
 
 from alsoul.domain.errors import DomainError
 from alsoul.domain.personal_calendar_action import (
@@ -278,7 +278,7 @@ def test_read_permission_cannot_substitute_for_write_permission(engine, now):
     _assert_code(denied, "CALENDAR_CREATE_PERMISSION_MISSING")
 
 
-def test_revoked_write_permission_and_current_policy_denial_block_action(engine, now):
+def test_revoked_write_permission_blocks_action(engine, now):
     ids, foundation, service, resource, _, write_permission, _ = (
         _bootstrap_write_authority(engine, now)
     )
@@ -298,12 +298,6 @@ def test_revoked_write_permission_and_current_policy_denial_block_action(engine,
             source,
         )
     _assert_code(revoked, "CALENDAR_CREATE_PERMISSION_DENIED")
-
-    engine2 = engine
-    # The first case already consumed this fixture's single relationship. Policy denial
-    # is exercised by restoring a new active Permission is intentionally prohibited;
-    # use a separate test below to keep write-Permission identities monotonic.
-    assert engine2 is engine
 
 
 def test_current_create_policy_deny_blocks_action(engine, now):
@@ -431,3 +425,88 @@ def test_write_permission_requires_exact_current_counterpart_grant_and_is_single
             )
         )
     _assert_code(reused, "CALENDAR_CREATE_PERMISSION_PROVENANCE_REUSED")
+
+
+def test_policy_revision_collision_is_translated_after_transaction_rollback(engine, now):
+    ids, _, service, resource, _, _, _ = _bootstrap_write_authority(
+        engine, now, grant_permission=False
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            insert(schema.personal_calendar_create_policy_revision).values(
+                relationship_id=ids.relationship_id,
+                revision=2,
+                parent_revision=1,
+                capability_semantic_operation="calendar.event.create",
+                capability_contract_version=_CREATE_CAPABILITY_VERSION,
+                capability_effect_class="WRITE",
+                ai_policy_version="collision-policy-v2",
+                resource_scope_version="collision-scope-v2",
+                required_provider_scope=_CREATE_PROVIDER_SCOPE,
+                permission_grant_policy_version=_CREATE_GRANT_POLICY_VERSION,
+                allowed_resource_binding_ids_json=[
+                    str(resource.personal_resource_binding_id)
+                ],
+                status="ALLOW",
+                committed_at=now,
+            )
+        )
+
+    with pytest.raises(DomainError) as conflict:
+        service.set_create_policy(
+            SetCalendarCreatePolicyCommand(
+                operation_id=uuid4(),
+                companion_person_id=ids.companion_person_id,
+                counterpart_id=ids.counterpart_id,
+                relationship_id=ids.relationship_id,
+                capability_contract_version=_CREATE_CAPABILITY_VERSION,
+                ai_policy_version="calendar-create-policy-v2",
+                resource_scope_version="calendar-create-resource-scope-v2",
+                required_provider_scope=_CREATE_PROVIDER_SCOPE,
+                permission_grant_policy_version=_CREATE_GRANT_POLICY_VERSION,
+                allowed_resource_binding_ids=(resource.personal_resource_binding_id,),
+            )
+        )
+    _assert_code(conflict, "CALENDAR_CREATE_POLICY_CONFLICT")
+
+    with engine.connect() as conn:
+        head = conn.execute(
+            select(schema.personal_calendar_create_policy_head.c.current_revision).where(
+                schema.personal_calendar_create_policy_head.c.relationship_id
+                == ids.relationship_id
+            )
+        ).scalar_one()
+    assert head == 1
+
+
+def test_permission_revision_collision_is_translated_after_transaction_rollback(
+    engine, now
+):
+    _, _, service, _, _, write_permission, _ = _bootstrap_write_authority(engine, now)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(schema.personal_calendar_write_permission_state).values(
+                permission_id=write_permission.permission_id,
+                revision=2,
+                parent_revision=1,
+                status="REVOKED",
+                committed_at=now,
+            )
+        )
+
+    with pytest.raises(DomainError) as conflict:
+        service.set_create_permission_status(
+            SetCalendarCreatePermissionStatusCommand(
+                operation_id=uuid4(), permission_id=write_permission.permission_id
+            )
+        )
+    _assert_code(conflict, "CALENDAR_CREATE_PERMISSION_STATE_CONFLICT")
+
+    with engine.connect() as conn:
+        head = conn.execute(
+            select(schema.personal_calendar_write_permission_head.c.current_revision).where(
+                schema.personal_calendar_write_permission_head.c.permission_id
+                == write_permission.permission_id
+            )
+        ).scalar_one()
+    assert head == 1
