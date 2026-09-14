@@ -1,8 +1,7 @@
 """Current persistence schema.
 
-Historical schema modules remain frozen. Schema v8 extends executable F5.A through
-current first-presentation freshness/disclosure authority, durable presentation
-attempt generations, and content-free sink acceptance reconciliation.
+Historical schema modules remain frozen. Schema v9 begins executable F5.B with
+calendar-create policy, write Permission provenance, and immutable Action admission.
 """
 
-from .schema_v8 import *  # noqa: F401,F403
+from .schema_v9 import *  # noqa: F401,F403
