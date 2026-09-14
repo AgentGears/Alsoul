@@ -12,7 +12,6 @@ from sqlalchemy import (
     String,
     Table,
     Text,
-    UniqueConstraint,
     Uuid,
 )
 
@@ -74,6 +73,7 @@ personal_calendar_create_approval_presentation = Table(
         ForeignKey("channel_binding.channel_binding_id"),
         nullable=False,
     ),
+    Column("presentation_timeline_frontier", BigInteger, nullable=False),
     Column("presentation_key", String(256), nullable=False, unique=True),
     Column("sink_binding_ref", String(128), nullable=False),
     Column("presentation_contract_version", String(128), nullable=False),
