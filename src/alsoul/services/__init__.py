@@ -48,10 +48,11 @@ from .memory_admission import (
     propose_f4_memory,
 )
 from . import personal_calendar_acquisition as _personal_calendar_acquisition
+from . import personal_calendar_action as _personal_calendar_action
 from . import personal_calendar_cognition as _personal_calendar_cognition
 from . import personal_calendar_presentation as _personal_calendar_presentation
 from .personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionServices
-from .personal_calendar_action import PersonalCalendarActionServices
+from .personal_calendar_action_v2 import PersonalCalendarActionServices
 from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
 from .personal_calendar_runtime import (
@@ -66,6 +67,7 @@ from .runtime import FoundationResponseCoordinator
 _personal_calendar_acquisition.PersonalCalendarAcquisitionServices = (
     PersonalCalendarAcquisitionServices
 )
+_personal_calendar_action.PersonalCalendarActionServices = PersonalCalendarActionServices
 _personal_calendar_cognition.PersonalCalendarCognitionServices = (
     PersonalCalendarCognitionServices
 )
