@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     interact = commands.add_parser(
         "interact",
-        help="Admit one trusted first-party input envelope and run the bounded F4 interaction",
+        help="Admit one trusted first-party input envelope and run the current bounded interaction",
     )
     interact.add_argument("--after-process-loss", action="store_true")
     interact.set_defaults(reads_ingress=True)
@@ -178,31 +178,30 @@ def _uuid(value: str) -> UUID:
 
 def _emit_success(operation: str, result: Any) -> None:
     payload = {"ok": True, "operation": operation, "result": _jsonable(result)}
-    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    print(json.dumps(payload, sort_keys=True))
 
 
 def _emit_error(code: str, message: str, *, details: Any | None = None) -> None:
-    error: dict[str, Any] = {"code": code, "message": message}
+    payload: dict[str, Any] = {"ok": False, "error": {"code": code, "message": message}}
     if details is not None:
-        error["details"] = details
-    print(
-        json.dumps({"ok": False, "error": error}, sort_keys=True, separators=(",", ":")),
-        file=sys.stderr,
-    )
+        payload["error"]["details"] = details
+    print(json.dumps(payload, sort_keys=True), file=sys.stderr)
 
 
 def _jsonable(value: Any) -> Any:
-    if is_dataclass(value):
-        return _jsonable(asdict(value))
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
     if isinstance(value, UUID):
         return str(value)
     if isinstance(value, Enum):
         return value.value
+    if is_dataclass(value):
+        return _jsonable(asdict(value))
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)):
+    if isinstance(value, (list, tuple)):
         return [_jsonable(item) for item in value]
-    return value
+    return str(value)
 
 
 if __name__ == "__main__":

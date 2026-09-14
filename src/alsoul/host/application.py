@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from alsoul.host.config import FoundationHostConfig
 from alsoul.host.readiness import HostReadiness, require_host_readiness
 from alsoul.services import (
@@ -12,7 +14,7 @@ from alsoul.storage import create_sqlite_engine
 
 
 class FoundationHostApplication:
-    """Own the process lifetime of the configured F4 runtime host.
+    """Own the process lifetime of the current configured runtime host.
 
     The host opens only pre-existing compatible state. It never creates schema,
     CompanionPerson identity, CounterpartPerson identity, or RelationshipState.
@@ -24,16 +26,24 @@ class FoundationHostApplication:
         *,
         config: FoundationHostConfig,
         secrets: RuntimeSecrets | None = None,
+        personal_calendar_coordinator_factory: Callable[[FoundationServices], object]
+        | None = None,
     ) -> None:
         self.config = config
         self.readiness: HostReadiness = require_host_readiness(config)
         self.engine = create_sqlite_engine(config.database_path)
         self.services = FoundationServices(self.engine)
         self.ingress = FirstPartyIngress(self.services)
+        calendar = (
+            personal_calendar_coordinator_factory(self.services)
+            if personal_calendar_coordinator_factory is not None
+            else None
+        )
         self.runtime = ConfiguredFoundationRuntime(
             self.services,
             config=config.runtime,
             secrets=secrets or RuntimeSecrets(),
+            personal_calendar_coordinator=calendar,
         )
 
     def close(self) -> None:
