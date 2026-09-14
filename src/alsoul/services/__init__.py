@@ -53,6 +53,7 @@ from . import personal_calendar_cognition as _personal_calendar_cognition
 from . import personal_calendar_presentation as _personal_calendar_presentation
 from .personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionServices
 from .personal_calendar_action_v2 import PersonalCalendarActionServices
+from .personal_calendar_approval import PersonalCalendarApprovalServices
 from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
 from .personal_calendar_runtime import (
@@ -107,6 +108,7 @@ __all__ = [
     "ModelRuntimeConfig",
     "PersonalCalendarAcquisitionServices",
     "PersonalCalendarActionServices",
+    "PersonalCalendarApprovalServices",
     "PersonalCalendarCognitionServices",
     "PersonalCalendarPresentationServices",
     "PersonalCalendarResponseCoordinator",
