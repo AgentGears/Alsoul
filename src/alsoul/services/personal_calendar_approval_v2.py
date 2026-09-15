@@ -32,6 +32,16 @@ class PersonalCalendarApprovalServices(PersonalCalendarApprovalServicesV1):
 
     def _consent_payload(self, *, action, resource):
         consent = super()._consent_payload(action=action, resource=resource)
+        summary = consent["summary"]
+        if (
+            not isinstance(summary, str)
+            or not summary
+            or _contains_control_character(summary)
+        ):
+            fail(
+                "CALENDAR_CREATE_APPROVAL_SUMMARY_UNSAFE",
+                "calendar event summary must be non-empty and free of control characters for faithful consent presentation",
+            )
         consent["approval_challenge"] = calendar_create_approval_challenge(
             action["action_digest"]
         )
@@ -77,9 +87,19 @@ class PersonalCalendarApprovalServices(PersonalCalendarApprovalServicesV1):
                         "trusted approval presentation does not exist",
                     )
 
-                action, _, relationship, resource = self._load_action_lineage(
+                action, action_source, relationship, resource = self._load_action_lineage(
                     conn, presentation["action_id"]
                 )
+                if (
+                    presentation["surface_binding_id"]
+                    != action_source["surface_binding_id"]
+                    or presentation["channel_binding_id"]
+                    != action_source["channel_binding_id"]
+                ):
+                    fail(
+                        "CALENDAR_CREATE_APPROVAL_PRESENTATION_PROVENANCE_INVALID",
+                        "approval presentation route does not match the immutable Action source route",
+                    )
                 self._require_presentation_equivalence(
                     action=action,
                     resource=resource,
