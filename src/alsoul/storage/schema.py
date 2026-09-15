@@ -1,7 +1,7 @@
 """Current persistence schema.
 
-Historical schema modules remain frozen. Schema v16 extends executable F5.B through
-mechanically constrained, evidence-backed calendar mutation completion cognition.
+Historical schema modules remain frozen. Schema v17 extends executable F5.B through
+first-party presentation truth for evidence-backed calendar mutation completion.
 """
 
-from .schema_v16 import *  # noqa: F401,F403
+from .schema_v17 import *  # noqa: F401,F403
