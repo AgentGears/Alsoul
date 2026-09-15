@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from alsoul.adapters.contracts import AdapterOutcomeUnknown, AdapterRejected
-from alsoul.domain.errors import DomainError
+from alsoul.domain.errors import DomainError, fail
 from alsoul.services.common import load_operation_receipt, request_digest
 from alsoul.services.personal_calendar_reconciliation import (
     PersonalCalendarReconciliationServices as PersonalCalendarReconciliationServicesV1,
     _RECONCILE_SCOPE,
     _is_transient_lock_collision,
 )
+from alsoul.storage import schema
 
 
 class PersonalCalendarReconciliationServices(PersonalCalendarReconciliationServicesV1):
@@ -76,6 +78,29 @@ class PersonalCalendarReconciliationServices(PersonalCalendarReconciliationServi
                 "CALENDAR_CREATE_RECONCILIATION_CONFLICT",
                 "calendar-create reconciliation conflicted with concurrent durable state",
             ) from exc
+
+    def _normalize_observation(self, *, observation, attempt, action, resource):
+        if getattr(observation, "status", None) == "FOUND":
+            with self.engine.connect() as conn:
+                dispatch_claim = conn.execute(
+                    select(
+                        schema.personal_calendar_create_mutation_dispatch.c.execution_attempt_id
+                    ).where(
+                        schema.personal_calendar_create_mutation_dispatch.c.execution_attempt_id
+                        == attempt["execution_attempt_id"]
+                    )
+                ).scalar_one_or_none()
+            if dispatch_claim is None:
+                fail(
+                    "CALENDAR_CREATE_RECONCILIATION_FOUND_WITHOUT_DISPATCH_CLAIM",
+                    "positive reconciliation cannot be Action-linked when the one-shot mutation dispatch claim never existed",
+                )
+        return super()._normalize_observation(
+            observation=observation,
+            attempt=attempt,
+            action=action,
+            resource=resource,
+        )
 
 
 __all__ = ["PersonalCalendarReconciliationServices"]
