@@ -63,6 +63,7 @@ from .personal_calendar_runtime import (
     PersonalCalendarResponseCoordinator,
     PersonalCalendarResponseRunResult,
 )
+from .personal_calendar_transport import PersonalCalendarMutationTransportServices
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
@@ -118,6 +119,7 @@ __all__ = [
     "PersonalCalendarApprovalServices",
     "PersonalCalendarCognitionServices",
     "PersonalCalendarExecutionServices",
+    "PersonalCalendarMutationTransportServices",
     "PersonalCalendarPresentationServices",
     "PersonalCalendarResponseCoordinator",
     "PersonalCalendarResponseRunResult",
