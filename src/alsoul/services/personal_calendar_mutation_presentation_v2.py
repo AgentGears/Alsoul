@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import insert, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from alsoul.domain.errors import DomainError, fail
 from alsoul.domain.personal_calendar_presentation import (
+    PERSONAL_CALENDAR_PRESENTATION_CONTRACT_VERSION,
+    PERSONAL_CALENDAR_PRESENTATION_STATUS_CONTRACT_VERSION,
     PERSONAL_CALENDAR_TERMINAL_NEGATIVE_PROOF_KIND,
     PersonalCalendarPresentationDispatchResult,
     PersonalCalendarPresentationStatusResult,
@@ -16,13 +18,63 @@ from alsoul.services.personal_calendar_mutation_presentation import (
     _is_transient_lock_collision,
     _required_text,
 )
+from alsoul.services.runtime_identity import presentation_idempotency_key
 from alsoul.storage import schema
 
 
 class PersonalCalendarMutationPresentationServices(
     PersonalCalendarMutationPresentationServicesV1
 ):
-    """Current mutation-result presentation with serialized terminal settlement."""
+    """Current mutation-result presentation with exact attempt integrity and serialized settlement."""
+
+    def _attempt(self, conn, attempt_id: UUID):
+        attempt = super()._attempt(conn, attempt_id)
+        decision = conn.execute(
+            select(schema.personal_calendar_mutation_disclosure_decision).where(
+                schema.personal_calendar_mutation_disclosure_decision.c.disclosure_decision_id
+                == attempt["disclosure_decision_id"]
+            )
+        ).mappings().one_or_none()
+        adoption = conn.execute(
+            select(schema.personal_calendar_mutation_adoption).where(
+                schema.personal_calendar_mutation_adoption.c.companion_output_id
+                == attempt["companion_output_id"]
+            )
+        ).mappings().one_or_none()
+        output = conn.execute(
+            select(schema.companion_output).where(
+                schema.companion_output.c.companion_output_id
+                == attempt["companion_output_id"]
+            )
+        ).mappings().one_or_none()
+        expected_key = presentation_idempotency_key(
+            attempt["companion_output_id"],
+            attempt["surface_binding_id"],
+            attempt["channel_binding_id"],
+        )
+        if (
+            decision is None
+            or adoption is None
+            or output is None
+            or decision["companion_output_id"] != attempt["companion_output_id"]
+            or decision["action_id"] != adoption["action_id"]
+            or decision["effect_id"] != adoption["effect_id"]
+            or decision["effect_evidence_id"] != adoption["effect_evidence_id"]
+            or decision["surface_binding_id"] != attempt["surface_binding_id"]
+            or decision["channel_binding_id"] != attempt["channel_binding_id"]
+            or decision["relationship_id"] != output["relationship_id"]
+            or attempt["payload_digest"] != output["content_digest"]
+            or attempt["presentation_key"] != expected_key
+            or attempt["presentation_contract_version"]
+            != PERSONAL_CALENDAR_PRESENTATION_CONTRACT_VERSION
+            or attempt["status_contract_version"]
+            != PERSONAL_CALENDAR_PRESENTATION_STATUS_CONTRACT_VERSION
+        ):
+            fail(
+                "CALENDAR_MUTATION_PRESENTATION_ATTEMPT_LINEAGE_MISMATCH",
+                "mutation-result presentation attempt does not match its exact disclosure/adoption/output lineage",
+            )
+        return attempt
 
     def _settle_attempt(
         self,
@@ -53,6 +105,10 @@ class PersonalCalendarMutationPresentationServices(
                         "CALENDAR_MUTATION_PRESENTATION_SETTLEMENT_CONFLICT",
                         "mutation-result presentation attempt already has a different terminal state",
                     )
+
+                # Revalidate the exact disclosure/adoption/output binding under the
+                # same write transaction that owns terminal settlement.
+                self._attempt(conn, attempt_id)
 
                 if status.state == "ACCEPTED":
                     receipt_ref = _required_text(
