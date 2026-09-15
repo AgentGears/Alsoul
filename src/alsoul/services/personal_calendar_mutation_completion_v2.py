@@ -1,31 +1,143 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from contextvars import ContextVar
+from dataclasses import asdict
+
+from sqlalchemy import select, update
 
 from alsoul.domain.errors import fail
+from alsoul.services.common import load_operation_receipt, request_digest
 from alsoul.services.personal_calendar_mutation_completion import (
     PersonalCalendarMutationCompletionServices as PersonalCalendarMutationCompletionServicesV1,
+    _ADOPT_SCOPE,
+    _BUILD_SCOPE,
+    _GENERATE_SCOPE,
 )
 from alsoul.storage import schema
+
+
+_BUILD_RECHECK: ContextVar[tuple[object, str] | None] = ContextVar(
+    "calendar_mutation_completion_build_recheck", default=None
+)
+_GENERATE_RECHECK: ContextVar[tuple[object, str] | None] = ContextVar(
+    "calendar_mutation_completion_generate_recheck", default=None
+)
+_ADOPT_RECHECK: ContextVar[tuple[object, str] | None] = ContextVar(
+    "calendar_mutation_completion_adopt_recheck", default=None
+)
+
+
+class _BuildReplay(Exception):
+    def __init__(self, result):
+        super().__init__()
+        self.result = result
+
+
+class _GenerationReplay(Exception):
+    def __init__(self, result):
+        super().__init__()
+        self.result = result
+
+
+class _AdoptionReplay(Exception):
+    def __init__(self, result):
+        super().__init__()
+        self.result = result
 
 
 class PersonalCalendarMutationCompletionServices(
     PersonalCalendarMutationCompletionServicesV1
 ):
-    """Current mutation-completion service with exact projection-context lineage checks."""
+    """Current mutation completion with exact lineage and serialized operation replay."""
 
     def build_completion_projection(self, command):
-        result = super().build_completion_projection(command)
+        req = request_digest(asdict(command))
+        token = _BUILD_RECHECK.set((command, req))
+        try:
+            try:
+                result = super().build_completion_projection(command)
+            except _BuildReplay as replay:
+                result = replay.result
+        finally:
+            _BUILD_RECHECK.reset(token)
         with self.engine.connect() as conn:
             projection = super()._load_completion_projection(conn, result.projection_id)
             lineage = super()._load_confirmed_completion(conn, projection["effect_id"])
             self._validate_projection_context(conn, projection, lineage)
         return result
 
+    def generate_result_plan(self, command):
+        req = request_digest(asdict(command))
+        token = _GENERATE_RECHECK.set((command, req))
+        try:
+            try:
+                return super().generate_result_plan(command)
+            except _GenerationReplay as replay:
+                return replay.result
+        finally:
+            _GENERATE_RECHECK.reset(token)
+
+    def adopt_mutation_output(self, command):
+        req = request_digest(asdict(command))
+        token = _ADOPT_RECHECK.set((command, req))
+        try:
+            try:
+                return super().adopt_mutation_output(command)
+            except _AdoptionReplay as replay:
+                return replay.result
+        finally:
+            _ADOPT_RECHECK.reset(token)
+
+    def _load_confirmed_completion(self, conn, effect_id):
+        build = _BUILD_RECHECK.get()
+        if build is not None:
+            command, req = build
+            locked = conn.execute(
+                update(schema.personal_calendar_create_effect)
+                .where(schema.personal_calendar_create_effect.c.effect_id == effect_id)
+                .values(status=schema.personal_calendar_create_effect.c.status)
+            )
+            if locked.rowcount == 1:
+                replay = load_operation_receipt(
+                    conn,
+                    scope=_BUILD_SCOPE,
+                    operation_id=command.operation_id,
+                    expected_request_digest=req,
+                )
+                if replay:
+                    raise _BuildReplay(self._projection_result_from_json(replay))
+        return super()._load_confirmed_completion(conn, effect_id)
+
     def _load_completion_projection(self, conn, projection_id, *, serialize=False):
         projection = super()._load_completion_projection(
             conn, projection_id, serialize=serialize
         )
+        if serialize:
+            generation = _GENERATE_RECHECK.get()
+            if generation is not None:
+                command, req = generation
+                replay = load_operation_receipt(
+                    conn,
+                    scope=_GENERATE_SCOPE,
+                    operation_id=command.operation_id,
+                    expected_request_digest=req,
+                )
+                if replay:
+                    raise _GenerationReplay(
+                        self._recover_generation_replay(conn, replay)
+                    )
+            adoption = _ADOPT_RECHECK.get()
+            if adoption is not None:
+                command, req = adoption
+                replay = load_operation_receipt(
+                    conn,
+                    scope=_ADOPT_SCOPE,
+                    operation_id=command.operation_id,
+                    expected_request_digest=req,
+                )
+                if replay:
+                    raise _AdoptionReplay(self._adoption_result_from_json(replay))
+
         lineage = super()._load_confirmed_completion(conn, projection["effect_id"])
         self._validate_projection_context(conn, projection, lineage)
         return projection
