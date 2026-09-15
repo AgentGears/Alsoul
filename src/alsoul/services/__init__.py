@@ -61,6 +61,7 @@ from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
 from .personal_calendar_effect import PersonalCalendarEffectServices
 from .personal_calendar_execution_v2 import PersonalCalendarExecutionServices
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
+from .personal_calendar_reconciliation import PersonalCalendarReconciliationServices
 from .personal_calendar_runtime import (
     PersonalCalendarResponseCoordinator,
     PersonalCalendarResponseRunResult,
@@ -127,6 +128,7 @@ __all__ = [
     "PersonalCalendarExecutionServices",
     "PersonalCalendarMutationTransportServices",
     "PersonalCalendarPresentationServices",
+    "PersonalCalendarReconciliationServices",
     "PersonalCalendarResponseCoordinator",
     "PersonalCalendarResponseRunResult",
     "PresentationRuntimeConfig",
