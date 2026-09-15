@@ -4,7 +4,11 @@ This increment advances the executable `calendar.event.create` path across the f
 
 ## Implemented boundary
 
-Only the exact `DISPATCH_FENCED` ExecutionAttempt that currently owns the per-Action dispatch guard may reach mutation transport. Before the adapter call can exist, the host commits one structural mutation-dispatch row for that ExecutionAttempt. That row contains no title, time, resource target, correlation value, credential reference, approval material, or raw request payload. Its existence is the one-shot transport claim: a surviving claim without durable normalized response evidence recovers conservatively as `UNKNOWN_EFFECT` and cannot be sent again.
+The current transport entry begins from one `PREPARED` ExecutionAttempt. It first qualifies the concrete mutation adapter against the current trusted execution binding, then advances that same attempt through the existing current-authority fence, and only within that same bounded call may the newly created `DISPATCH_FENCED` attempt proceed toward provider transport.
+
+A dispatch fence that already exists when a fresh transport command begins is **not** reusable execution authority. It is a surviving may-have-dispatched fence and therefore recovers conservatively to `UNKNOWN_EFFECT` without a provider call. This prevents a persisted fence from being replayed after restart, delayed until authority has changed, or consumed by a replacement transport process as if it were a standing mutation token.
+
+Before the adapter call can exist, the host also commits one structural mutation-dispatch row for that newly fenced ExecutionAttempt. That row contains no title, time, resource target, correlation value, credential reference, approval material, or raw request payload. Its existence is the one-shot transport claim: a surviving claim without durable normalized response evidence recovers conservatively as `UNKNOWN_EFFECT` and cannot be sent again.
 
 After the one-shot claim commits, the trusted host constructs a bounded host-to-adapter envelope from canonical state. It contains opaque host-side Action/ExecutionAttempt references plus only the semantic/provider material required to reconstruct the exact request:
 
@@ -21,7 +25,7 @@ fixed mutation-request contract version
 
 The opaque canonical references are not provider-wire fields. The adapter may place on the provider wire only the exact routing, title/time, correlation, fixed provider-operation metadata, and ephemeral authentication material required by the pinned create contract. Permission, Approval, consent text, conversation history, model context, unrelated personal data, raw credential material, and provider defaults are not part of the provider-bound mutation payload.
 
-The concrete mutation adapter must match the exact adapter binding, adapter contract, capability contract, external system, and execution semantics already pinned by the durable dispatch fence. A replacement or mismatched adapter cannot consume an old fence.
+The concrete mutation adapter must match the exact adapter binding, adapter contract, capability contract, external system, and execution semantics selected before the fresh fence and then pinned by that fence. A replacement or mismatched adapter cannot create or consume the transport handoff.
 
 ## Minimized response evidence
 
@@ -60,7 +64,9 @@ UNKNOWN_EFFECT != retry authority
 
 An adapter-level unknown/rejected outcome after the one-shot transport claim becomes `UNKNOWN_EFFECT`; this increment does not infer terminal no-effect from transport failure or rejection. A malformed normalized response also leaves the attempt unknown and is not persisted as effect evidence.
 
-If process loss occurs after the structural mutation-dispatch claim but before durable normalized evidence exists, later dispatch entry detects the surviving claim, performs no provider call, and moves the attempt conservatively to `UNKNOWN_EFFECT`.
+If process loss occurs after `DISPATCH_FENCED` but before the one-shot mutation-dispatch claim, the surviving fence is not consumed by a later transport command; it becomes `UNKNOWN_EFFECT` without provider dispatch.
+
+If process loss occurs after the structural mutation-dispatch claim but before durable normalized response evidence exists, later dispatch entry detects the surviving claim, performs no provider call, and moves the attempt conservatively to `UNKNOWN_EFFECT`.
 
 If matched evidence is durable but Effect admission has not yet occurred, the Action remains dispatch-locked. Existing conservative fenced-attempt recovery may move the attempt to `UNKNOWN_EFFECT`, but the durable matched evidence remains available for the subsequent Effect-admission increment; no redispatch occurs.
 
