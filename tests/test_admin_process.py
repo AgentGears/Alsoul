@@ -59,7 +59,7 @@ def test_admin_process_creates_store_then_explicitly_bootstraps_identity(tmp_pat
     assert init_payload["ok"] is True
     assert (
         init_payload["result"]["schema_revision"]
-        == "0011_personal_calendar_create_execution"
+        == "0012_personal_calendar_create_transport"
     )
 
     empty_status = _run_module(
