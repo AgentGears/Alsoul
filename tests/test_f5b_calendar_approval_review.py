@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import insert, select, update
 
 from alsoul.domain.errors import DomainError
 from alsoul.domain.personal_calendar_approval import (
@@ -141,14 +141,21 @@ def test_tampered_presented_counterpart_cannot_mint_approval(engine, now):
     ids, foundation, _, _, action = _prepared_action(engine, now)
     service = _service(engine, now, approval_cases._ApprovalAdapter())
     presentation = _present(service, action)
+    other_counterpart = uuid4()
     with engine.begin() as conn:
+        conn.execute(
+            insert(schema.counterpart_person).values(
+                counterpart_id=other_counterpart,
+                created_at=now,
+            )
+        )
         conn.execute(
             update(schema.personal_calendar_create_approval_presentation)
             .where(
                 schema.personal_calendar_create_approval_presentation.c.approval_presentation_id
                 == presentation.approval_presentation_id
             )
-            .values(presented_to_counterpart_id=uuid4())
+            .values(presented_to_counterpart_id=other_counterpart)
         )
     source = _approval_event(foundation, ids, now, action)
 
