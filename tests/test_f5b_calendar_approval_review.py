@@ -8,8 +8,8 @@ from sqlalchemy import select, update
 from alsoul.domain.errors import DomainError
 from alsoul.domain.personal_calendar_approval import (
     AdmitPersonalCalendarCreateApprovalCommand,
-    CALENDAR_CREATE_APPROVAL_TEXT,
     PresentPersonalCalendarCreateApprovalCommand,
+    calendar_create_approval_challenge,
 )
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services.personal_calendar import ZoneInfoCalendarTimeResolver
@@ -49,7 +49,7 @@ def _prepared_action(engine, now):
         write_permission.permission_id,
         source,
     )
-    return ids, foundation, resource, action
+    return ids, foundation, resource, write_permission, action
 
 
 def _present(service, action):
@@ -60,9 +60,12 @@ def _present(service, action):
     )
 
 
-def _approval_event(foundation, ids, now):
+def _approval_event(foundation, ids, now, action):
     return authority_cases._append_counterpart_event(
-        foundation, ids, now, CALENDAR_CREATE_APPROVAL_TEXT
+        foundation,
+        ids,
+        now,
+        calendar_create_approval_challenge(action.action_digest),
     )
 
 
@@ -77,7 +80,7 @@ def _admit(service, presentation, source):
 
 
 def test_hardened_replay_preserves_offset_aware_presentation_time(engine, now):
-    _, _, _, action = _prepared_action(engine, now)
+    _, _, _, _, action = _prepared_action(engine, now)
     adapter = approval_cases._ApprovalAdapter()
     first = _present(_service(engine, now, adapter), action)
 
@@ -88,8 +91,54 @@ def test_hardened_replay_preserves_offset_aware_presentation_time(engine, now):
     assert replay.presented_at.tzinfo is not None
 
 
+def test_consent_surface_states_exact_action_bound_reply(engine, now):
+    _, _, _, _, action = _prepared_action(engine, now)
+    adapter = approval_cases._ApprovalAdapter()
+
+    _present(_service(engine, now, adapter), action)
+
+    challenge = calendar_create_approval_challenge(action.action_digest)
+    assert f"Reply exactly: {challenge}" in adapter.calls[0]["consent_text"]
+
+
+def test_reply_for_one_presented_action_cannot_approve_another(engine, now):
+    ids, foundation, resource, write_permission, first_action = _prepared_action(engine, now)
+    adapter = approval_cases._ApprovalAdapter()
+    service = _service(engine, now, adapter)
+    first_presentation = _present(service, first_action)
+
+    second_source = action_cases._append_create_request(foundation, ids, now)
+    second_action = action_cases._prepare(
+        action_cases._service(engine, now),
+        ids,
+        resource,
+        write_permission.permission_id,
+        second_source,
+    )
+    second_presentation = _present(service, second_action)
+    first_reply = _approval_event(foundation, ids, now, first_action)
+
+    with pytest.raises(DomainError) as wrong_action:
+        _admit(service, second_presentation, first_reply)
+    _assert_code(wrong_action, "CALENDAR_CREATE_APPROVAL_PROVENANCE_INVALID")
+
+    admitted = _admit(service, first_presentation, first_reply)
+    assert admitted.action_id == first_action.action_id
+
+
+def test_generic_yes_cannot_substitute_for_action_bound_reply(engine, now):
+    ids, foundation, _, _, action = _prepared_action(engine, now)
+    service = _service(engine, now, approval_cases._ApprovalAdapter())
+    presentation = _present(service, action)
+    source = authority_cases._append_counterpart_event(foundation, ids, now, "Yes")
+
+    with pytest.raises(DomainError) as invalid:
+        _admit(service, presentation, source)
+    _assert_code(invalid, "CALENDAR_CREATE_APPROVAL_PROVENANCE_INVALID")
+
+
 def test_tampered_presented_counterpart_cannot_mint_approval(engine, now):
-    ids, foundation, _, action = _prepared_action(engine, now)
+    ids, foundation, _, _, action = _prepared_action(engine, now)
     service = _service(engine, now, approval_cases._ApprovalAdapter())
     presentation = _present(service, action)
     with engine.begin() as conn:
@@ -101,7 +150,7 @@ def test_tampered_presented_counterpart_cannot_mint_approval(engine, now):
             )
             .values(presented_to_counterpart_id=uuid4())
         )
-    source = _approval_event(foundation, ids, now)
+    source = _approval_event(foundation, ids, now, action)
 
     with pytest.raises(DomainError) as invalid:
         _admit(service, presentation, source)
@@ -109,7 +158,7 @@ def test_tampered_presented_counterpart_cannot_mint_approval(engine, now):
 
 
 def test_tampered_presentation_key_or_sink_contract_cannot_mint_approval(engine, now):
-    ids, foundation, _, action = _prepared_action(engine, now)
+    ids, foundation, _, _, action = _prepared_action(engine, now)
     service = _service(engine, now, approval_cases._ApprovalAdapter())
     presentation = _present(service, action)
     with engine.begin() as conn:
@@ -121,7 +170,7 @@ def test_tampered_presentation_key_or_sink_contract_cannot_mint_approval(engine,
             )
             .values(presentation_key="calendar-create-approval:" + "0" * 64)
         )
-    source = _approval_event(foundation, ids, now)
+    source = _approval_event(foundation, ids, now, action)
 
     with pytest.raises(DomainError) as invalid:
         _admit(service, presentation, source)
@@ -129,7 +178,7 @@ def test_tampered_presentation_key_or_sink_contract_cannot_mint_approval(engine,
 
 
 def test_control_characters_cannot_enter_human_calendar_display_identity(engine, now):
-    _, _, resource, action = _prepared_action(engine, now)
+    _, _, resource, _, action = _prepared_action(engine, now)
     with engine.begin() as conn:
         conn.execute(
             update(schema.personal_resource_binding)
