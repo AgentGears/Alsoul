@@ -20,7 +20,10 @@ def test_administrator_initializes_migrates_and_bootstraps_fresh_store(tmp_path)
 
     initialized = admin.initialize_store(database)
     assert initialized.database_path == database.resolve()
-    assert initialized.schema_revision == "0013_personal_calendar_create_effect"
+    assert (
+        initialized.schema_revision
+        == "0014_personal_calendar_create_reconciliation"
+    )
 
     empty = admin.status(database)
     assert empty.schema_at_head
@@ -30,8 +33,11 @@ def test_administrator_initializes_migrates_and_bootstraps_fresh_store(tmp_path)
     assert empty.relationship_count == 0
 
     migrated = admin.migrate_store(database)
-    assert migrated.previous_revision == "0013_personal_calendar_create_effect"
-    assert migrated.schema_revision == "0013_personal_calendar_create_effect"
+    assert (
+        migrated.previous_revision
+        == "0014_personal_calendar_create_reconciliation"
+    )
+    assert migrated.schema_revision == "0014_personal_calendar_create_reconciliation"
     assert migrated.changed is False
 
     external_subject = str(uuid4())
