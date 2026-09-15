@@ -66,6 +66,20 @@ class PersonalCalendarMutationTransportServices(
         )
         return super().dispatch_create_mutation(command)
 
+    def _normalize_response(self, *, response, action, resource, attempt):
+        normalized = super()._normalize_response(
+            response=response,
+            action=action,
+            resource=resource,
+            attempt=attempt,
+        )
+        if normalized["correlation_key"] != attempt["correlation_key"]:
+            fail(
+                "CALENDAR_CREATE_MUTATION_CORRELATION_MISMATCH",
+                "provider response does not carry the exact Action-specific mutation correlation",
+            )
+        return normalized
+
     def _classify_transport_entry(self, command):
         with self.engine.connect() as conn:
             attempt = self._load_attempt(conn, command.execution_attempt_id)
