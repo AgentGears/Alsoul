@@ -53,6 +53,7 @@ from . import personal_calendar_approval as _personal_calendar_approval
 from . import personal_calendar_cognition as _personal_calendar_cognition
 from . import personal_calendar_execution as _personal_calendar_execution
 from . import personal_calendar_presentation as _personal_calendar_presentation
+from . import personal_calendar_reconciliation as _personal_calendar_reconciliation
 from . import personal_calendar_transport as _personal_calendar_transport
 from .personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionServices
 from .personal_calendar_action_v2 import PersonalCalendarActionServices
@@ -61,6 +62,7 @@ from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
 from .personal_calendar_effect import PersonalCalendarEffectServices
 from .personal_calendar_execution_v2 import PersonalCalendarExecutionServices
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
+from .personal_calendar_reconciliation_v2 import PersonalCalendarReconciliationServices
 from .personal_calendar_runtime import (
     PersonalCalendarResponseCoordinator,
     PersonalCalendarResponseRunResult,
@@ -84,6 +86,9 @@ _personal_calendar_execution.PersonalCalendarExecutionServices = (
 )
 _personal_calendar_presentation.PersonalCalendarPresentationServices = (
     PersonalCalendarPresentationServices
+)
+_personal_calendar_reconciliation.PersonalCalendarReconciliationServices = (
+    PersonalCalendarReconciliationServices
 )
 _personal_calendar_transport.PersonalCalendarMutationTransportServices = (
     PersonalCalendarMutationTransportServices
@@ -127,6 +132,7 @@ __all__ = [
     "PersonalCalendarExecutionServices",
     "PersonalCalendarMutationTransportServices",
     "PersonalCalendarPresentationServices",
+    "PersonalCalendarReconciliationServices",
     "PersonalCalendarResponseCoordinator",
     "PersonalCalendarResponseRunResult",
     "PresentationRuntimeConfig",
