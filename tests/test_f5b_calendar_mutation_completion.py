@@ -208,9 +208,8 @@ def test_model_cannot_supply_calendar_facts_or_cross_completion_reference(engine
         lambda context: {**context, "mutation_completion_ref": str(uuid4())}
     )
     second_service = _service(engine, now, forged)
-    second_route = _route(second_service, forged)
     with pytest.raises(DomainError) as mismatch:
-        _generate(second_service, projection, second_route)
+        _generate(second_service, projection, route)
     assert mismatch.value.code == "CALENDAR_MUTATION_RESULT_PLAN_MISMATCH"
 
 
