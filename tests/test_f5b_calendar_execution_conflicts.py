@@ -8,6 +8,8 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from alsoul.domain.errors import DomainError
 from alsoul.domain.personal_calendar_execution import (
     AbandonPersonalCalendarCreateExecutionAttemptCommand,
+    FencePersonalCalendarCreateExecutionAttemptCommand,
+    PreparePersonalCalendarCreateExecutionAttemptCommand,
     RecoverPersonalCalendarCreateFencedAttemptCommand,
 )
 from alsoul.domain.types import FixedClock, UUIDGenerator
@@ -29,6 +31,60 @@ def _service(engine, now):
         clock=FixedClock(now),
         ids=UUIDGenerator(),
     )
+
+
+def test_prepare_sqlite_lock_collision_is_translated(engine, now, monkeypatch):
+    def collide(self, command):
+        raise OperationalError(
+            "insert execution attempt",
+            {},
+            Exception("database is locked"),
+        )
+
+    monkeypatch.setattr(
+        PersonalCalendarExecutionServicesV1,
+        "prepare_execution_attempt",
+        collide,
+    )
+    service = _service(engine, now)
+
+    with pytest.raises(DomainError) as conflict:
+        service.prepare_execution_attempt(
+            PreparePersonalCalendarCreateExecutionAttemptCommand(
+                operation_id=uuid4(),
+                action_id=uuid4(),
+                approval_id=uuid4(),
+                credential_binding_id=uuid4(),
+            )
+        )
+
+    assert conflict.value.code == "CALENDAR_CREATE_ACTION_DISPATCH_CONFLICT"
+
+
+def test_fence_sqlite_lock_collision_is_translated(engine, now, monkeypatch):
+    def collide(self, command):
+        raise OperationalError(
+            "insert execution fence",
+            {},
+            Exception("database is busy"),
+        )
+
+    monkeypatch.setattr(
+        PersonalCalendarExecutionServicesV1,
+        "fence_execution_attempt",
+        collide,
+    )
+    service = _service(engine, now)
+
+    with pytest.raises(DomainError) as conflict:
+        service.fence_execution_attempt(
+            FencePersonalCalendarCreateExecutionAttemptCommand(
+                operation_id=uuid4(),
+                execution_attempt_id=uuid4(),
+            )
+        )
+
+    assert conflict.value.code == "CALENDAR_CREATE_EXECUTION_FENCE_CONFLICT"
 
 
 def test_abandon_append_collision_is_translated_after_transaction_unwinds(

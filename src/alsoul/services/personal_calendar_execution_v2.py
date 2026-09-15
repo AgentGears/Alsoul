@@ -17,6 +17,28 @@ _TRANSITION_CONFLICT_MESSAGE = (
 class PersonalCalendarExecutionServices(PersonalCalendarExecutionServicesV1):
     """Current calendar-create state boundary with deterministic transition conflicts."""
 
+    def prepare_execution_attempt(self, command):
+        try:
+            return super().prepare_execution_attempt(command)
+        except OperationalError as exc:
+            if not _is_transient_lock_collision(exc):
+                raise
+            raise DomainError(
+                "CALENDAR_CREATE_ACTION_DISPATCH_CONFLICT",
+                "calendar-create Action dispatch eligibility was claimed concurrently",
+            ) from exc
+
+    def fence_execution_attempt(self, command):
+        try:
+            return super().fence_execution_attempt(command)
+        except OperationalError as exc:
+            if not _is_transient_lock_collision(exc):
+                raise
+            raise DomainError(
+                "CALENDAR_CREATE_EXECUTION_FENCE_CONFLICT",
+                "calendar-create execution fence conflicted with current durable state",
+            ) from exc
+
     def abandon_prepared_attempt(self, command):
         try:
             return super().abandon_prepared_attempt(command)
