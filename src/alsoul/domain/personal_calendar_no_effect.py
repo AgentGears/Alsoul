@@ -117,13 +117,13 @@ class ReconcilePersonalCalendarCreateNoEffectCommand:
 
 
 @dataclass(frozen=True, slots=True)
-class PersonalCalendarCreateConfirmedNoEffectResult:
-    no_effect_id: UUID
-    no_effect_evidence_id: UUID
+class PersonalCalendarCreateNoEffectReconciliationResult:
     reconciliation_probe_id: UUID
     execution_attempt_id: UUID
     action_id: UUID
-    status: Literal["CONFIRMED_NO_EFFECT"] = "CONFIRMED_NO_EFFECT"
+    status: Literal["CONFIRMED_NO_EFFECT", "UNKNOWN_EFFECT"]
+    no_effect_id: UUID | None = None
+    no_effect_evidence_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,9 +155,9 @@ __all__ = [
     "CALENDAR_CREATE_NO_EFFECT_SUPPORT_KIND",
     "CALENDAR_CREATE_RETRY_CONTRACT_VERSION",
     "CalendarCreateNegativeConfirmationContract",
-    "PersonalCalendarCreateConfirmedNoEffectResult",
     "PersonalCalendarCreateNegativeConfirmationAdapter",
     "PersonalCalendarCreateNegativeConfirmationRequest",
+    "PersonalCalendarCreateNoEffectReconciliationResult",
     "PersonalCalendarCreateRetryAttemptResult",
     "PersonalCalendarCreateTerminalNoEffectObservation",
     "PreparePersonalCalendarCreateRetryAttemptCommand",
