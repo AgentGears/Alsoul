@@ -137,7 +137,19 @@ personal_calendar_create_execution_fence = Table(
     ),
     Column("attempt_generation", BigInteger, nullable=False),
     Column("correlation_key", String(256), nullable=False),
+    Column(
+        "relationship_id",
+        Uuid(as_uuid=True),
+        ForeignKey("relationship_identity.relationship_id"),
+        nullable=False,
+    ),
     Column("relationship_authority_revision", BigInteger, nullable=False),
+    Column(
+        "personal_resource_binding_id",
+        Uuid(as_uuid=True),
+        ForeignKey("personal_resource_binding.personal_resource_binding_id"),
+        nullable=False,
+    ),
     Column("resource_binding_state_revision", BigInteger, nullable=False),
     Column("write_policy_revision", BigInteger, nullable=False),
     Column("write_permission_id", Uuid(as_uuid=True), nullable=False),
@@ -151,7 +163,12 @@ personal_calendar_create_execution_fence = Table(
         nullable=False,
     ),
     Column("consent_payload_digest", String(64), nullable=False),
-    Column("authorized_approver_ref", Uuid(as_uuid=True), nullable=False),
+    Column(
+        "authorized_approver_ref",
+        Uuid(as_uuid=True),
+        ForeignKey("counterpart_person.counterpart_id"),
+        nullable=False,
+    ),
     Column("approver_eligibility_version", String(128), nullable=False),
     Column("credential_binding_id", Uuid(as_uuid=True), nullable=False),
     Column("credential_binding_state_revision", BigInteger, nullable=False),
@@ -169,13 +186,28 @@ personal_calendar_create_execution_fence = Table(
     Column("authority_evaluated_at", DateTime(timezone=True), nullable=False),
     Column("dispatch_fenced_at", DateTime(timezone=True), nullable=False),
     ForeignKeyConstraint(
-        ["action_id", "relationship_authority_revision"],
+        ["relationship_id", "relationship_authority_revision"],
         [
-            "personal_calendar_create_action.action_id",
-            "personal_calendar_create_action.relationship_authority_revision",
+            "personal_world_relationship_state.relationship_id",
+            "personal_world_relationship_state.revision",
         ],
-        name="fk_calendar_create_execution_fence_action_relationship_snapshot",
-        use_alter=True,
+        name="fk_calendar_create_execution_fence_relationship_state",
+    ),
+    ForeignKeyConstraint(
+        ["personal_resource_binding_id", "resource_binding_state_revision"],
+        [
+            "personal_resource_binding_state.personal_resource_binding_id",
+            "personal_resource_binding_state.revision",
+        ],
+        name="fk_calendar_create_execution_fence_resource_state",
+    ),
+    ForeignKeyConstraint(
+        ["relationship_id", "write_policy_revision"],
+        [
+            "personal_calendar_create_policy_revision.relationship_id",
+            "personal_calendar_create_policy_revision.revision",
+        ],
+        name="fk_calendar_create_execution_fence_policy",
     ),
     ForeignKeyConstraint(
         ["write_permission_id", "write_permission_state_revision"],
