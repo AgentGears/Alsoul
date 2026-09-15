@@ -16,14 +16,19 @@ CALENDAR_CREATE_EFFECT_EVIDENCE_SCHEMA_VERSION = (
 
 @dataclass(frozen=True, slots=True)
 class PersonalCalendarCreateMutationRequest:
-    """Exact minimized provider-bound request for one fenced calendar Action.
+    """Minimized trusted host-to-adapter envelope for one fenced calendar Action.
 
-    The trusted adapter may translate these semantic fields to provider syntax and
-    resolve ``credential_secret_ref`` ephemerally. Canonical Action/ExecutionAttempt
-    identifiers, Approval, Permission, conversation, model, and unrelated personal-
-    world state do not cross this provider-bound request contract.
+    ``execution_attempt_id`` and ``action_id`` are opaque host-side structural refs
+    that let the trusted adapter bind diagnostics/control flow to canonical state; they
+    are not provider-wire fields. The adapter may place on the provider wire only the
+    exact routing/title/time/correlation/operation metadata required by its pinned
+    contract plus ephemeral authentication material resolved from
+    ``credential_secret_ref``. Approval, Permission, conversation, model, and
+    unrelated personal-world state never belong in this envelope or provider request.
     """
 
+    execution_attempt_id: UUID
+    action_id: UUID
     external_system_ref: str
     external_resource_ref: str
     summary: str
@@ -65,8 +70,9 @@ class PersonalCalendarCreateMutationAdapter(Protocol):
 
     The adapter is eligible only when its stable binding/contract identity matches
     the exact execution semantics already pinned by ``DISPATCH_FENCED``. It must
-    enforce request/response minimization before non-canonical persistence or
-    telemetry and must not implement an internal blind mutation retry.
+    enforce provider-wire request minimization and response minimization before any
+    non-canonical persistence or telemetry, and must not implement an internal blind
+    mutation retry.
     """
 
     adapter_binding_ref: str
