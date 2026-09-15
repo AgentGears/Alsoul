@@ -95,7 +95,6 @@ personal_calendar_mutation_model_invocation = Table(
         Uuid(as_uuid=True),
         ForeignKey("personal_calendar_mutation_completion_projection.projection_id"),
         nullable=False,
-        unique=True,
     ),
     Column(
         "route_binding_id",
