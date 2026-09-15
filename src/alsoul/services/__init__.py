@@ -52,6 +52,7 @@ from . import personal_calendar_action as _personal_calendar_action
 from . import personal_calendar_approval as _personal_calendar_approval
 from . import personal_calendar_cognition as _personal_calendar_cognition
 from . import personal_calendar_execution as _personal_calendar_execution
+from . import personal_calendar_mutation_completion as _personal_calendar_mutation_completion
 from . import personal_calendar_presentation as _personal_calendar_presentation
 from . import personal_calendar_reconciliation as _personal_calendar_reconciliation
 from . import personal_calendar_transport as _personal_calendar_transport
@@ -61,6 +62,7 @@ from .personal_calendar_approval_v2 import PersonalCalendarApprovalServices
 from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
 from .personal_calendar_effect import PersonalCalendarEffectServices
 from .personal_calendar_execution_v4 import PersonalCalendarExecutionServices
+from .personal_calendar_mutation_completion_v2 import PersonalCalendarMutationCompletionServices
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
 from .personal_calendar_reconciliation_v3 import PersonalCalendarReconciliationServices
 from .personal_calendar_runtime import (
@@ -83,6 +85,9 @@ _personal_calendar_cognition.PersonalCalendarCognitionServices = (
 )
 _personal_calendar_execution.PersonalCalendarExecutionServices = (
     PersonalCalendarExecutionServices
+)
+_personal_calendar_mutation_completion.PersonalCalendarMutationCompletionServices = (
+    PersonalCalendarMutationCompletionServices
 )
 _personal_calendar_presentation.PersonalCalendarPresentationServices = (
     PersonalCalendarPresentationServices
@@ -130,6 +135,7 @@ __all__ = [
     "PersonalCalendarCognitionServices",
     "PersonalCalendarEffectServices",
     "PersonalCalendarExecutionServices",
+    "PersonalCalendarMutationCompletionServices",
     "PersonalCalendarMutationTransportServices",
     "PersonalCalendarPresentationServices",
     "PersonalCalendarReconciliationServices",
