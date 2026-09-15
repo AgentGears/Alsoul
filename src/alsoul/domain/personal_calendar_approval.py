@@ -8,6 +8,9 @@ from uuid import UUID
 
 CALENDAR_CREATE_APPROVAL_CONSENT_RENDERING_VERSION = "CALENDAR_CREATE_CONSENT_V1"
 CALENDAR_CREATE_APPROVAL_CEREMONY = "FIRST_PARTY_COUNTERPART_APPROVAL_V1"
+# Historical v1 approval text remains exported for the frozen base service/tests.
+# The current hardened service requires the Action-bound challenge below instead.
+CALENDAR_CREATE_APPROVAL_TEXT = "Approve this calendar event."
 CALENDAR_CREATE_APPROVAL_REPLY_PREFIX = "APPROVE CALENDAR ACTION "
 _ACTION_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
@@ -69,6 +72,7 @@ __all__ = [
     "CALENDAR_CREATE_APPROVAL_CEREMONY",
     "CALENDAR_CREATE_APPROVAL_CONSENT_RENDERING_VERSION",
     "CALENDAR_CREATE_APPROVAL_REPLY_PREFIX",
+    "CALENDAR_CREATE_APPROVAL_TEXT",
     "PersonalCalendarCreateApprovalPresentationResult",
     "PersonalCalendarCreateApprovalResult",
     "PersonalCalendarCreateApprovalStateResult",
