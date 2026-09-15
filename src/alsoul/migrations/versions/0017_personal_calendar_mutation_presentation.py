@@ -20,6 +20,7 @@ depends_on = None
 _NEW_TABLE_NAMES = frozenset(v17_metadata.tables).difference(v16_metadata.tables)
 _RECEIPT_SCOPES = (
     "PresentPersonalCalendarMutationOutput",
+    "CommitPersonalCalendarMutationAcceptedPresentation",
     "BindPersonalCalendarMutationPresentedEventProvenance",
 )
 
