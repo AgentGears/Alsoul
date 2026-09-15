@@ -86,6 +86,7 @@ personal_calendar_create_reconciliation_probe = Table(
         "effect_evidence_id",
         Uuid(as_uuid=True),
         ForeignKey("personal_calendar_create_effect_evidence.effect_evidence_id"),
+        unique=True,
     ),
     Column("started_at", DateTime(timezone=True), nullable=False),
     Column("completed_at", DateTime(timezone=True)),
@@ -101,6 +102,12 @@ personal_calendar_create_reconciliation_probe = Table(
     CheckConstraint(
         "status IN ('STARTED', 'MATCHED_EFFECT_EVIDENCE', 'DIVERGENT_EFFECT_EVIDENCE', 'NOT_FOUND', 'UNKNOWN')",
         name="ck_calendar_create_reconciliation_status_f5b",
+    ),
+    CheckConstraint(
+        "((status = 'STARTED' AND completed_at IS NULL AND effect_evidence_id IS NULL) OR "
+        "(status IN ('NOT_FOUND', 'UNKNOWN') AND completed_at IS NOT NULL AND effect_evidence_id IS NULL) OR "
+        "(status IN ('MATCHED_EFFECT_EVIDENCE', 'DIVERGENT_EFFECT_EVIDENCE') AND completed_at IS NOT NULL AND effect_evidence_id IS NOT NULL))",
+        name="ck_calendar_create_reconciliation_completion_f5b",
     ),
     CheckConstraint(
         "reconciliation_contract_version = 'CALENDAR_CREATE_RECONCILIATION_V1'",
