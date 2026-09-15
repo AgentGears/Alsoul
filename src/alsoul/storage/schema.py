@@ -1,7 +1,7 @@
 """Current persistence schema.
 
-Historical schema modules remain frozen. Schema v10 extends executable F5.B through
-faithful calendar-create consent presentation and exact Action Approval provenance.
+Historical schema modules remain frozen. Schema v11 extends executable F5.B through
+per-Action ExecutionAttempt serialization and exact durable dispatch fencing.
 """
 
-from .schema_v10 import *  # noqa: F401,F403
+from .schema_v11 import *  # noqa: F401,F403
