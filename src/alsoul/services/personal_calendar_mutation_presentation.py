@@ -8,7 +8,6 @@ from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from alsoul.adapters.contracts import AdapterOutcomeUnknown, AdapterRejected
-from alsoul.domain.commands import PresentCompanionOutputCommand
 from alsoul.domain.errors import DomainError, fail
 from alsoul.domain.personal_calendar_mutation_presentation import (
     PersonalCalendarPresentationAdapter,
@@ -31,7 +30,6 @@ from alsoul.services.common import (
     save_operation_receipt,
     sha256_text,
 )
-from alsoul.services.foundation_v4 import FoundationServices as FoundationServicesV4
 from alsoul.services.personal_calendar_mutation_completion_v2 import (
     PersonalCalendarMutationCompletionServices,
 )
@@ -40,6 +38,7 @@ from alsoul.storage import schema
 
 
 _PRESENT_SCOPE = "PresentPersonalCalendarMutationOutput"
+_TIMELINE_COMMIT_SCOPE = "CommitPersonalCalendarMutationAcceptedPresentation"
 _EVENT_PROVENANCE_SCOPE = "BindPersonalCalendarMutationPresentedEventProvenance"
 _PRESENTATION_NAMESPACE = UUID("81121e1e-f602-4fbb-b620-163e751c76e2")
 
@@ -126,6 +125,8 @@ class PersonalCalendarMutationPresentationServices:
                     row = self._attempt(conn, UUID(replay["presentation_attempt_id"]))
                     return self._result_from_row(conn, row)
 
+                # The immutable adoption is the serialization row for prospective
+                # presentation generations of this one CompanionOutput.
                 locked = conn.execute(
                     update(schema.personal_calendar_mutation_adoption)
                     .where(
@@ -262,6 +263,7 @@ class PersonalCalendarMutationPresentationServices:
                 "mutation-result presentation conflicted with concurrent state",
             ) from exc
 
+        # Adapter identity and transport semantics are snapshotted before the fence.
         if (
             adapter.sink_binding_ref.strip() != sink_binding_ref
             or adapter.presentation_contract_version != presentation_contract_version
@@ -818,24 +820,127 @@ class PersonalCalendarMutationPresentationServices:
                     "CALENDAR_MUTATION_PRESENTATION_ACCEPTANCE_INVALID",
                     "accepted mutation-result attempt lacks durable sink evidence",
                 )
+            lineage = self._load_output_lineage(
+                conn, attempt["companion_output_id"]
+            )
             presented_at = evidence["accepted_at"] or evidence["observed_at"]
 
         operation_id = uuid5(
             _PRESENTATION_NAMESPACE,
             f"{attempt['companion_output_id']}:calendar-mutation-presentation-commit-v1",
         )
-        FoundationServicesV4(
-            self.engine, clock=self.clock, ids=self.ids
-        ).present_companion_output(
-            PresentCompanionOutputCommand(
+        commit_payload = {
+            "companion_output_id": str(attempt["companion_output_id"]),
+            "presentation_attempt_id": str(attempt_id),
+            "presentation_attempt_generation": int(
+                attempt["presentation_attempt_generation"]
+            ),
+            "surface_binding_id": str(attempt["surface_binding_id"]),
+            "channel_binding_id": str(attempt["channel_binding_id"]),
+            "reply_to_event_id": str(lineage["source_event"]["event_id"]),
+            "presented_at": presented_at.isoformat(),
+        }
+        commit_digest = request_digest(commit_payload)
+        with self.engine.begin() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=_TIMELINE_COMMIT_SCOPE,
                 operation_id=operation_id,
-                companion_output_id=attempt["companion_output_id"],
-                surface_binding_id=attempt["surface_binding_id"],
-                channel_binding_id=attempt["channel_binding_id"],
-                presented_at=presented_at,
+                expected_request_digest=commit_digest,
             )
-        )
+            if replay:
+                event_id = UUID(replay["interaction_event_id"])
+            else:
+                existing = conn.execute(
+                    select(schema.interaction_event).where(
+                        schema.interaction_event.c.companion_output_id
+                        == attempt["companion_output_id"]
+                    )
+                ).mappings().one_or_none()
+                if existing is not None:
+                    if (
+                        existing["relationship_id"]
+                        != lineage["relationship"]["relationship_id"]
+                        or existing["actor_kind"] != "COMPANION"
+                        or existing["actor_ref"]
+                        != lineage["relationship"]["companion_person_id"]
+                        or existing["event_kind"] != "COMPANION_PRESENTED_OUTPUT"
+                        or existing["content_text"] != lineage["output"]["content_text"]
+                        or existing["surface_binding_id"]
+                        != attempt["surface_binding_id"]
+                        or existing["channel_binding_id"]
+                        != attempt["channel_binding_id"]
+                        or existing["reply_to_event_id"]
+                        != lineage["source_event"]["event_id"]
+                    ):
+                        fail(
+                            "CALENDAR_MUTATION_PRESENTATION_TIMELINE_CONFLICT",
+                            "existing Timeline presentation does not match the accepted mutation result",
+                        )
+                    event_id = existing["event_id"]
+                else:
+                    timeline = conn.execute(
+                        select(schema.relationship_timeline_head).where(
+                            schema.relationship_timeline_head.c.relationship_id
+                            == lineage["relationship"]["relationship_id"]
+                        )
+                    ).mappings().one_or_none()
+                    if timeline is None:
+                        fail(
+                            "CALENDAR_MUTATION_PRESENTATION_TIMELINE_MISSING",
+                            "relationship Timeline head is missing",
+                        )
+                    next_seq = int(timeline["last_timeline_seq"]) + 1
+                    event_id = self.ids.new()
+                    conn.execute(
+                        insert(schema.interaction_event).values(
+                            event_id=event_id,
+                            relationship_id=lineage["relationship"][
+                                "relationship_id"
+                            ],
+                            timeline_seq=next_seq,
+                            actor_kind="COMPANION",
+                            actor_ref=lineage["relationship"][
+                                "companion_person_id"
+                            ],
+                            event_kind="COMPANION_PRESENTED_OUTPUT",
+                            content_text=lineage["output"]["content_text"],
+                            occurred_at=presented_at,
+                            recorded_at=self.clock.now(),
+                            surface_binding_id=attempt["surface_binding_id"],
+                            channel_binding_id=attempt["channel_binding_id"],
+                            companion_output_id=attempt["companion_output_id"],
+                            reply_to_event_id=lineage["source_event"]["event_id"],
+                        )
+                    )
+                    changed = conn.execute(
+                        update(schema.relationship_timeline_head)
+                        .where(
+                            schema.relationship_timeline_head.c.relationship_id
+                            == lineage["relationship"]["relationship_id"],
+                            schema.relationship_timeline_head.c.last_timeline_seq
+                            == timeline["last_timeline_seq"],
+                        )
+                        .values(last_timeline_seq=next_seq)
+                    )
+                    if changed.rowcount != 1:
+                        fail(
+                            "CALENDAR_MUTATION_PRESENTATION_TIMELINE_CONFLICT",
+                            "relationship Timeline advanced concurrently",
+                        )
+                save_operation_receipt(
+                    conn,
+                    scope=_TIMELINE_COMMIT_SCOPE,
+                    operation_id=operation_id,
+                    req_digest=commit_digest,
+                    result_kind="PersonalCalendarMutationPresentedInteractionEvent",
+                    result_ref=event_id,
+                    result_json={"interaction_event_id": str(event_id)},
+                    committed_at=self.clock.now(),
+                )
 
+        # Bind historical Timeline truth to exact sink acceptance evidence. This can
+        # be repaired after process loss without redisclosing the payload.
         with self.engine.begin() as conn:
             attempt = self._attempt(conn, attempt_id)
             evidence = conn.execute(
@@ -848,13 +953,12 @@ class PersonalCalendarMutationPresentationServices:
                     == "ACCEPTED",
                 )
             ).mappings().one_or_none()
-            event_id = conn.execute(
-                select(schema.interaction_event.c.event_id).where(
-                    schema.interaction_event.c.companion_output_id
-                    == attempt["companion_output_id"]
+            event = conn.execute(
+                select(schema.interaction_event).where(
+                    schema.interaction_event.c.event_id == event_id
                 )
-            ).scalar_one_or_none()
-            if evidence is None or event_id is None:
+            ).mappings().one_or_none()
+            if evidence is None or event is None:
                 fail(
                     "CALENDAR_MUTATION_PRESENTATION_PROVENANCE_INVALID",
                     "accepted mutation-result presentation lacks canonical event or sink evidence",
@@ -972,7 +1076,10 @@ class PersonalCalendarMutationPresentationServices:
             .values(current_revision=expected_revision)
         )
         if changed.rowcount != 1:
-            fail(conflict_code, "mutation-result presentation authority changed concurrently")
+            fail(
+                conflict_code,
+                "mutation-result presentation authority changed concurrently",
+            )
 
 
 __all__ = ["PersonalCalendarMutationPresentationServices"]
