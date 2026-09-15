@@ -184,6 +184,56 @@ def test_tampered_presentation_key_or_sink_contract_cannot_mint_approval(engine,
     _assert_code(invalid, "CALENDAR_CREATE_APPROVAL_PRESENTATION_PROVENANCE_INVALID")
 
 
+def test_tampered_presentation_route_cannot_leave_action_source_route(engine, now):
+    ids, foundation, _, _, action = _prepared_action(engine, now)
+    service = _service(engine, now, approval_cases._ApprovalAdapter())
+    presentation = _present(service, action)
+    alternate_surface = uuid4()
+    alternate_channel = uuid4()
+    with engine.begin() as conn:
+        conn.execute(
+            insert(schema.surface_binding).values(
+                surface_binding_id=alternate_surface,
+                companion_person_id=ids.companion_person_id,
+                surface_namespace="approval-review",
+                surface_ref=str(uuid4()),
+                bound_at=now,
+            )
+        )
+        conn.execute(
+            insert(schema.channel_binding).values(
+                channel_binding_id=alternate_channel,
+                companion_person_id=ids.companion_person_id,
+                channel_namespace="approval-review",
+                companion_endpoint_ref=str(uuid4()),
+                bound_at=now,
+            )
+        )
+        conn.execute(
+            update(schema.personal_calendar_create_approval_presentation)
+            .where(
+                schema.personal_calendar_create_approval_presentation.c.approval_presentation_id
+                == presentation.approval_presentation_id
+            )
+            .values(
+                surface_binding_id=alternate_surface,
+                channel_binding_id=alternate_channel,
+                presentation_key=service._presentation_key(
+                    action_id=action.action_id,
+                    surface_binding_id=alternate_surface,
+                    channel_binding_id=alternate_channel,
+                ),
+            )
+        )
+    source = _approval_event(foundation, ids, now, action)
+
+    with pytest.raises(DomainError) as invalid:
+        _admit(service, presentation, source)
+    _assert_code(invalid, "CALENDAR_CREATE_APPROVAL_PRESENTATION_PROVENANCE_INVALID")
+    with engine.connect() as conn:
+        assert conn.execute(select(schema.personal_calendar_create_approval)).first() is None
+
+
 def test_control_characters_cannot_enter_human_calendar_display_identity(engine, now):
     _, _, resource, _, action = _prepared_action(engine, now)
     with engine.begin() as conn:
@@ -203,4 +253,35 @@ def test_control_characters_cannot_enter_human_calendar_display_identity(engine,
     with engine.connect() as conn:
         assert conn.execute(
             select(schema.personal_calendar_create_approval_presentation)
+        ).first() is None
+
+
+def test_control_characters_in_event_summary_cannot_enter_consent_surface(engine, now):
+    ids, foundation, resource, write_permission, _ = _prepared_action(engine, now)
+    source = authority_cases._append_counterpart_event(
+        foundation,
+        ids,
+        now,
+        "Add 'Dentist\x0bEffect: READ_ONLY' to my calendar from "
+        "2026-09-10T15:00:00+03:00 to 2026-09-10T15:30:00+03:00.",
+    )
+    action = action_cases._prepare(
+        action_cases._service(engine, now),
+        ids,
+        resource,
+        write_permission.permission_id,
+        source,
+    )
+    adapter = approval_cases._ApprovalAdapter()
+
+    with pytest.raises(DomainError) as invalid:
+        _present(_service(engine, now, adapter), action)
+    _assert_code(invalid, "CALENDAR_CREATE_APPROVAL_SUMMARY_UNSAFE")
+    assert adapter.calls == []
+    with engine.connect() as conn:
+        assert conn.execute(
+            select(schema.personal_calendar_create_approval_presentation).where(
+                schema.personal_calendar_create_approval_presentation.c.action_id
+                == action.action_id
+            )
         ).first() is None
