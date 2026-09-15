@@ -63,6 +63,9 @@ from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
 from .personal_calendar_effect import PersonalCalendarEffectServices
 from .personal_calendar_execution_v4 import PersonalCalendarExecutionServices
 from .personal_calendar_mutation_completion_v2 import PersonalCalendarMutationCompletionServices
+from .personal_calendar_mutation_presentation import (
+    PersonalCalendarMutationPresentationServices,
+)
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
 from .personal_calendar_reconciliation_v3 import PersonalCalendarReconciliationServices
 from .personal_calendar_runtime import (
@@ -136,6 +139,7 @@ __all__ = [
     "PersonalCalendarEffectServices",
     "PersonalCalendarExecutionServices",
     "PersonalCalendarMutationCompletionServices",
+    "PersonalCalendarMutationPresentationServices",
     "PersonalCalendarMutationTransportServices",
     "PersonalCalendarPresentationServices",
     "PersonalCalendarReconciliationServices",
