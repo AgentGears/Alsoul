@@ -61,6 +61,41 @@ class FirstPartyPresentationAdapter(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class CalendarApprovalPresentationAcceptance:
+    """Sink acceptance for one faithful calendar-create consent surface."""
+
+    presentation_key: str
+    receipt_ref: str
+    consent_payload_digest: str
+
+
+@runtime_checkable
+class CalendarApprovalPresentationAdapter(Protocol):
+    """Trusted first-party consent-presentation contract for F5.B calendar create.
+
+    The adapter must preserve one stable sink identity and presentation contract
+    version. ``presentation_key`` is restart-stable and idempotent for the exact
+    Action consent payload: replaying the same key/digest may return the same logical
+    acceptance, while reusing the key for different consent content must be rejected.
+    """
+
+    sink_binding_ref: str
+    presentation_contract_version: str
+
+    def present_calendar_create_approval(
+        self,
+        *,
+        presentation_key: str,
+        action_id: UUID,
+        surface_binding_id: UUID,
+        channel_binding_id: UUID,
+        consent_text: str,
+        consent_payload_digest: str,
+    ) -> CalendarApprovalPresentationAcceptance:
+        ...
+
+
 @runtime_checkable
 class WorldAcquisitionAdapter(Protocol):
     """Provider-independent F4 world-acquisition contract."""
@@ -100,6 +135,8 @@ __all__ = [
     "AdapterError",
     "AdapterOutcomeUnknown",
     "AdapterRejected",
+    "CalendarApprovalPresentationAcceptance",
+    "CalendarApprovalPresentationAdapter",
     "FirstPartyPresentationAcceptance",
     "FirstPartyPresentationAdapter",
     "ModelProviderAdapter",
