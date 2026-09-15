@@ -85,7 +85,7 @@ def _service(engine, now, adapter, *, binding=None):
     )
 
 
-def _fenced_action(engine, now):
+def _prepared_action(engine, now):
     (
         ids,
         foundation,
@@ -99,7 +99,6 @@ def _fenced_action(engine, now):
     attempt = execution_cases._prepare(
         execution_service, action, approval, credential
     )
-    fence = execution_cases._fence(execution_service, attempt)
     return {
         "ids": ids,
         "foundation": foundation,
@@ -110,8 +109,15 @@ def _fenced_action(engine, now):
         "credential": credential,
         "execution_service": execution_service,
         "attempt": attempt,
-        "fence": fence,
     }
+
+
+def _fenced_action(engine, now):
+    lineage = _prepared_action(engine, now)
+    lineage["fence"] = execution_cases._fence(
+        lineage["execution_service"], lineage["attempt"]
+    )
+    return lineage
 
 
 def _dispatch(service, attempt, *, operation_id=None):
@@ -156,10 +162,20 @@ def _current_attempt_and_guard(engine, attempt):
     return attempt_state, guard
 
 
-def test_fenced_action_crosses_exact_adapter_once_and_persists_minimized_matched_evidence(
+def _fence_row(engine, attempt):
+    with engine.connect() as conn:
+        return conn.execute(
+            select(schema.personal_calendar_create_execution_fence).where(
+                schema.personal_calendar_create_execution_fence.c.execution_attempt_id
+                == attempt.execution_attempt_id
+            )
+        ).mappings().one_or_none()
+
+
+def test_prepared_action_is_fenced_and_crosses_exact_adapter_once_with_minimized_evidence(
     engine, now
 ):
-    lineage = _fenced_action(engine, now)
+    lineage = _prepared_action(engine, now)
     adapter = _MutationAdapter(now)
     service = _service(engine, now, adapter)
     operation_id = uuid4()
@@ -174,6 +190,8 @@ def test_fenced_action_crosses_exact_adapter_once_and_persists_minimized_matched
     assert result.effect_evidence_id is not None
     assert len(adapter.calls) == 1
 
+    fence = _fence_row(engine, lineage["attempt"])
+    assert fence is not None
     request = adapter.calls[0]
     assert isinstance(request, PersonalCalendarCreateMutationRequest)
     assert {field.name for field in fields(request)} == {
@@ -193,7 +211,7 @@ def test_fenced_action_crosses_exact_adapter_once_and_persists_minimized_matched
     assert request.execution_attempt_id == lineage["attempt"].execution_attempt_id
     assert request.action_id == lineage["action"].action_id
     assert request.summary == lineage["action"].summary
-    assert request.correlation_key == lineage["fence"].correlation_key
+    assert request.correlation_key == fence["correlation_key"]
     assert request.credential_secret_ref == "secret-ref:calendar-write"
     assert request.request_contract_version == CALENDAR_CREATE_MUTATION_REQUEST_CONTRACT_VERSION
 
@@ -219,7 +237,7 @@ def test_fenced_action_crosses_exact_adapter_once_and_persists_minimized_matched
     }
     assert dispatch["request_contract_version"] == CALENDAR_CREATE_MUTATION_REQUEST_CONTRACT_VERSION
     assert evidence["validation_kind"] == "SEMANTIC_MATCH"
-    assert evidence["correlation_key"] == lineage["fence"].correlation_key
+    assert evidence["correlation_key"] == fence["correlation_key"]
     assert evidence["normalized_summary"] == lineage["action"].summary
     assert evidence["provider_status"] == "CREATED"
     assert evidence["evidence_schema_version"] == CALENDAR_CREATE_EFFECT_EVIDENCE_SCHEMA_VERSION
@@ -231,7 +249,7 @@ def test_fenced_action_crosses_exact_adapter_once_and_persists_minimized_matched
 
 
 def test_unknown_adapter_outcome_is_durable_and_never_blindly_redispatched(engine, now):
-    lineage = _fenced_action(engine, now)
+    lineage = _prepared_action(engine, now)
     adapter = _MutationAdapter(now, mode="unknown")
     service = _service(engine, now, adapter)
     operation_id = uuid4()
@@ -256,6 +274,27 @@ def test_unknown_adapter_outcome_is_durable_and_never_blindly_redispatched(engin
                 == lineage["attempt"].execution_attempt_id
             )
         ).first() is None
+
+
+def test_surviving_fence_is_not_reusable_transport_authority(engine, now):
+    lineage = _fenced_action(engine, now)
+    adapter = _MutationAdapter(now)
+    service = _service(engine, now, adapter)
+
+    result = _dispatch(service, lineage["attempt"])
+
+    assert result.status == "UNKNOWN_EFFECT"
+    assert len(adapter.calls) == 0
+    with engine.connect() as conn:
+        assert conn.execute(
+            select(schema.personal_calendar_create_mutation_dispatch).where(
+                schema.personal_calendar_create_mutation_dispatch.c.execution_attempt_id
+                == lineage["attempt"].execution_attempt_id
+            )
+        ).first() is None
+    attempt_state, guard = _current_attempt_and_guard(engine, lineage["attempt"])
+    assert attempt_state["status"] == "UNKNOWN_EFFECT"
+    assert guard["status"] == "UNKNOWN_EFFECT"
 
 
 def test_surviving_one_shot_dispatch_claim_without_evidence_recovers_unknown_without_call(
@@ -284,7 +323,7 @@ def test_surviving_one_shot_dispatch_claim_without_evidence_recovers_unknown_wit
 
 
 def test_correlated_semantic_divergence_is_evidence_but_not_effect_truth(engine, now):
-    lineage = _fenced_action(engine, now)
+    lineage = _prepared_action(engine, now)
     adapter = _MutationAdapter(now, mode="divergent-resource")
     service = _service(engine, now, adapter)
 
@@ -317,8 +356,8 @@ def test_correlated_semantic_divergence_is_evidence_but_not_effect_truth(engine,
     assert locked.value.code == "CALENDAR_CREATE_ACTION_DISPATCH_LOCKED"
 
 
-def test_wrong_or_replacement_adapter_cannot_consume_existing_fence(engine, now):
-    lineage = _fenced_action(engine, now)
+def test_wrong_adapter_fails_before_fence_or_transport_claim(engine, now):
+    lineage = _prepared_action(engine, now)
     adapter = _ReplacementMutationAdapter(now)
     service = _service(engine, now, adapter)
 
@@ -326,6 +365,7 @@ def test_wrong_or_replacement_adapter_cannot_consume_existing_fence(engine, now)
         _dispatch(service, lineage["attempt"])
     assert mismatch.value.code == "CALENDAR_CREATE_MUTATION_ADAPTER_MISMATCH"
     assert len(adapter.calls) == 0
+    assert _fence_row(engine, lineage["attempt"]) is None
 
     with engine.connect() as conn:
         assert conn.execute(
@@ -336,10 +376,10 @@ def test_wrong_or_replacement_adapter_cannot_consume_existing_fence(engine, now)
         ).first() is None
 
 
-def test_invalid_normalized_response_marks_fenced_attempt_unknown_and_keeps_raw_material_out(
+def test_invalid_normalized_response_marks_attempt_unknown_and_keeps_raw_material_out(
     engine, now
 ):
-    lineage = _fenced_action(engine, now)
+    lineage = _prepared_action(engine, now)
     adapter = _MutationAdapter(now, mode="invalid")
     service = _service(engine, now, adapter)
     operation_id = uuid4()
@@ -360,14 +400,13 @@ def test_invalid_normalized_response_marks_fenced_attempt_unknown_and_keeps_raw_
             )
         ).first() is None
 
-    # The same command is now a durable UNKNOWN result and cannot call the adapter again.
     replay = _dispatch(service, lineage["attempt"], operation_id=operation_id)
     assert replay.status == "UNKNOWN_EFFECT"
     assert len(adapter.calls) == 1
 
 
 def test_recovery_after_matched_evidence_remains_conservative_without_redispatch(engine, now):
-    lineage = _fenced_action(engine, now)
+    lineage = _prepared_action(engine, now)
     adapter = _MutationAdapter(now)
     service = _service(engine, now, adapter)
     matched = _dispatch(service, lineage["attempt"])
