@@ -228,7 +228,7 @@ def test_current_authorized_reconciliation_recovers_matched_evidence_then_effect
     assert probe["permission_id"] == permission.permission_id
     assert probe["permission_state_revision"] == 1
     assert probe["credential_binding_id"] == credential.credential_binding_id
-    assert probe["read_policy_revision"] == 1
+    assert probe["read_policy_revision"] == 2
     assert evidence["validation_kind"] == "SEMANTIC_MATCH"
     assert evidence["correlation_key"] == lineage["attempt"].correlation_key
 
