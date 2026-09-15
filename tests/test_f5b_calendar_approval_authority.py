@@ -14,9 +14,9 @@ from alsoul.domain.errors import DomainError
 from alsoul.domain.personal_calendar_action import SetCalendarCreatePermissionStatusCommand
 from alsoul.domain.personal_calendar_approval import (
     AdmitPersonalCalendarCreateApprovalCommand,
-    CALENDAR_CREATE_APPROVAL_TEXT,
     PresentPersonalCalendarCreateApprovalCommand,
     RevokePersonalCalendarCreateApprovalCommand,
+    calendar_create_approval_challenge,
 )
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services.personal_calendar import ZoneInfoCalendarTimeResolver
@@ -116,6 +116,10 @@ def _admit(service, presentation, source_event, *, operation_id=None):
     )
 
 
+def _approval_text(action) -> str:
+    return calendar_create_approval_challenge(action.action_digest)
+
+
 def test_faithful_consent_presentation_pins_exact_action_semantics_and_acceptance(
     engine, now
 ):
@@ -134,6 +138,7 @@ def test_faithful_consent_presentation_pins_exact_action_semantics_and_acceptanc
     assert "End: 2026-09-10T15:30:00+03:00" in sent["consent_text"]
     assert "Capability: calendar.event.create" in sent["consent_text"]
     assert "Effect: WRITE" in sent["consent_text"]
+    assert f"Reply exactly: {_approval_text(action)}" in sent["consent_text"]
     assert result.consent_payload_digest == sent["consent_payload_digest"]
 
     with engine.connect() as conn:
@@ -214,7 +219,7 @@ def test_exact_counterpart_approval_after_presentation_is_admitted_and_revocable
     service = _service(engine, now, _ApprovalAdapter())
     presentation = _present(service, action)
     approval_event = authority_cases._append_counterpart_event(
-        foundation, ids, now, CALENDAR_CREATE_APPROVAL_TEXT
+        foundation, ids, now, _approval_text(action)
     )
     operation_id = uuid4()
 
@@ -280,7 +285,7 @@ def test_exact_counterpart_approval_after_presentation_is_admitted_and_revocable
 def test_approval_input_that_predates_presentation_cannot_be_reused(engine, now):
     ids, foundation, _, _, action = _prepared_action(engine, now)
     prior = authority_cases._append_counterpart_event(
-        foundation, ids, now, CALENDAR_CREATE_APPROVAL_TEXT
+        foundation, ids, now, _approval_text(action)
     )
     service = _service(engine, now, _ApprovalAdapter())
     presentation = _present(service, action)
@@ -303,7 +308,7 @@ def test_historical_or_wrong_approval_input_cannot_authorize_action(engine, now)
     _assert_code(wrong_text, "CALENDAR_CREATE_APPROVAL_PROVENANCE_INVALID")
 
     approval_event = authority_cases._append_counterpart_event(
-        foundation, ids, now, CALENDAR_CREATE_APPROVAL_TEXT
+        foundation, ids, now, _approval_text(action)
     )
     authority_cases._append_counterpart_event(foundation, ids, now, "Hello")
     with pytest.raises(DomainError) as historical:
@@ -325,7 +330,7 @@ def test_tampered_presentation_semantics_cannot_mint_approval(engine, now):
             .values(summary="Different event")
         )
     approval_event = authority_cases._append_counterpart_event(
-        foundation, ids, now, CALENDAR_CREATE_APPROVAL_TEXT
+        foundation, ids, now, _approval_text(action)
     )
 
     with pytest.raises(DomainError) as mismatch:
@@ -343,7 +348,7 @@ def test_permission_revocation_after_presentation_blocks_approval(engine, now):
         )
     )
     approval_event = authority_cases._append_counterpart_event(
-        foundation, ids, now, CALENDAR_CREATE_APPROVAL_TEXT
+        foundation, ids, now, _approval_text(action)
     )
 
     with pytest.raises(DomainError) as revoked:
