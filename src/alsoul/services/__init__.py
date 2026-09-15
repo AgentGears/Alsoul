@@ -58,6 +58,7 @@ from .personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionService
 from .personal_calendar_action_v2 import PersonalCalendarActionServices
 from .personal_calendar_approval_v2 import PersonalCalendarApprovalServices
 from .personal_calendar_cognition_v2 import PersonalCalendarCognitionServices
+from .personal_calendar_effect import PersonalCalendarEffectServices
 from .personal_calendar_execution_v2 import PersonalCalendarExecutionServices
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
 from .personal_calendar_runtime import (
@@ -122,6 +123,7 @@ __all__ = [
     "PersonalCalendarActionServices",
     "PersonalCalendarApprovalServices",
     "PersonalCalendarCognitionServices",
+    "PersonalCalendarEffectServices",
     "PersonalCalendarExecutionServices",
     "PersonalCalendarMutationTransportServices",
     "PersonalCalendarPresentationServices",
