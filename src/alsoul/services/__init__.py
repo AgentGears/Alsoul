@@ -49,6 +49,7 @@ from .memory_admission import (
 )
 from . import personal_calendar_acquisition as _personal_calendar_acquisition
 from . import personal_calendar_action as _personal_calendar_action
+from . import personal_calendar_approval as _personal_calendar_approval
 from . import personal_calendar_cognition as _personal_calendar_cognition
 from . import personal_calendar_presentation as _personal_calendar_presentation
 from .personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionServices
@@ -69,6 +70,7 @@ _personal_calendar_acquisition.PersonalCalendarAcquisitionServices = (
     PersonalCalendarAcquisitionServices
 )
 _personal_calendar_action.PersonalCalendarActionServices = PersonalCalendarActionServices
+_personal_calendar_approval.PersonalCalendarApprovalServices = PersonalCalendarApprovalServices
 _personal_calendar_cognition.PersonalCalendarCognitionServices = (
     PersonalCalendarCognitionServices
 )
