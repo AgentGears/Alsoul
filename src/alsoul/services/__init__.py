@@ -53,6 +53,7 @@ from . import personal_calendar_approval as _personal_calendar_approval
 from . import personal_calendar_cognition as _personal_calendar_cognition
 from . import personal_calendar_execution as _personal_calendar_execution
 from . import personal_calendar_presentation as _personal_calendar_presentation
+from . import personal_calendar_transport as _personal_calendar_transport
 from .personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionServices
 from .personal_calendar_action_v2 import PersonalCalendarActionServices
 from .personal_calendar_approval_v2 import PersonalCalendarApprovalServices
@@ -63,7 +64,7 @@ from .personal_calendar_runtime import (
     PersonalCalendarResponseCoordinator,
     PersonalCalendarResponseRunResult,
 )
-from .personal_calendar_transport import PersonalCalendarMutationTransportServices
+from .personal_calendar_transport_v2 import PersonalCalendarMutationTransportServices
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
@@ -82,6 +83,9 @@ _personal_calendar_execution.PersonalCalendarExecutionServices = (
 )
 _personal_calendar_presentation.PersonalCalendarPresentationServices = (
     PersonalCalendarPresentationServices
+)
+_personal_calendar_transport.PersonalCalendarMutationTransportServices = (
+    PersonalCalendarMutationTransportServices
 )
 
 __all__ = [
