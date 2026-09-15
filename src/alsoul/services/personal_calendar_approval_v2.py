@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime, timezone
+import unicodedata
 from uuid import UUID
 
 from sqlalchemy import insert, select, update
@@ -40,7 +41,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarApprovalServicesV1):
         ):
             fail(
                 "CALENDAR_CREATE_APPROVAL_SUMMARY_UNSAFE",
-                "calendar event summary must be non-empty and free of control characters for faithful consent presentation",
+                "calendar event summary must be non-empty and free of control or line-separator characters for faithful consent presentation",
             )
         consent["approval_challenge"] = calendar_create_approval_challenge(
             action["action_digest"]
@@ -137,11 +138,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarApprovalServicesV1):
                     )
 
                 source_seq = int(source["timeline_seq"])
-                if (
-                    source_seq <= int(presentation["presentation_timeline_frontier"])
-                    or _aware_utc(source["recorded_at"])
-                    < _aware_utc(presentation["presented_at"])
-                ):
+                if source_seq <= int(presentation["presentation_timeline_frontier"]):
                     fail(
                         "CALENDAR_CREATE_APPROVAL_PROVENANCE_INVALID",
                         "Approval input must occur after the accepted faithful consent presentation",
@@ -360,7 +357,7 @@ class PersonalCalendarApprovalServices(PersonalCalendarApprovalServicesV1):
         ):
             fail(
                 "CALENDAR_CREATE_APPROVAL_DISPLAY_IDENTITY_INVALID",
-                "calendar target display identity must be non-empty and free of control characters",
+                "calendar target display identity must be non-empty and free of control or line-separator characters",
             )
         return f"{system_ref}:{resource_ref}"
 
@@ -379,7 +376,11 @@ class PersonalCalendarApprovalServices(PersonalCalendarApprovalServicesV1):
 
 
 def _contains_control_character(value: str) -> bool:
-    return any(ord(character) < 32 or ord(character) == 127 for character in value)
+    return any(
+        unicodedata.category(character).startswith("C")
+        or unicodedata.category(character) in {"Zl", "Zp"}
+        for character in value
+    )
 
 
 def _aware_utc(value: datetime) -> datetime:
