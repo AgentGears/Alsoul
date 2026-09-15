@@ -26,6 +26,38 @@ for _name, _value in vars(_schema_v14).items():
         globals()[_name] = metadata.tables[_value.name]
 
 
+personal_calendar_create_no_effect_operation_claim = Table(
+    "personal_calendar_create_no_effect_operation_claim",
+    metadata,
+    Column("operation_id", Uuid(as_uuid=True), primary_key=True),
+    Column(
+        "execution_attempt_id",
+        Uuid(as_uuid=True),
+        ForeignKey("personal_calendar_create_execution_attempt.execution_attempt_id"),
+        nullable=False,
+    ),
+    Column("request_digest", String(64), nullable=False),
+    Column(
+        "reconciliation_probe_id",
+        Uuid(as_uuid=True),
+        ForeignKey("personal_calendar_create_reconciliation_probe.reconciliation_probe_id"),
+        unique=True,
+    ),
+    Column("status", String(32), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("completed_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "status IN ('STARTED', 'COMPLETED')",
+        name="ck_calendar_create_no_effect_operation_claim_status_f5b",
+    ),
+    CheckConstraint(
+        "((status = 'STARTED' AND completed_at IS NULL) OR "
+        "(status = 'COMPLETED' AND completed_at IS NOT NULL AND reconciliation_probe_id IS NOT NULL))",
+        name="ck_calendar_create_no_effect_operation_claim_completion_f5b",
+    ),
+)
+
+
 personal_calendar_create_no_effect_evidence = Table(
     "personal_calendar_create_no_effect_evidence",
     metadata,
