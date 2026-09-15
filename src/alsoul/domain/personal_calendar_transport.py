@@ -19,12 +19,11 @@ class PersonalCalendarCreateMutationRequest:
     """Exact minimized provider-bound request for one fenced calendar Action.
 
     The trusted adapter may translate these semantic fields to provider syntax and
-    resolve ``credential_secret_ref`` ephemerally. No Approval, Permission,
-    conversation, model, or unrelated personal-world state belongs in this request.
+    resolve ``credential_secret_ref`` ephemerally. Canonical Action/ExecutionAttempt
+    identifiers, Approval, Permission, conversation, model, and unrelated personal-
+    world state do not cross this provider-bound request contract.
     """
 
-    execution_attempt_id: UUID
-    action_id: UUID
     external_system_ref: str
     external_resource_ref: str
     summary: str
