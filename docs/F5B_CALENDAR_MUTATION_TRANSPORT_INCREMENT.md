@@ -6,10 +6,10 @@ This increment advances the executable `calendar.event.create` path across the f
 
 Only the exact `DISPATCH_FENCED` ExecutionAttempt that currently owns the per-Action dispatch guard may reach mutation transport. Before the adapter call can exist, the host commits one structural mutation-dispatch row for that ExecutionAttempt. That row contains no title, time, resource target, correlation value, credential reference, approval material, or raw request payload. Its existence is the one-shot transport claim: a surviving claim without durable normalized response evidence recovers conservatively as `UNKNOWN_EFFECT` and cannot be sent again.
 
-The provider-bound request is reconstructed from canonical state only after the one-shot claim commits. The trusted adapter receives an explicit allowlist:
+After the one-shot claim commits, the trusted host constructs a bounded host-to-adapter envelope from canonical state. It contains opaque host-side Action/ExecutionAttempt references plus only the semantic/provider material required to reconstruct the exact request:
 
 ```text
-ExecutionAttempt / Action identity
+opaque ExecutionAttempt / Action references for trusted host-side control flow
 exact external system/resource target
 Action title/summary
 Action normalized start/end instants
@@ -19,7 +19,7 @@ exact capability / adapter contract versions
 fixed mutation-request contract version
 ```
 
-Permission, Approval, consent text, conversation history, model context, unrelated personal data, raw credential material, and provider defaults are not part of the mutation request contract.
+The opaque canonical references are not provider-wire fields. The adapter may place on the provider wire only the exact routing, title/time, correlation, fixed provider-operation metadata, and ephemeral authentication material required by the pinned create contract. Permission, Approval, consent text, conversation history, model context, unrelated personal data, raw credential material, and provider defaults are not part of the provider-bound mutation payload.
 
 The concrete mutation adapter must match the exact adapter binding, adapter contract, capability contract, external system, and execution semantics already pinned by the durable dispatch fence. A replacement or mismatched adapter cannot consume an old fence.
 
