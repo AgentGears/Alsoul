@@ -60,6 +60,8 @@ from alsoul.storage import schema
 MutationRuntimeStatus = Literal[
     "AWAITING_APPROVAL",
     "UNKNOWN_EFFECT",
+    "PRESENTATION_UNKNOWN",
+    "NOT_PRESENTED",
     "PRESENTED",
 ]
 
@@ -302,8 +304,35 @@ class PersonalCalendarMutationCoordinator:
             surface_binding_id=surface_binding_id,
             channel_binding_id=channel_binding_id,
         )
+        if presented.state == "ACCEPTED":
+            if presented.interaction_event_id is None:
+                fail(
+                    "PERSONAL_CALENDAR_MUTATION_RUNTIME_PRESENTATION_INCONSISTENT",
+                    "accepted mutation-result presentation lacks canonical Timeline truth",
+                )
+            runtime_status: MutationRuntimeStatus = "PRESENTED"
+        elif presented.state == "NOT_ACCEPTED":
+            if presented.interaction_event_id is not None:
+                fail(
+                    "PERSONAL_CALENDAR_MUTATION_RUNTIME_PRESENTATION_INCONSISTENT",
+                    "non-accepted mutation-result presentation cannot have canonical presented output",
+                )
+            runtime_status = "NOT_PRESENTED"
+        elif presented.state == "UNKNOWN":
+            if presented.interaction_event_id is not None:
+                fail(
+                    "PERSONAL_CALENDAR_MUTATION_RUNTIME_PRESENTATION_INCONSISTENT",
+                    "uncertain mutation-result presentation cannot have canonical presented output",
+                )
+            runtime_status = "PRESENTATION_UNKNOWN"
+        else:
+            fail(
+                "PERSONAL_CALENDAR_MUTATION_RUNTIME_PRESENTATION_STATE_INVALID",
+                "mutation-result presentation returned an unsupported state",
+            )
+
         return PersonalCalendarMutationRunResult(
-            status="PRESENTED",
+            status=runtime_status,
             action_id=approval.action_id,
             approval_presentation_id=presentation["approval_presentation_id"],
             approval_id=approval.approval_id,
