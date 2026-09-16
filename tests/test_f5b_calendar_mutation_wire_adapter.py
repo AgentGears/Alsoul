@@ -55,6 +55,19 @@ class _WireTransport:
         )
         if self.mode == "timeout":
             raise TimeoutError("wire outcome unavailable")
+        if self.mode == "sensitive-exception":
+            raise RuntimeError(
+                f"secret={authorization_token}; body={json.dumps(body, sort_keys=True)}"
+            )
+        if self.mode == "invalid-json":
+            return CalendarMutationHttpResponse(
+                status_code=200,
+                resolved_endpoint=endpoint,
+                content=(
+                    "raw-response secret=provider-private-value "
+                    "correlation=calendar-create:wire-correlation"
+                ),
+            )
 
         payload: dict[str, object] = {
             "schema_version": CALENDAR_MUTATION_WIRE_SCHEMA_VERSION,
@@ -185,6 +198,39 @@ def test_concrete_mutation_adapter_has_no_internal_retry_on_unknown_wire_outcome
 
     assert resolver.calls == ["secret-ref:calendar-write"]
     assert len(wire.calls) == 1
+
+
+def test_transport_exception_diagnostics_are_sanitized_without_sensitive_context(now):
+    adapter, _, wire = _adapter(now, mode="sensitive-exception")
+
+    with pytest.raises(AdapterOutcomeUnknown) as unknown:
+        adapter.create_event(_request(now))
+
+    assert len(wire.calls) == 1
+    assert unknown.value.__cause__ is None
+    assert unknown.value.__context__ is None
+    diagnostic = str(unknown.value)
+    for forbidden in (
+        "ephemeral-calendar-token",
+        "Wire boundary review",
+        "calendar-create:wire-correlation",
+        "primary",
+    ):
+        assert forbidden not in diagnostic
+
+
+def test_invalid_raw_provider_response_is_not_retained_as_exception_context(now):
+    adapter, _, wire = _adapter(now, mode="invalid-json")
+
+    with pytest.raises(AdapterRejected) as invalid:
+        adapter.create_event(_request(now))
+
+    assert len(wire.calls) == 1
+    assert invalid.value.__cause__ is None
+    assert invalid.value.__context__ is None
+    diagnostic = str(invalid.value)
+    assert "provider-private-value" not in diagnostic
+    assert "calendar-create:wire-correlation" not in diagnostic
 
 
 def test_concrete_mutation_adapter_rejects_non_minimized_response_before_domain_crossing(now):
