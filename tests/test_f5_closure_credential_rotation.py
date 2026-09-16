@@ -89,4 +89,4 @@ def test_credential_rotation_cannot_silently_substitute_into_prepared_attempt(en
         ).mappings().one()
 
     assert fence["credential_binding_id"] == replacement.credential_binding_id
-    assert identity_after == identity_before
+    assert dict(identity_after) == dict(identity_before)
