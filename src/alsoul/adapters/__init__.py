@@ -16,6 +16,14 @@ from .json_model import (
     JsonModelProviderAdapter,
     UrllibJsonTransport,
 )
+from .json_personal_calendar_mutation import (
+    CALENDAR_MUTATION_WIRE_SCHEMA_VERSION,
+    CalendarMutationHttpResponse,
+    CalendarMutationWireTransport,
+    CredentialSecretResolver,
+    JsonPersonalCalendarMutationAdapter,
+    UrllibCalendarMutationTransport,
+)
 from . import json_personal_calendar_presentation as _json_personal_calendar_presentation
 from .json_personal_calendar_presentation_v2 import JsonPersonalCalendarPresentationAdapter
 from .json_presentation import JsonFirstPartyPresentationAdapter
@@ -30,6 +38,10 @@ __all__ = [
     "AdapterError",
     "AdapterOutcomeUnknown",
     "AdapterRejected",
+    "CALENDAR_MUTATION_WIRE_SCHEMA_VERSION",
+    "CalendarMutationHttpResponse",
+    "CalendarMutationWireTransport",
+    "CredentialSecretResolver",
     "F4JsonMemoryRequirementExtractor",
     "FakeModelAdapter",
     "FakePresentationAdapter",
@@ -43,8 +55,10 @@ __all__ = [
     "JsonHttpResponse",
     "JsonHttpTransport",
     "JsonModelProviderAdapter",
+    "JsonPersonalCalendarMutationAdapter",
     "JsonPersonalCalendarPresentationAdapter",
     "ModelProviderAdapter",
+    "UrllibCalendarMutationTransport",
     "UrllibHttpTransport",
     "UrllibJsonTransport",
     "WorldAcquisitionAdapter",
