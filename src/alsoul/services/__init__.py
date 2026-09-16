@@ -1,5 +1,5 @@
 from .bootstrap import FoundationBootstrapper
-from .configured_runtime_v2 import (
+from .configured_runtime_v3 import (
     ConfiguredFoundationRuntime,
     FoundationInteractionRunResult,
     FoundationRuntimeConfig,
@@ -32,7 +32,7 @@ from .interaction_routing import (
     F4InteractionPurposeGate,
     classify_f4_interaction_text,
 )
-from .interaction_routing_current import (
+from .interaction_routing_current_v2 import (
     CurrentInteractionClassification,
     CurrentInteractionPurpose,
     CurrentInteractionPurposeGate,
@@ -65,6 +65,10 @@ from .personal_calendar_execution_v4 import PersonalCalendarExecutionServices
 from .personal_calendar_mutation_completion_v2 import PersonalCalendarMutationCompletionServices
 from .personal_calendar_mutation_presentation_v2 import (
     PersonalCalendarMutationPresentationServices,
+)
+from .personal_calendar_mutation_runtime import (
+    PersonalCalendarMutationCoordinator,
+    PersonalCalendarMutationRunResult,
 )
 from .personal_calendar_presentation_v4 import PersonalCalendarPresentationServices
 from .personal_calendar_reconciliation_v3 import PersonalCalendarReconciliationServices
@@ -139,7 +143,9 @@ __all__ = [
     "PersonalCalendarEffectServices",
     "PersonalCalendarExecutionServices",
     "PersonalCalendarMutationCompletionServices",
+    "PersonalCalendarMutationCoordinator",
     "PersonalCalendarMutationPresentationServices",
+    "PersonalCalendarMutationRunResult",
     "PersonalCalendarMutationTransportServices",
     "PersonalCalendarPresentationServices",
     "PersonalCalendarReconciliationServices",
