@@ -25,11 +25,12 @@ _GENERATION_ADMISSION_ACTIVE: ContextVar[bool] = ContextVar(
 
 
 class PersonalCalendarCognitionServices(PersonalCalendarCognitionServicesV1):
-    """Current F5.A cognition service with dispatch linearization fences.
+    """Current F5.A cognition service with dispatch and projection-local fences.
 
     The first cognition implementation validates current authority before model egress.
     This current layer additionally linearizes those reads against concurrent mutable-head
-    changes and serializes prospective model dispatches for one immutable projection.
+    changes, serializes prospective model dispatches for one immutable projection, and
+    exposes only opaque projection-local schedule-item handles to the model boundary.
     """
 
     def generate_answer_plan(
@@ -40,6 +41,46 @@ class PersonalCalendarCognitionServices(PersonalCalendarCognitionServicesV1):
             return super().generate_answer_plan(command)
         finally:
             _GENERATION_ADMISSION_ACTIVE.reset(token)
+
+    def _projection_occurrences(self, value: dict[str, Any]) -> list[dict[str, Any]]:
+        occurrences = super()._projection_occurrences(value)
+        projected: list[dict[str, Any]] = []
+        for occurrence in occurrences:
+            item = dict(occurrence)
+            # This is the canonical projection-local schedule handle.  The provider
+            # occurrence identity remains separately host-side in source_occurrence_ref.
+            # A fresh opaque identifier per projection prevents a handle learned from
+            # one projection from resolving inside another projection merely because
+            # both schedules have the same ordinal.
+            item["occurrence_ref"] = f"schedule-item:{self.ids.new()}"
+            projected.append(item)
+        return projected
+
+    def _render_model_context_conn(self, conn, projection_id: UUID) -> dict[str, Any]:
+        context = super()._render_model_context_conn(conn, projection_id)
+        occurrences = context.get("occurrences")
+        if not isinstance(occurrences, list):
+            fail(
+                "CALENDAR_CONTEXT_PROJECTION_INVALID",
+                "personal-calendar projection occurrence context is malformed",
+            )
+        model_occurrences: list[dict[str, Any]] = []
+        for occurrence in occurrences:
+            if not isinstance(occurrence, dict):
+                fail(
+                    "CALENDAR_CONTEXT_PROJECTION_INVALID",
+                    "personal-calendar projection occurrence context is malformed",
+                )
+            item = dict(occurrence)
+            schedule_item_ref = item.pop("occurrence_ref", None)
+            if not isinstance(schedule_item_ref, str) or not schedule_item_ref.strip():
+                fail(
+                    "CALENDAR_CONTEXT_PROJECTION_INVALID",
+                    "personal-calendar projection schedule item reference is missing",
+                )
+            item["schedule_item_ref"] = schedule_item_ref
+            model_occurrences.append(item)
+        return {**context, "occurrences": model_occurrences}
 
     def _load_personal_projection(self, conn, projection_id: UUID) -> dict[str, Any]:
         if _GENERATION_ADMISSION_ACTIVE.get():
