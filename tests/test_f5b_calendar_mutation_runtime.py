@@ -27,7 +27,6 @@ from alsoul.services.personal_calendar_presentation_v4 import (
 from alsoul.storage import schema
 
 import test_f5_personal_calendar_authority as authority_cases
-import test_f5_personal_calendar_cognition as cognition_cases
 import test_f5b_calendar_action_authority as action_cases
 import test_f5b_calendar_approval_authority as approval_cases
 import test_f5b_calendar_execution_fence as execution_cases
@@ -36,7 +35,14 @@ import test_f5b_calendar_mutation_presentation as presentation_cases
 import test_f5b_calendar_mutation_transport as transport_cases
 
 
-def _runtime(engine, now, *, mutation_mode="matched"):
+def _runtime(
+    engine,
+    now,
+    *,
+    mutation_mode="matched",
+    presentation_dispatch_state="ACCEPTED",
+    presentation_lookup_state="UNKNOWN",
+):
     (
         ids,
         foundation,
@@ -85,7 +91,11 @@ def _runtime(engine, now, *, mutation_mode="matched"):
         )
     )
 
-    presentation_adapter = presentation_cases._PresentationAdapter(now)
+    presentation_adapter = presentation_cases._PresentationAdapter(
+        now,
+        dispatch_state=presentation_dispatch_state,
+        lookup_state=presentation_lookup_state,
+    )
     PersonalCalendarPresentationServices(
         engine,
         clock=FixedClock(now),
@@ -175,7 +185,13 @@ def test_create_request_stops_at_exact_approval_presentation(engine, now):
 
     assert started.status == "AWAITING_APPROVAL"
     assert started.approval_presentation_id is not None
-    assert started.approval_challenge == "APPROVE CALENDAR ACTION " + started.approval_challenge.split()[-1]
+    assert started.approval_challenge is not None
+    prefix = "APPROVE CALENDAR ACTION "
+    assert started.approval_challenge.startswith(prefix)
+    digest = started.approval_challenge.removeprefix(prefix)
+    assert len(digest) == 64
+    assert digest == digest.lower()
+    assert all(character in "0123456789abcdef" for character in digest)
     assert len(ctx["approval_adapter"].calls) == 1
     assert ctx["mutation_adapter"].calls == []
     assert ctx["completion_adapter"].requests == []
@@ -289,3 +305,60 @@ def test_unknown_mutation_outcome_never_generates_or_presents_success_and_never_
             )
         ).mappings().one()
     assert attempt["status"] == "UNKNOWN_EFFECT"
+
+
+def test_confirmed_effect_with_unknown_presentation_is_not_reported_as_presented_and_is_not_resent(engine, now):
+    ctx = _runtime(engine, now, presentation_dispatch_state="UNKNOWN")
+    _request, started = _start(ctx, now)
+    approval_event, uncertain = _approve(ctx, now, started.approval_challenge)
+
+    assert uncertain.status == "PRESENTATION_UNKNOWN"
+    assert uncertain.effect_id is not None
+    assert uncertain.companion_output_id is not None
+    assert uncertain.presentation_state == "UNKNOWN"
+    assert uncertain.presented_event_id is None
+    assert len(ctx["mutation_adapter"].calls) == 1
+    assert len(ctx["presentation_adapter"].payload_calls) == 1
+    assert len(ctx["presentation_adapter"].status_calls) == 1
+
+    replay = ctx["coordinator"].approve_and_execute(
+        relationship_id=ctx["ids"].relationship_id,
+        current_input_event_id=approval_event.event_id,
+        surface_binding_id=ctx["ids"].surface_binding_id,
+        channel_binding_id=ctx["ids"].channel_binding_id,
+    )
+    assert replay.status == "PRESENTATION_UNKNOWN"
+    assert replay.presented_event_id is None
+    assert len(ctx["mutation_adapter"].calls) == 1
+    assert len(ctx["presentation_adapter"].payload_calls) == 1
+    assert len(ctx["presentation_adapter"].status_calls) == 2
+
+
+def test_terminal_nonacceptance_preserves_confirmed_effect_without_claiming_presentation(engine, now):
+    ctx = _runtime(engine, now, presentation_dispatch_state="NOT_ACCEPTED")
+    _request, started = _start(ctx, now)
+    _approval_event, not_presented = _approve(ctx, now, started.approval_challenge)
+
+    assert not_presented.status == "NOT_PRESENTED"
+    assert not_presented.effect_id is not None
+    assert not_presented.companion_output_id is not None
+    assert not_presented.presentation_state == "NOT_ACCEPTED"
+    assert not_presented.presented_event_id is None
+    assert len(ctx["mutation_adapter"].calls) == 1
+    assert len(ctx["completion_adapter"].requests) == 1
+    assert len(ctx["presentation_adapter"].payload_calls) == 1
+
+    with engine.connect() as conn:
+        effect = conn.execute(
+            select(schema.personal_calendar_create_effect).where(
+                schema.personal_calendar_create_effect.c.effect_id
+                == not_presented.effect_id
+            )
+        ).mappings().one()
+        assert effect["status"] == "CONFIRMED_EFFECT"
+        assert conn.execute(
+            select(schema.interaction_event).where(
+                schema.interaction_event.c.companion_output_id
+                == not_presented.companion_output_id
+            )
+        ).first() is None
