@@ -111,7 +111,7 @@ def _valid_plan(context, *, refs=None):
     occurrence_refs = (
         list(refs)
         if refs is not None
-        else [item["occurrence_ref"] for item in context["occurrences"]]
+        else [item["schedule_item_ref"] for item in context["occurrences"]]
     )
     return {
         "plan_schema_version": CALENDAR_ANSWER_PLAN_SCHEMA_VERSION,
@@ -328,9 +328,14 @@ def _build_projection(cognition, ctx):
 
 def test_calendar_projection_model_egress_and_adoption_are_bounded_and_traceable(engine, now):
     ctx = _bootstrap_result(engine, now)
-    adapter = _PlanAdapter(lambda context: _valid_plan(context, refs=reversed([
-        item["occurrence_ref"] for item in context["occurrences"]
-    ])))
+    adapter = _PlanAdapter(
+        lambda context: _valid_plan(
+            context,
+            refs=reversed(
+                [item["schedule_item_ref"] for item in context["occurrences"]]
+            ),
+        )
+    )
     cognition, route = _configure_cognition(engine, now, ctx, adapter)
     projection = _build_projection(cognition, ctx)
 
@@ -340,10 +345,11 @@ def test_calendar_projection_model_egress_and_adoption_are_bounded_and_traceable
     assert "provider-occurrence-2" not in serialized_context
     assert "secret://" not in serialized_context
     assert "calendar.test." not in serialized_context
-    assert [item["occurrence_ref"] for item in model_context["occurrences"]] == [
-        "schedule-item-0001",
-        "schedule-item-0002",
-    ]
+    refs = [item["schedule_item_ref"] for item in model_context["occurrences"]]
+    assert len(refs) == 2
+    assert len(set(refs)) == 2
+    assert all(ref.startswith("schedule-item:") for ref in refs)
+    assert all("occurrence_ref" not in item for item in model_context["occurrences"])
 
     generated = cognition.generate_answer_plan(
         GeneratePersonalCalendarAnswerPlanCommand(
@@ -579,7 +585,7 @@ def test_model_cannot_override_schedule_facts_and_duplicate_plan_is_not_adopted(
     _assert_code(override, "CALENDAR_ANSWER_PLAN_INVALID")
 
     def duplicate(context):
-        first = context["occurrences"][0]["occurrence_ref"]
+        first = context["occurrences"][0]["schedule_item_ref"]
         return _valid_plan(context, refs=[first, first])
 
     adapter.factory = duplicate
