@@ -39,9 +39,21 @@ The coordinator never grants write Permission, never manufactures Approval, and 
 
 This runtime increment does not convert ordinary absence into `CONFIRMED_NO_EFFECT` and does not perform an automatic create retry. The existing separately authorized reconciliation and terminal no-effect/retry boundaries remain authoritative for those transitions.
 
+## Presentation truth
+
+A confirmed external Effect remains distinct from result presentation. Runtime status preserves that distinction:
+
+```text
+PRESENTED             = exact sink generation ACCEPTED and canonical presented Timeline event exists
+NOT_PRESENTED         = exact sink generation terminally NOT_ACCEPTED; no presented Timeline event
+PRESENTATION_UNKNOWN  = exact sink generation remains uncertain; no presented Timeline event
+```
+
+An accepted sink result without canonical Timeline presentation, or a non-accepted/unknown result with a presented Timeline event, fails closed as an inconsistent runtime state. A confirmed Effect is not downgraded merely because its result could not be presented.
+
 ## Recovery
 
-Stage operation identities are deterministic from the trusted interaction event and stage. Durable receipts make process replay idempotent. Accepted or uncertain result presentation uses the existing exact-generation content-free status recovery path before any new presentation generation may be sent.
+Stage operation identities are deterministic from the trusted interaction event and stage. Durable receipts make process replay idempotent. Accepted or uncertain result presentation uses the existing exact-generation content-free status recovery path before any new presentation generation may be sent. Replaying an uncertain presentation does not resend its payload; terminal `NOT_ACCEPTED` may authorize a later presentation generation under the existing current disclosure gate without re-executing the calendar Action.
 
 ## Boundary
 
