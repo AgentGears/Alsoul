@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import SplitResult, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -97,6 +97,7 @@ class UrllibCalendarMutationTransport:
             method="POST",
         )
         opener = build_opener(_NoRedirectHandler())
+        http_error: tuple[int, str] | None = None
         try:
             with opener.open(request, timeout=timeout_seconds) as response:
                 charset = response.headers.get_content_charset() or "utf-8"
@@ -107,11 +108,15 @@ class UrllibCalendarMutationTransport:
                     content=content,
                 )
         except HTTPError as exc:
-            return CalendarMutationHttpResponse(
-                status_code=int(exc.code),
-                resolved_endpoint=exc.geturl(),
-                content="",
-            )
+            # Do not surface the provider error body/headers or retain the HTTPError
+            # object across this trusted boundary. Only structural status survives.
+            http_error = (int(exc.code), exc.geturl())
+        assert http_error is not None
+        return CalendarMutationHttpResponse(
+            status_code=http_error[0],
+            resolved_endpoint=http_error[1],
+            content="",
+        )
 
     def _read_bounded(self, response, *, charset: str) -> str:  # noqa: ANN001
         raw = response.read(self.max_response_bytes + 1)
@@ -119,12 +124,18 @@ class UrllibCalendarMutationTransport:
             raise AdapterRejected(
                 "calendar mutation endpoint response exceeded configured size limit"
             )
+        decoded: str | None = None
         try:
-            return raw.decode(charset)
-        except (UnicodeDecodeError, LookupError) as exc:
+            decoded = raw.decode(charset)
+        except (UnicodeDecodeError, LookupError):
+            pass
+        if decoded is None:
+            # Raise after leaving the decoder exception handler so raw response bytes
+            # cannot survive as exception context in diagnostics.
             raise AdapterRejected(
                 "calendar mutation endpoint returned an undecodable response body"
-            ) from exc
+            )
+        return decoded
 
 
 @dataclass(slots=True)
@@ -176,18 +187,26 @@ class JsonPersonalCalendarMutationAdapter:
         self, request: PersonalCalendarCreateMutationRequest
     ) -> PersonalCalendarCreateMutationResponse:
         self._validate_request(request)
+
+        authorization_token: str | None = None
+        credential_resolution_failed = False
         try:
             authorization_token = self.secret_resolver.resolve_secret(
                 request.credential_secret_ref
             )
-        except AdapterRejected:
-            raise
-        except Exception as exc:
-            raise AdapterRejected("calendar mutation credential could not be resolved") from exc
+        except Exception:
+            credential_resolution_failed = True
+        if credential_resolution_failed:
+            # Raise outside the exception handler. A resolver implementation may carry
+            # secret-bearing state in its exception, which must not escape as context.
+            raise AdapterRejected("calendar mutation credential could not be resolved")
         if not isinstance(authorization_token, str) or not authorization_token.strip():
             raise AdapterRejected("calendar mutation credential resolver returned no secret")
 
         body = self._wire_body(request)
+        response: CalendarMutationHttpResponse | None = None
+        transport_rejected = False
+        transport_unknown = False
         try:
             response = self.transport.post_create(
                 self.endpoint,
@@ -195,12 +214,27 @@ class JsonPersonalCalendarMutationAdapter:
                 authorization_token=authorization_token,
                 timeout_seconds=self.timeout_seconds,
             )
-        except (AdapterRejected, AdapterOutcomeUnknown):
-            raise
-        except (TimeoutError, URLError, OSError) as exc:
+        except AdapterRejected:
+            transport_rejected = True
+        except AdapterOutcomeUnknown:
+            transport_unknown = True
+        except Exception:
+            # An exact transport implementation is still untrusted as an exception
+            # serializer. Consume arbitrary exception objects here so body/header/token
+            # material cannot escape through exception chaining or crash diagnostics.
+            transport_unknown = True
+        if transport_rejected:
+            raise AdapterRejected(
+                "calendar mutation transport rejected the bounded request or response"
+            )
+        if transport_unknown:
             raise AdapterOutcomeUnknown(
                 "calendar mutation transport outcome could not be established"
-            ) from exc
+            )
+        if not isinstance(response, CalendarMutationHttpResponse):
+            raise AdapterOutcomeUnknown(
+                "calendar mutation transport returned no trustworthy response"
+            )
 
         if not 200 <= response.status_code < 300:
             raise AdapterRejected(
@@ -272,12 +306,18 @@ class JsonPersonalCalendarMutationAdapter:
 
     @staticmethod
     def _parse_response(content: str) -> dict[str, Any]:
+        payload: Any = None
+        parse_failed = False
         try:
             payload = json.loads(content)
-        except (json.JSONDecodeError, TypeError) as exc:
+        except (json.JSONDecodeError, TypeError):
+            parse_failed = True
+        if parse_failed:
+            # JSONDecodeError retains the raw document on the exception object. Raise
+            # only after leaving the handler so provider response content is not chained.
             raise AdapterRejected(
                 "calendar mutation endpoint returned invalid JSON"
-            ) from exc
+            )
         if not isinstance(payload, dict):
             raise AdapterRejected(
                 "calendar mutation endpoint response must be a JSON object"
@@ -329,12 +369,16 @@ class JsonPersonalCalendarMutationAdapter:
 
 def _parse_aware_datetime(value: str, field_name: str) -> datetime:
     candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
+    parsed: datetime | None = None
+    parse_failed = False
     try:
         parsed = datetime.fromisoformat(candidate)
-    except ValueError as exc:
+    except ValueError:
+        parse_failed = True
+    if parse_failed or parsed is None:
         raise AdapterRejected(
             f"calendar mutation endpoint returned invalid {field_name}"
-        ) from exc
+        )
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise AdapterRejected(
             f"calendar mutation endpoint returned non-offset-aware {field_name}"
