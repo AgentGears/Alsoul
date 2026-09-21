@@ -10,7 +10,7 @@ from alsoul.services import FoundationBootstrapper, FoundationServices
 from alsoul.storage import create_sqlite_engine
 
 
-_HEAD_REVISION = "0019_progressive_presentation_reception"
+_HEAD_REVISION = "0020_progressive_presentation_interruption_history"
 
 
 def test_administrator_initializes_migrates_and_bootstraps_fresh_store(tmp_path):
