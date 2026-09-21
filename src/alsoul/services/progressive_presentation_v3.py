@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
 from alsoul.domain.errors import DomainError, fail
 from alsoul.domain.progressive_presentation import (
+    OpenProgressivePresentationCommand,
     PROGRESSIVE_PRESENTATION_RECEIPT_CONTRACT_VERSION,
     ProgressivePresentationReceiptResult,
+    ProgressivePresentationSessionResult,
     RecordProgressivePresentationReceiptCommand,
 )
 from alsoul.services.common import load_operation_receipt, request_digest
@@ -13,20 +18,60 @@ from alsoul.services.progressive_presentation import _aware_utc, _required_text
 from alsoul.services.progressive_presentation_v2 import (
     ProgressivePresentationServices as ProgressivePresentationServicesV2,
 )
+from alsoul.storage import schema
 
 
 _RECEIPT_SCOPE = "RecordProgressivePresentationReceipt"
 
 
 class ProgressivePresentationServices(ProgressivePresentationServicesV2):
-    """Current F6.A core with trusted first-party receipt validation.
+    """Current bounded F6.A progressive-presentation core.
 
-    A caller-provided receipt reference is not presentation truth by itself. Before any
-    new presentation evidence is admitted, the configured first-party presentation
-    adapter must validate the exact receipt against the pinned session/generation/frame
-    lineage. Already-admitted durable evidence remains replayable without consulting
-    the sink again.
+    The current layer adds two fail-closed boundaries to the durable core: presentation
+    may only use the exact surface/channel carried by the CompanionOutput's canonical
+    interaction target, and caller-provided receipt material becomes presentation truth
+    only after validation by the configured first-party sink adapter. Already-admitted
+    evidence remains replayable without consulting the sink again.
     """
+
+    def open_session(
+        self, command: OpenProgressivePresentationCommand
+    ) -> ProgressivePresentationSessionResult:
+        with self.engine.connect() as conn:
+            output = conn.execute(
+                select(schema.companion_output).where(
+                    schema.companion_output.c.companion_output_id
+                    == command.companion_output_id
+                )
+            ).mappings().one_or_none()
+            if output is not None:
+                target = conn.execute(
+                    select(schema.output_target).where(
+                        schema.output_target.c.output_target_id
+                        == output["output_target_id"]
+                    )
+                ).mappings().one_or_none()
+                source_event = None
+                if target is not None and target["target_kind"] == "INTERACTION_EVENT":
+                    source_event = conn.execute(
+                        select(schema.interaction_event).where(
+                            schema.interaction_event.c.event_id == target["target_ref"]
+                        )
+                    ).mappings().one_or_none()
+                if (
+                    target is None
+                    or target["relationship_id"] != output["relationship_id"]
+                    or target["target_kind"] != "INTERACTION_EVENT"
+                    or source_event is None
+                    or source_event["relationship_id"] != output["relationship_id"]
+                    or source_event["surface_binding_id"] != command.surface_binding_id
+                    or source_event["channel_binding_id"] != command.channel_binding_id
+                ):
+                    fail(
+                        "PROGRESSIVE_PRESENTATION_ROUTE_INVALID",
+                        "progressive presentation must use the CompanionOutput's exact canonical interaction route",
+                    )
+        return super().open_session(command)
 
     def _require_adapter(self) -> None:
         super()._require_adapter()
@@ -86,7 +131,44 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV2):
                 "PROGRESSIVE_PRESENTATION_RECEIPT_UNTRUSTED",
                 "presentation receipt was not validated by the trusted first-party sink boundary",
             )
-        return super().record_presentation_receipt(command)
+
+        try:
+            return super().record_presentation_receipt(command)
+        except IntegrityError as exc:
+            # A different operation may have committed the same sink receipt after the
+            # pre-insert read. Recover only when durable state now proves the exact same
+            # frame evidence; otherwise preserve the integrity failure/conflict.
+            with self.engine.connect() as conn:
+                replay = load_operation_receipt(
+                    conn,
+                    scope=_RECEIPT_SCOPE,
+                    operation_id=command.operation_id,
+                    expected_request_digest=req,
+                )
+                existing = self._evidence_for_frame(
+                    conn,
+                    command.presentation_session_id,
+                    command.frame_ordinal,
+                )
+            if replay:
+                return super().record_presentation_receipt(command)
+            if existing is None:
+                raise exc
+            if (
+                existing["presentation_attempt_id"]
+                == command.presentation_attempt_id
+                and existing["presentation_key"] == command.presentation_key
+                and existing["frame_digest"] == command.frame_digest
+                and existing["presentation_receipt_ref"] == receipt_ref
+                and existing["presentation_receipt_contract_version"]
+                == command.presentation_receipt_contract_version
+                and _aware_utc(existing["presented_at"]) == presented_at
+            ):
+                return super().record_presentation_receipt(command)
+            fail(
+                "PROGRESSIVE_PRESENTATION_RECEIPT_CONFLICT",
+                "frame already has different authoritative presentation evidence",
+            )
 
     def _require_receipt_adapter(self):
         adapter = self.adapter
