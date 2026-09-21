@@ -1,23 +1,31 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from alsoul.domain.errors import DomainError, fail
 from alsoul.domain.progressive_presentation import (
     PROGRESSIVE_PRESENTATION_RECEIPT_CONTRACT_VERSION,
     ProgressivePresentationReceiptResult,
     RecordProgressivePresentationReceiptCommand,
 )
+from alsoul.services.common import load_operation_receipt, request_digest
 from alsoul.services.progressive_presentation import _aware_utc, _required_text
 from alsoul.services.progressive_presentation_v2 import (
     ProgressivePresentationServices as ProgressivePresentationServicesV2,
 )
 
 
+_RECEIPT_SCOPE = "RecordProgressivePresentationReceipt"
+
+
 class ProgressivePresentationServices(ProgressivePresentationServicesV2):
     """Current F6.A core with trusted first-party receipt validation.
 
     A caller-provided receipt reference is not presentation truth by itself. Before any
-    presentation evidence is admitted, the configured first-party presentation adapter
-    must validate the exact receipt against the pinned session/generation/frame lineage.
+    new presentation evidence is admitted, the configured first-party presentation
+    adapter must validate the exact receipt against the pinned session/generation/frame
+    lineage. Already-admitted durable evidence remains replayable without consulting
+    the sink again.
     """
 
     def _require_adapter(self) -> None:
@@ -27,6 +35,17 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV2):
     def record_presentation_receipt(
         self, command: RecordProgressivePresentationReceiptCommand
     ) -> ProgressivePresentationReceiptResult:
+        req = request_digest(asdict(command))
+        with self.engine.connect() as conn:
+            replay = load_operation_receipt(
+                conn,
+                scope=_RECEIPT_SCOPE,
+                operation_id=command.operation_id,
+                expected_request_digest=req,
+            )
+        if replay:
+            return super().record_presentation_receipt(command)
+
         adapter = self._require_receipt_adapter()
         if (
             command.presentation_receipt_contract_version
