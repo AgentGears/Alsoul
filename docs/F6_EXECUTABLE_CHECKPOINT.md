@@ -1,6 +1,6 @@
 # F6 Executable Checkpoint — Continuous Presence + Embodiment
 
-**Status:** Converged implementation contract; implementation pending  
+**Status:** Implementation contract; implementation pending  
 **Publication:** GitHub-safe  
 **Predecessor:** [F5 Exit Audit](F5_EXIT_AUDIT.md)  
 **Architecture basis:** Decisions 05.B, 07.B, 11.A–11.B, 12.A, 14.A, and 15.A–15.B
@@ -42,7 +42,7 @@ interruption ≠ permission to resume unpresented remainder
 
 A **surface** names the social situation in which interaction occurs. A **channel** names the transport route. An **embodiment** names a replaceable presentation/body/voice renderer or asset binding. None may own Person identity, Relationship identity, canonical memory, authority, or historical truth.
 
-Canonical shared history records what was actually presented, not what was merely generated, adopted, rendered, queued, or intended for delivery. Stronger reception evidence may prove a bounded playback/read receipt contract; it never proves human understanding.
+Canonical shared history records what was actually presented, not what was merely generated, adopted, rendered, queued, accepted by transport, or intended for delivery. Stronger reception evidence may prove a bounded playback/read receipt contract; it never proves human understanding.
 
 All earlier Foundation authority remains in force. Progressive delivery, new surfaces, new channels, or a new embodiment cannot broaden what data may be disclosed or what external action may occur. For outputs containing personal-world material, every concrete payload-bearing transport remains subject to the applicable current F5 freshness/disclosure gate for that transport.
 
@@ -80,7 +80,9 @@ re-evaluate any inherited current payload-disclosure gate required for the exact
 ↓
 transport one frame at a time under the exact generation fence
 ↓
-trusted sink receipt records accepted/presented extent
+sink may accept/queue frame transport
+↓
+trusted presentation receipt proves exact frame became presented
 ↓
 optional stronger reception/playback receipt records heard/read extent
 ↓
@@ -183,27 +185,36 @@ no remaining payload is replayed merely to complete the original output
 
 Changing surface, channel, embodiment, or presentation generation never broadens the underlying data authority. Recovery may record evidence that a prior authorized payload was already presented; it does not need current disclosure authority merely to preserve historical truth, but it may not send new payload under revoked authority.
 
-## 2.7 Presented extent
+## 2.7 Transport acceptance versus presentation evidence
 
-Presented extent is append-oriented evidence over exact frames, not a mutable integer inferred from local intent.
+Transport/sink acceptance is not yet presentation truth.
 
-A trusted presentation receipt binds at least:
+An adapter may receive structural acknowledgement that a frame was accepted, queued, or buffered. That acknowledgement may be retained for recovery but cannot advance canonical presented extent.
+
+Authoritative presentation evidence requires a trusted first-party sink receipt that binds at least:
 
 ```text
 presentation_attempt_id
 attempt_generation
 frame_ordinal
 presentation_key
-sink_receipt_ref
+frame_digest
+presentation_receipt_ref
 presented_at
-receipt_contract_version
+presentation_receipt_contract_version
 ```
 
-The host may derive a contiguous presented prefix only when every frame from ordinal 1 through N has authoritative presented evidence under one valid lineage. A receipt for frame N does not authorize filling an unproved gap at frame N-1.
+The receipt asserts only that the exact frame crossed the defined first-party presentation boundary. A queue acknowledgement, HTTP success, transport completion, renderer completion, or local send return cannot substitute for this receipt.
+
+## 2.8 Presented extent
+
+Presented extent is append-oriented evidence over exact frames, not a mutable integer inferred from local intent.
+
+The host may derive a contiguous presented prefix only when every frame from ordinal 1 through N has authoritative presentation evidence under one valid lineage. A receipt for frame N does not authorize filling an unproved gap at frame N-1.
 
 Duplicate receipts for the same frame/generation are idempotent. Conflicting receipts, cross-generation receipts, wrong presentation keys, wrong frame digests, or non-contiguous claims fail closed.
 
-## 2.8 Reception / playback evidence
+## 2.9 Reception / playback evidence
 
 Reception evidence is stronger than presentation evidence and remains separately typed.
 
@@ -219,7 +230,7 @@ Reception evidence binds the exact presentation session/generation and exact con
 
 A playback/read receipt establishes only that the trusted first-party client completed the declared delivery contract for that frame extent. It does not establish attention, perception, comprehension, agreement, or understanding.
 
-## 2.9 Canonical counterpart interruption
+## 2.10 Canonical counterpart interruption
 
 An interruption is authoritative only after a new trusted counterpart input has crossed normal ingress identity/routing validation and has been durably admitted to the canonical relationship Timeline.
 
@@ -243,7 +254,7 @@ never automatically resumes the unpresented remainder
 
 The interrupting input remains canonical even if the presentation sink subsequently fails.
 
-## 2.10 Interruption race and settling proof
+## 2.11 Interruption race and settling proof
 
 The first-party presentation contract must be able to order presentation relative to cancellation/settling strongly enough that the host never fabricates the terminal extent.
 
@@ -264,9 +275,9 @@ The terminal proof must guarantee that frames beyond the reported presented exte
 
 If the sink cannot prove this property, the session remains `UNKNOWN_PRESENTATION_EXTENT`. The host may perform content-free reconciliation but cannot guess the missing boundary or replay payload merely to force a deterministic answer.
 
-## 2.11 Uncertain presentation outcome
+## 2.12 Uncertain presentation outcome
 
-A process loss or ambiguous transport after dispatch but before durable receipt creates uncertainty, not presentation truth.
+A process loss or ambiguous transport after dispatch but before durable presentation receipt creates uncertainty, not presentation truth.
 
 Recovery for an uncertain generation uses content-free status reconciliation keyed by presentation/session/attempt identity. The lookup must not resend or echo presentation payload.
 
@@ -280,9 +291,9 @@ UNKNOWN_PRESENTATION_EXTENT
 
 A point-in-time absence is not terminal non-presentation unless the sink contract proves no queued/in-flight frame from that generation can later be presented.
 
-Unknown state blocks unsafe payload replay. If the sink can later prove the exact accepted/presented extent, the host records historical truth without treating reconciliation as a new presentation.
+Unknown state blocks unsafe payload replay. If the sink can later prove the exact presented extent, the host records historical truth without treating reconciliation as a new presentation.
 
-## 2.12 Timeline truth for partial presentation
+## 2.13 Timeline truth for partial presentation
 
 `COMPANION_PRESENTED_OUTPUT` history must represent exactly what was actually presented.
 
@@ -306,7 +317,7 @@ If zero frames were authoritatively presented, no `COMPANION_PRESENTED_OUTPUT` e
 
 Reception/playback evidence remains linked separately and may cover a shorter prefix than presented extent.
 
-## 2.13 Recovery and idempotency
+## 2.14 Recovery and idempotency
 
 Complete process loss reconstructs the active/terminal presentation state from durable Alsoul-owned records and trusted content-free sink reconciliation where needed.
 
@@ -319,9 +330,10 @@ Repeated recovery cannot:
 - advance presented extent without new authoritative evidence;
 - replay uncertain payload before terminal reconciliation;
 - resume an interrupted remainder automatically;
+- convert transport acceptance into presentation evidence;
 - convert a presentation receipt into reception evidence.
 
-## 2.14 F6.A non-scope
+## 2.15 F6.A non-scope
 
 The first tranche does not require:
 
@@ -339,7 +351,7 @@ The first tranche does not require:
 
 These may be added only behind the same truth boundary when a later executable requirement forces them.
 
-## 2.15 F6.A acceptance bar
+## 2.16 F6.A acceptance bar
 
 F6.A is complete only when executable tests prove all of the following:
 
@@ -349,32 +361,33 @@ F6.A is complete only when executable tests prove all of the following:
 4. Frame ordinals are contiguous, frame source ranges do not overlap, and frame digests bind exact rendered content.
 5. No frame transport occurs before a durable presentation attempt/fence exists.
 6. The first slice serializes frame transport so presented-order truth cannot depend on completion races between concurrently dispatched frames.
-7. Sink presentation evidence is bound to the exact session, attempt generation, presentation key, frame ordinal, and frame content lineage.
-8. A later-frame receipt cannot fill an unproved earlier-frame gap.
-9. Duplicate exact receipts are idempotent and conflicting/cross-generation receipts fail closed.
-10. Reception/playback evidence can never exceed authoritative presented extent.
-11. Transport success, elapsed time, rendering completion, or local queueing cannot be promoted to reception/playback evidence.
-12. A canonical counterpart input can interrupt an active presentation only after normal trusted ingress admission.
-13. An interruption prevents authorization of new post-fence frames while allowing exact reconciliation of material that was already in flight.
-14. Terminal interruption proof prevents any old-generation frame beyond the settled extent from later becoming presented without a new generation.
-15. A sink unable to prove terminal presented extent leaves the session `UNKNOWN_PRESENTATION_EXTENT` rather than fabricating a prefix.
-16. Process loss after payload dispatch but before receipt preserves uncertainty and does not mark the frame presented.
-17. Recovery reconciles uncertain state content-free and does not resend payload merely to recover truth.
-18. A point-in-time negative lookup cannot prove terminal non-presentation when delayed acceptance remains possible.
-19. A partially presented output creates canonical shared history containing only the exact presented prefix.
-20. An unpresented remainder never appears in `COMPANION_PRESENTED_OUTPUT` content merely because it existed in GeneratedOutput or CompanionOutput.
-21. Zero presented frames create no companion-presented Timeline event.
-22. Fully presented output remains backward-compatible with the existing complete-presentation history semantics.
-23. Reception/playback evidence is retained separately from the Timeline presented event and may truthfully cover a shorter extent.
-24. Complete process restart reconstructs the same Person, Relationship, output, session, attempts, frame lineage, and known presentation evidence before new presentation work.
-25. Repeated recovery cannot duplicate presentation history or advance extent without evidence.
-26. An interrupted session never automatically resumes its unpresented remainder; a later response/continuation requires a new semantic output/presentation decision.
-27. Historical presented extent is not rewritten because a renderer, channel, surface, or embodiment binding is later replaced.
-28. No new F7 durable task, commitment, procedure, or generic background-work authority is introduced by F6.A.
-29. Every personal-data frame transport re-evaluates the inherited current freshness/disclosure gate required by F5 immediately before that payload transport.
-30. Revocation, relationship/resource invalidation, freshness expiry, disclosure-policy denial, or target-route ineligibility between frames blocks the next payload frame before transport.
-31. Already-presented personal-data frames remain historical truth after later revocation, while recovery of uncertain prior delivery uses only content-free reconciliation and never unauthorized payload resend.
-32. Switching surface, channel, embodiment, session generation, or renderer cannot broaden Permission, disclosure scope, resource scope, or any other earlier Foundation authority.
+7. Transport/sink acceptance alone cannot advance presented extent or canonical Timeline history.
+8. Authoritative presentation evidence is bound to the exact session, attempt generation, presentation key, frame ordinal, and frame content digest.
+9. A later-frame presentation receipt cannot fill an unproved earlier-frame gap.
+10. Duplicate exact presentation receipts are idempotent and conflicting/cross-generation receipts fail closed.
+11. Reception/playback evidence can never exceed authoritative presented extent.
+12. Transport success, elapsed time, rendering completion, local queueing, or sink acceptance cannot be promoted to reception/playback evidence.
+13. A canonical counterpart input can interrupt an active presentation only after normal trusted ingress admission.
+14. An interruption prevents authorization of new post-fence frames while allowing exact reconciliation of material that was already in flight.
+15. Terminal interruption proof prevents any old-generation frame beyond the settled extent from later becoming presented without a new generation.
+16. A sink unable to prove terminal presented extent leaves the session `UNKNOWN_PRESENTATION_EXTENT` rather than fabricating a prefix.
+17. Process loss after payload dispatch but before presentation receipt preserves uncertainty and does not mark the frame presented.
+18. Recovery reconciles uncertain state content-free and does not resend payload merely to recover truth.
+19. A point-in-time negative lookup cannot prove terminal non-presentation when delayed presentation remains possible.
+20. A partially presented output creates canonical shared history containing only the exact presented prefix.
+21. An unpresented remainder never appears in `COMPANION_PRESENTED_OUTPUT` content merely because it existed in GeneratedOutput or CompanionOutput.
+22. Zero presented frames create no companion-presented Timeline event.
+23. Fully presented output remains backward-compatible with the existing complete-presentation history semantics.
+24. Reception/playback evidence is retained separately from the Timeline presented event and may truthfully cover a shorter extent.
+25. Complete process restart reconstructs the same Person, Relationship, output, session, attempts, frame lineage, and known presentation evidence before new presentation work.
+26. Repeated recovery cannot duplicate presentation history or advance extent without evidence.
+27. An interrupted session never automatically resumes its unpresented remainder; a later response/continuation requires a new semantic output/presentation decision.
+28. Historical presented extent is not rewritten because a renderer, channel, surface, or embodiment binding is later replaced.
+29. No new F7 durable task, commitment, procedure, or generic background-work authority is introduced by F6.A.
+30. Every personal-data frame transport re-evaluates the inherited current freshness/disclosure gate required by F5 immediately before that payload transport.
+31. Revocation, relationship/resource invalidation, freshness expiry, disclosure-policy denial, or target-route ineligibility between frames blocks the next payload frame before transport.
+32. Already-presented personal-data frames remain historical truth after later revocation, while recovery of uncertain prior delivery uses only content-free reconciliation and never unauthorized payload resend.
+33. Switching surface, channel, embodiment, session generation, or renderer cannot broaden Permission, disclosure scope, resource scope, or any other earlier Foundation authority.
 
 Passing F6.A authorizes work on F6.B. It does not close F6.
 
@@ -521,7 +534,7 @@ F6.B does not require:
 
 F6.B is complete only when executable tests prove all of the following:
 
-1. The same `CompanionPerson`, Counterpart, Relationship, Self revision, and canonical Timeline survive interaction through two distinct first-party surfaces.
+1. The same `CompanionPerson`, `CounterpartPerson`, Relationship, Self revision, and canonical Timeline survive interaction through two distinct first-party surfaces.
 2. `SurfaceBinding`, `ChannelBinding`, and `EmbodimentBinding` identities remain distinct from Person and Relationship identity.
 3. A thread/call/device/provider/renderer identifier cannot create a new Person or Relationship merely by changing value.
 4. Trusted destination and sender resolution occurs before inbound Timeline admission on every supported surface.
