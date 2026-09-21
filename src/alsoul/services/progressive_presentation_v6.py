@@ -70,23 +70,16 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV5):
                 command.presentation_session_id,
                 command.frame_ordinal,
             )
-            if existing is not None:
-                self._require_exact_receipt(
+            if (
+                existing is not None
+                and existing["presentation_receipt_ref"] == receipt_ref
+            ):
+                self._require_exact_durable_replay(
+                    conn,
                     existing,
                     command=command,
-                    receipt_ref=receipt_ref,
                     presented_at=presented_at,
                 )
-                attempt = self._attempt(conn, existing["presentation_attempt_id"])
-                if (
-                    command.attempt_generation != int(attempt["attempt_generation"])
-                    or command.presentation_transport_fence_scope_id
-                    != attempt["presentation_transport_fence_scope_id"]
-                ):
-                    fail(
-                        "PROGRESSIVE_PRESENTATION_RECEIPT_LINEAGE_INVALID",
-                        "durable presentation receipt replay does not bind the exact attempt generation/fence",
-                    )
                 self._save_receipt_operation(conn, command, req, existing)
                 return self._receipt_result(existing)
 
@@ -197,24 +190,61 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV5):
                         "PROGRESSIVE_PRESENTATION_RECEIPT_CONFLICT",
                         "presentation evidence conflicted with durable state",
                     ) from exc
-                self._require_exact_receipt(
-                    existing,
-                    command=command,
-                    receipt_ref=receipt_ref,
-                    presented_at=presented_at,
-                )
-                attempt = self._attempt(conn, existing["presentation_attempt_id"])
-                if (
-                    command.attempt_generation != int(attempt["attempt_generation"])
-                    or command.presentation_transport_fence_scope_id
-                    != attempt["presentation_transport_fence_scope_id"]
-                ):
-                    fail(
-                        "PROGRESSIVE_PRESENTATION_RECEIPT_LINEAGE_INVALID",
-                        "durable presentation receipt replay does not bind the exact attempt generation/fence",
+                if existing["presentation_receipt_ref"] == receipt_ref:
+                    self._require_exact_durable_replay(
+                        conn,
+                        existing,
+                        command=command,
+                        presented_at=presented_at,
+                    )
+                else:
+                    self._require_exact_receipt(
+                        existing,
+                        command=command,
+                        receipt_ref=receipt_ref,
+                        presented_at=presented_at,
                     )
                 self._save_receipt_operation(conn, command, req, existing)
                 return self._receipt_result(existing)
+
+    def _require_exact_durable_replay(
+        self,
+        conn,
+        row,
+        *,
+        command: RecordProgressivePresentationReceiptCommand,
+        presented_at,
+    ) -> None:
+        if not (
+            row["presentation_attempt_id"] == command.presentation_attempt_id
+            and row["presentation_session_id"] == command.presentation_session_id
+            and int(row["frame_ordinal"]) == command.frame_ordinal
+            and row["presentation_key"] == command.presentation_key
+            and row["frame_digest"] == command.frame_digest
+        ):
+            fail(
+                "PROGRESSIVE_PRESENTATION_RECEIPT_LINEAGE_INVALID",
+                "durable presentation receipt replay does not bind the exact frame lineage",
+            )
+        attempt = self._attempt(conn, row["presentation_attempt_id"])
+        if (
+            command.attempt_generation != int(attempt["attempt_generation"])
+            or command.presentation_transport_fence_scope_id
+            != attempt["presentation_transport_fence_scope_id"]
+        ):
+            fail(
+                "PROGRESSIVE_PRESENTATION_RECEIPT_LINEAGE_INVALID",
+                "durable presentation receipt replay does not bind the exact attempt generation/fence",
+            )
+        if not (
+            row["presentation_receipt_contract_version"]
+            == command.presentation_receipt_contract_version
+            and _aware_utc(row["presented_at"]) == presented_at
+        ):
+            fail(
+                "PROGRESSIVE_PRESENTATION_RECEIPT_CONFLICT",
+                "presentation receipt reference conflicts with durable presentation evidence",
+            )
 
 
 __all__ = ["ProgressivePresentationServices"]
