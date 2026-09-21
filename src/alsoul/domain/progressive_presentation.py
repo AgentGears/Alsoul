@@ -14,6 +14,13 @@ PROGRESSIVE_PRESENTATION_TRANSPORT_CONTRACT_VERSION = (
 PROGRESSIVE_PRESENTATION_RECEIPT_CONTRACT_VERSION = (
     "PROGRESSIVE_PRESENTATION_RECEIPT_V1"
 )
+PROGRESSIVE_PRESENTATION_RECEPTION_CONTRACT_VERSION = (
+    "PROGRESSIVE_PRESENTATION_RECEPTION_V1"
+)
+PROGRESSIVE_PRESENTATION_STATUS_CONTRACT_VERSION = (
+    "PROGRESSIVE_PRESENTATION_STATUS_V1"
+)
+PROGRESSIVE_PRESENTATION_RECEPTION_KIND = "PLAYBACK_CONFIRMED_THROUGH_FRAME"
 PROGRESSIVE_PRESENTATION_FRAME_CODEPOINT_LIMIT = 256
 
 
@@ -53,6 +60,27 @@ class RecordProgressivePresentationReceiptCommand:
     presentation_receipt_contract_version: str = (
         PROGRESSIVE_PRESENTATION_RECEIPT_CONTRACT_VERSION
     )
+
+
+@dataclass(frozen=True, slots=True)
+class RecordProgressivePresentationReceptionCommand:
+    operation_id: UUID
+    presentation_session_id: UUID
+    presentation_attempt_id: UUID
+    presentation_key: str
+    attempt_generation: int
+    presentation_transport_fence_scope_id: UUID
+    received_through_frame: int
+    reception_receipt_ref: str
+    received_at: datetime
+    reception_kind: str = PROGRESSIVE_PRESENTATION_RECEPTION_KIND
+    reception_contract_version: str = PROGRESSIVE_PRESENTATION_RECEPTION_CONTRACT_VERSION
+
+
+@dataclass(frozen=True, slots=True)
+class ReconcileProgressivePresentationAttemptCommand:
+    operation_id: UUID
+    presentation_attempt_id: UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,14 +132,49 @@ class ProgressivePresentationReceiptResult:
     presented_through_frame: int
 
 
+@dataclass(frozen=True, slots=True)
+class ProgressivePresentationReceptionResult:
+    reception_evidence_id: UUID
+    presentation_session_id: UUID
+    received_through_frame: int
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressivePresentationReconciliationStatus:
+    presentation_key: str
+    attempt_generation: int
+    presentation_transport_fence_scope_id: UUID
+    presentation_attempt_id: UUID
+    presentation_session_id: UUID
+    settlement_state: str
+    status_ref: str
+    last_authoritatively_presented_frame: int
+    last_authoritatively_received_frame: int
+    settled_through_ref: str | None = None
+    settled_at: datetime | None = None
+    status_contract_version: str = PROGRESSIVE_PRESENTATION_STATUS_CONTRACT_VERSION
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressivePresentationReconciliationResult:
+    presentation_status_evidence_id: UUID
+    presentation_attempt_id: UUID
+    presentation_session_id: UUID
+    state: str
+    last_authoritatively_presented_frame: int
+    last_authoritatively_received_frame: int
+
+
 @runtime_checkable
 class ProgressivePresentationAdapter(Protocol):
-    """Trusted first-party frame transport and presentation-receipt boundary."""
+    """Trusted first-party frame transport, receipt, reception, and status boundary."""
 
     presentation_contract_version: str
     frame_contract_version: str
     transport_contract_version: str
     receipt_contract_version: str
+    reception_contract_version: str
+    status_contract_version: str
 
     def dispatch_frame(
         self,
@@ -143,6 +206,34 @@ class ProgressivePresentationAdapter(Protocol):
         """Validate one sink-issued receipt against the trusted first-party boundary."""
         ...
 
+    def validate_reception_receipt(
+        self,
+        *,
+        presentation_key: str,
+        attempt_generation: int,
+        presentation_transport_fence_scope_id: UUID,
+        presentation_session_id: UUID,
+        presentation_attempt_id: UUID,
+        received_through_frame: int,
+        reception_receipt_ref: str,
+        received_at: datetime,
+        reception_kind: str,
+    ) -> bool:
+        """Validate one bounded sink-issued playback/read receipt."""
+        ...
+
+    def reconcile_presentation_status(
+        self,
+        *,
+        presentation_key: str,
+        attempt_generation: int,
+        presentation_transport_fence_scope_id: UUID,
+        presentation_session_id: UUID,
+        presentation_attempt_id: UUID,
+    ) -> ProgressivePresentationReconciliationStatus:
+        """Return content-free status for one exact fenced presentation generation."""
+        ...
+
 
 __all__ = [
     "DispatchProgressivePresentationFrameCommand",
@@ -152,12 +243,20 @@ __all__ = [
     "PROGRESSIVE_PRESENTATION_FRAME_CODEPOINT_LIMIT",
     "PROGRESSIVE_PRESENTATION_FRAME_CONTRACT_VERSION",
     "PROGRESSIVE_PRESENTATION_RECEIPT_CONTRACT_VERSION",
+    "PROGRESSIVE_PRESENTATION_RECEPTION_CONTRACT_VERSION",
+    "PROGRESSIVE_PRESENTATION_RECEPTION_KIND",
+    "PROGRESSIVE_PRESENTATION_STATUS_CONTRACT_VERSION",
     "PROGRESSIVE_PRESENTATION_TRANSPORT_CONTRACT_VERSION",
     "ProgressivePresentationAdapter",
     "ProgressivePresentationAttemptResult",
     "ProgressivePresentationFrameDispatchResult",
     "ProgressivePresentationFrameTransportResult",
     "ProgressivePresentationReceiptResult",
+    "ProgressivePresentationReceptionResult",
+    "ProgressivePresentationReconciliationResult",
+    "ProgressivePresentationReconciliationStatus",
     "ProgressivePresentationSessionResult",
+    "ReconcileProgressivePresentationAttemptCommand",
     "RecordProgressivePresentationReceiptCommand",
+    "RecordProgressivePresentationReceptionCommand",
 ]

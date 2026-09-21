@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import insert, select
-from sqlalchemy.exc import IntegrityError
 
 from alsoul.domain.errors import DomainError
 from alsoul.domain.progressive_presentation import (
@@ -18,9 +17,6 @@ from alsoul.domain.progressive_presentation import (
     ProgressivePresentationFrameTransportResult,
 )
 from alsoul.services import ProgressivePresentationServices
-from alsoul.services.progressive_presentation_v2 import (
-    ProgressivePresentationServices as ProgressivePresentationServicesV2,
-)
 from alsoul.storage import schema
 from test_f6a_progressive_presentation_core import (
     _adopt_output,
@@ -175,10 +171,10 @@ def test_terminal_nonacceptance_settles_prior_attempt_and_allows_new_generation(
     assert retried.acceptance_state == "ACCEPTED"
 
 
-def test_concurrent_exact_receipt_conflict_recovers_idempotently(
-    services, bootstrapper, engine, now, monkeypatch
+def test_exact_receipt_is_idempotent_across_distinct_operation_ids(
+    services, bootstrapper, engine, now
 ):
-    ctx = _adopt_output(services, bootstrapper, now, "receipt race")
+    ctx = _adopt_output(services, bootstrapper, now, "receipt convergence")
     service = ProgressivePresentationServices(
         engine,
         adapter=_TrustedAdapter(now),
@@ -203,29 +199,29 @@ def test_concurrent_exact_receipt_conflict_recovers_idempotently(
         presentation_receipt_ref="same-sink-receipt",
     )
 
-    original = ProgressivePresentationServicesV2.record_presentation_receipt
-    calls = 0
-
-    def concurrent_winner_then_delegate(self, losing_command):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            original(self, replace(losing_command, operation_id=uuid4()))
-            raise IntegrityError(
-                "simulated concurrent unique conflict",
-                {},
-                Exception("duplicate frame evidence"),
-            )
-        return original(self, losing_command)
-
-    monkeypatch.setattr(
-        ProgressivePresentationServicesV2,
-        "record_presentation_receipt",
-        concurrent_winner_then_delegate,
+    first = service.record_presentation_receipt(command)
+    second_operation_id = uuid4()
+    replay = service.record_presentation_receipt(
+        replace(command, operation_id=second_operation_id)
     )
 
-    result = service.record_presentation_receipt(command)
-    assert result.presentation_session_id == session.presentation_session_id
-    assert result.frame_ordinal == 1
-    assert result.presented_through_frame == 1
-    assert calls == 2
+    assert replay.presentation_evidence_id == first.presentation_evidence_id
+    assert replay.presentation_session_id == session.presentation_session_id
+    assert replay.frame_ordinal == 1
+    assert replay.presented_through_frame == 1
+
+    with engine.connect() as conn:
+        receipts = conn.execute(
+            select(
+                schema.operation_receipt.c.operation_id,
+                schema.operation_receipt.c.result_ref,
+            ).where(
+                schema.operation_receipt.c.operation_scope
+                == "RecordProgressivePresentationReceipt",
+                schema.operation_receipt.c.operation_id.in_(
+                    (command.operation_id, second_operation_id)
+                ),
+            )
+        ).all()
+    assert len(receipts) == 2
+    assert {row.result_ref for row in receipts} == {first.presentation_evidence_id}

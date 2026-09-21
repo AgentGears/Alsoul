@@ -78,7 +78,7 @@ from .personal_calendar_runtime import (
     PersonalCalendarResponseRunResult,
 )
 from .personal_calendar_transport_v3 import PersonalCalendarMutationTransportServices
-from .progressive_presentation_v3 import ProgressivePresentationServices
+from .progressive_presentation_v7 import ProgressivePresentationServices
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
