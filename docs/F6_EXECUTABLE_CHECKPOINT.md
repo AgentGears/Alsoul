@@ -44,6 +44,8 @@ A **surface** names the social situation in which interaction occurs. A **channe
 
 Canonical shared history records what was actually presented, not what was merely generated, adopted, rendered, queued, or intended for delivery. Stronger reception evidence may prove a bounded playback/read receipt contract; it never proves human understanding.
 
+All earlier Foundation authority remains in force. Progressive delivery, new surfaces, new channels, or a new embodiment cannot broaden what data may be disclosed or what external action may occur. For outputs containing personal-world material, every concrete payload-bearing transport remains subject to the applicable current F5 freshness/disclosure gate for that transport.
+
 F6 is split into two executable tranches:
 
 ```text
@@ -73,6 +75,8 @@ resolve current SurfaceBinding + ChannelBinding + optional EmbodimentBinding
 create durable presentation session / generation fence
 ↓
 deterministically render immutable ordered presentation frames
+↓
+re-evaluate any inherited current payload-disclosure gate required for the exact frame transport
 ↓
 transport one frame at a time under the exact generation fence
 ↓
@@ -157,7 +161,29 @@ A transport call cannot exist before the fence exists.
 
 The first slice sends frames serially. A later generation is permitted only after the previous generation is proven terminal against delayed presentation. Unknown prior delivery is reconciled before any payload replay.
 
-## 2.6 Presented extent
+## 2.6 Inherited authority and disclosure gate
+
+F6 does not weaken F5 by turning one previously bounded presentation into an authority-amortizing stream.
+
+Immediately before every payload-bearing frame transport that contains data governed by an earlier Foundation disclosure contract, the host must satisfy the applicable current gate for that exact transport. For F5 personal-calendar output this includes the current freshness/disclosure decision required by the F5 contract and the exact current surface/channel target eligibility.
+
+A durable F6 presentation session or attempt fence records presentation lineage and idempotency. It is not a standing grant to continue disclosing after current authority changes.
+
+If Permission is revoked, the Relationship or resource binding becomes invalid, freshness expires, disclosure policy denies the target, or the concrete surface/channel route becomes ineligible between two frames:
+
+```text
+already-authoritatively-presented frames remain historical truth
+↓
+next payload frame is blocked before transport
+↓
+any already in-flight frame is reconciled content-free
+↓
+no remaining payload is replayed merely to complete the original output
+```
+
+Changing surface, channel, embodiment, or presentation generation never broadens the underlying data authority. Recovery may record evidence that a prior authorized payload was already presented; it does not need current disclosure authority merely to preserve historical truth, but it may not send new payload under revoked authority.
+
+## 2.7 Presented extent
 
 Presented extent is append-oriented evidence over exact frames, not a mutable integer inferred from local intent.
 
@@ -177,7 +203,7 @@ The host may derive a contiguous presented prefix only when every frame from ord
 
 Duplicate receipts for the same frame/generation are idempotent. Conflicting receipts, cross-generation receipts, wrong presentation keys, wrong frame digests, or non-contiguous claims fail closed.
 
-## 2.7 Reception / playback evidence
+## 2.8 Reception / playback evidence
 
 Reception evidence is stronger than presentation evidence and remains separately typed.
 
@@ -193,7 +219,7 @@ Reception evidence binds the exact presentation session/generation and exact con
 
 A playback/read receipt establishes only that the trusted first-party client completed the declared delivery contract for that frame extent. It does not establish attention, perception, comprehension, agreement, or understanding.
 
-## 2.8 Canonical counterpart interruption
+## 2.9 Canonical counterpart interruption
 
 An interruption is authoritative only after a new trusted counterpart input has crossed normal ingress identity/routing validation and has been durably admitted to the canonical relationship Timeline.
 
@@ -217,7 +243,7 @@ never automatically resumes the unpresented remainder
 
 The interrupting input remains canonical even if the presentation sink subsequently fails.
 
-## 2.9 Interruption race and settling proof
+## 2.10 Interruption race and settling proof
 
 The first-party presentation contract must be able to order presentation relative to cancellation/settling strongly enough that the host never fabricates the terminal extent.
 
@@ -238,7 +264,7 @@ The terminal proof must guarantee that frames beyond the reported presented exte
 
 If the sink cannot prove this property, the session remains `UNKNOWN_PRESENTATION_EXTENT`. The host may perform content-free reconciliation but cannot guess the missing boundary or replay payload merely to force a deterministic answer.
 
-## 2.10 Uncertain presentation outcome
+## 2.11 Uncertain presentation outcome
 
 A process loss or ambiguous transport after dispatch but before durable receipt creates uncertainty, not presentation truth.
 
@@ -256,7 +282,7 @@ A point-in-time absence is not terminal non-presentation unless the sink contrac
 
 Unknown state blocks unsafe payload replay. If the sink can later prove the exact accepted/presented extent, the host records historical truth without treating reconciliation as a new presentation.
 
-## 2.11 Timeline truth for partial presentation
+## 2.12 Timeline truth for partial presentation
 
 `COMPANION_PRESENTED_OUTPUT` history must represent exactly what was actually presented.
 
@@ -280,7 +306,7 @@ If zero frames were authoritatively presented, no `COMPANION_PRESENTED_OUTPUT` e
 
 Reception/playback evidence remains linked separately and may cover a shorter prefix than presented extent.
 
-## 2.12 Recovery and idempotency
+## 2.13 Recovery and idempotency
 
 Complete process loss reconstructs the active/terminal presentation state from durable Alsoul-owned records and trusted content-free sink reconciliation where needed.
 
@@ -295,7 +321,7 @@ Repeated recovery cannot:
 - resume an interrupted remainder automatically;
 - convert a presentation receipt into reception evidence.
 
-## 2.13 F6.A non-scope
+## 2.14 F6.A non-scope
 
 The first tranche does not require:
 
@@ -313,7 +339,7 @@ The first tranche does not require:
 
 These may be added only behind the same truth boundary when a later executable requirement forces them.
 
-## 2.14 F6.A acceptance bar
+## 2.15 F6.A acceptance bar
 
 F6.A is complete only when executable tests prove all of the following:
 
@@ -345,6 +371,10 @@ F6.A is complete only when executable tests prove all of the following:
 26. An interrupted session never automatically resumes its unpresented remainder; a later response/continuation requires a new semantic output/presentation decision.
 27. Historical presented extent is not rewritten because a renderer, channel, surface, or embodiment binding is later replaced.
 28. No new F7 durable task, commitment, procedure, or generic background-work authority is introduced by F6.A.
+29. Every personal-data frame transport re-evaluates the inherited current freshness/disclosure gate required by F5 immediately before that payload transport.
+30. Revocation, relationship/resource invalidation, freshness expiry, disclosure-policy denial, or target-route ineligibility between frames blocks the next payload frame before transport.
+31. Already-presented personal-data frames remain historical truth after later revocation, while recovery of uncertain prior delivery uses only content-free reconciliation and never unauthorized payload resend.
+32. Switching surface, channel, embodiment, session generation, or renderer cannot broaden Permission, disclosure scope, resource scope, or any other earlier Foundation authority.
 
 Passing F6.A authorizes work on F6.B. It does not close F6.
 
@@ -412,6 +442,8 @@ A later eligible interaction on a different surface may project prior canonical 
 Surface change may influence derived presentation policy, but it cannot change factual memory, relationship identity, authority, epistemic classification, or prior presentation truth.
 
 Conversation/thread-local context remains narrower than relationship history. A new thread on another surface is not a new Person and is not permission to import arbitrary unrelated context.
+
+A surface/channel transition is never an authority upgrade. Every personal-data or effectful operation continues to satisfy the same current host capability, AI policy, resource scope, Permission, Approval where required, freshness, disclosure, and effect contracts that would apply without the transition.
 
 ## 3.6 Embodiment replacement
 
@@ -511,6 +543,7 @@ F6.B is complete only when executable tests prove all of the following:
 20. Interruption truth from F6.A remains valid across the alternate realtime-style surface.
 21. Generated, adopted, rendered, presented, and reception/playback states remain distinct across all supported surfaces.
 22. F6 introduces no generic Commitment, Procedure, durable DelegatedTask, or autonomous long-horizon work semantics.
+23. Switching surface, channel, embodiment, device endpoint, renderer, or provider session cannot broaden any earlier Foundation capability, policy, resource, Permission, Approval, freshness, disclosure, or effect authority.
 
 # 4. F6 closure bar
 
