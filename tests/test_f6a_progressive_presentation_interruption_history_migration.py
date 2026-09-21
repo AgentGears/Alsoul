@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import func, insert, inspect, select
+from sqlalchemy import BigInteger, func, insert, inspect, select
 
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services import FoundationBootstrapper
@@ -98,3 +98,14 @@ def test_f6a_interruption_history_downgrade_clears_receipts_and_tables(tmp_path,
     assert "progressive_presentation_session_frontier" not in table_names
     assert "progressive_presentation_interruption" not in table_names
     assert "progressive_presentation_timeline_lineage" not in table_names
+
+
+def test_f6a_timeline_frontier_columns_preserve_canonical_bigint_width():
+    assert isinstance(
+        schema.progressive_presentation_session_frontier.c.open_timeline_frontier.type,
+        BigInteger,
+    )
+    assert isinstance(
+        schema.progressive_presentation_interruption.c.interrupting_timeline_seq.type,
+        BigInteger,
+    )

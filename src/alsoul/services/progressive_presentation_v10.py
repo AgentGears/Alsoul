@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from uuid import UUID
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from alsoul.domain.errors import DomainError, fail
@@ -27,7 +28,9 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV8):
 
     Session identity, deterministic frames, and the Timeline frontier that defines which
     later canonical counterpart inputs may interrupt are committed in one transaction.
-    Recovery therefore never has to guess the original interrupt frontier.
+    A durable write fence on both the CompanionOutput and relationship Timeline orders
+    progressive-session ownership against legacy full presentation and canonical input
+    admission before the frontier is captured.
     """
 
     def open_session(
@@ -43,21 +46,34 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV8):
                     expected_request_digest=req,
                 )
                 if replay:
-                    row = self._session(conn, replay["presentation_session_id"])
+                    row = self._session(
+                        conn, UUID(replay["presentation_session_id"])
+                    )
                     self._require_session_frontier(conn, row)
                     return self._session_result(conn, row)
 
+                output_fence = conn.execute(
+                    update(schema.companion_output)
+                    .where(
+                        schema.companion_output.c.companion_output_id
+                        == command.companion_output_id
+                    )
+                    .values(
+                        companion_output_id=schema.companion_output.c.companion_output_id
+                    )
+                )
+                if output_fence.rowcount != 1:
+                    fail(
+                        "PROGRESSIVE_PRESENTATION_OUTPUT_NOT_FOUND",
+                        "CompanionOutput does not exist",
+                    )
                 output = conn.execute(
                     select(schema.companion_output).where(
                         schema.companion_output.c.companion_output_id
                         == command.companion_output_id
                     )
-                ).mappings().one_or_none()
-                if output is None:
-                    fail(
-                        "PROGRESSIVE_PRESENTATION_OUTPUT_NOT_FOUND",
-                        "CompanionOutput does not exist",
-                    )
+                ).mappings().one()
+
                 self._require_generic_progressive_eligibility(
                     conn, command.companion_output_id
                 )
@@ -145,17 +161,27 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV8):
                         "already-presented CompanionOutput cannot enter a new progressive presentation session",
                     )
 
+                timeline_fence = conn.execute(
+                    update(schema.relationship_timeline_head)
+                    .where(
+                        schema.relationship_timeline_head.c.relationship_id
+                        == output["relationship_id"]
+                    )
+                    .values(
+                        last_timeline_seq=schema.relationship_timeline_head.c.last_timeline_seq
+                    )
+                )
+                if timeline_fence.rowcount != 1:
+                    fail(
+                        "RELATIONSHIP_NOT_FOUND",
+                        "progressive presentation relationship Timeline head is missing",
+                    )
                 timeline = conn.execute(
                     select(schema.relationship_timeline_head).where(
                         schema.relationship_timeline_head.c.relationship_id
                         == output["relationship_id"]
                     )
-                ).mappings().one_or_none()
-                if timeline is None:
-                    fail(
-                        "RELATIONSHIP_NOT_FOUND",
-                        "progressive presentation relationship Timeline head is missing",
-                    )
+                ).mappings().one()
 
                 session_id = self.ids.new()
                 now = self.clock.now()

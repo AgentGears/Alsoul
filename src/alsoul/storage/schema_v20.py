@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Column,
     DateTime,
@@ -41,7 +42,7 @@ progressive_presentation_session_frontier = Table(
         ForeignKey("relationship_identity.relationship_id"),
         nullable=False,
     ),
-    Column("open_timeline_frontier", Integer, nullable=False),
+    Column("open_timeline_frontier", BigInteger, nullable=False),
     Column("recorded_at", DateTime(timezone=True), nullable=False),
     CheckConstraint(
         "open_timeline_frontier >= 0",
@@ -65,7 +66,7 @@ progressive_presentation_interruption = Table(
         ForeignKey("interaction_event.event_id"),
         nullable=False,
     ),
-    Column("interrupting_timeline_seq", Integer, nullable=False),
+    Column("interrupting_timeline_seq", BigInteger, nullable=False),
     Column("interruption_key", String(128), nullable=False, unique=True),
     Column("cancellation_request_state", String(32), nullable=False),
     Column("interrupted_at", DateTime(timezone=True), nullable=False),

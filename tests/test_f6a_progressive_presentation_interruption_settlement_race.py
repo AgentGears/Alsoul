@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from threading import Event, Thread
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from alsoul.domain.progressive_presentation import (
     CommitProgressivePresentationHistoryCommand,
     DispatchProgressivePresentationFrameCommand,
 )
+from alsoul.services import ProgressivePresentationServices
 from alsoul.storage import schema
 from test_f6a_progressive_presentation_core import _frame, _receipt_command
 from test_f6a_progressive_presentation_interruption_history import (
@@ -126,3 +128,81 @@ def test_input_admitted_after_terminal_observation_cannot_be_retroactive_interru
         ).mappings().one()
     assert int(interruption_count) == 0
     assert status["settlement_state"] == "TERMINAL"
+
+
+def test_interrupt_rechecks_terminal_state_under_shared_attempt_fence(
+    services, bootstrapper, engine, now, monkeypatch
+):
+    content = "A" * 256 + "B" * 44
+    ctx, adapter, service, session, attempt = _setup(
+        services, bootstrapper, engine, now, content
+    )
+    _present_first_frame(service, engine, session, attempt, now)
+    canonical = _append_interrupt(services, ctx, now)
+
+    about_to_lock = Event()
+    release_lock = Event()
+    worker_done = Event()
+    result_box: dict[str, object] = {}
+    errors: list[BaseException] = []
+    original_locked_attempt = service._locked_attempt
+    first_call = {"pending": True}
+
+    def delayed_locked_attempt(conn, attempt_id):
+        if first_call["pending"]:
+            first_call["pending"] = False
+            about_to_lock.set()
+            if not release_lock.wait(timeout=5):
+                raise AssertionError("timed out waiting to release attempt fence")
+        return original_locked_attempt(conn, attempt_id)
+
+    monkeypatch.setattr(service, "_locked_attempt", delayed_locked_attempt)
+
+    def interrupt_worker():
+        try:
+            result_box["result"] = _interrupt(
+                service, attempt, canonical.event_id
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+        finally:
+            worker_done.set()
+
+    worker = Thread(target=interrupt_worker)
+    worker.start()
+    assert about_to_lock.wait(timeout=5)
+
+    settler = ProgressivePresentationServices(
+        engine,
+        adapter=adapter,
+        clock=services.clock,
+        ids=services.ids,
+    )
+    terminal = _settle_terminal(
+        settler,
+        adapter,
+        attempt,
+        presented=1,
+        received=0,
+        suffix="interleaved-terminal",
+    )
+
+    release_lock.set()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert worker_done.is_set()
+    assert errors == []
+
+    result = result_box["result"]
+    assert result.cancellation_request_state == "NOT_REQUIRED_TERMINAL"
+    assert adapter.cancellation_calls == []
+
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(schema.progressive_presentation_interruption).where(
+                schema.progressive_presentation_interruption.c.interruption_id
+                == result.interruption_id
+            )
+        ).mappings().one()
+    assert row["interrupting_event_id"] == canonical.event_id
+    assert terminal.state == "TERMINAL"
