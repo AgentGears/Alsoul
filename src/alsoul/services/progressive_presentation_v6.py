@@ -26,10 +26,11 @@ _RECEIPT_SCOPE = "RecordProgressivePresentationReceipt"
 class ProgressivePresentationServices(ProgressivePresentationServicesV5):
     """Current F6.A receipt boundary with durable replay and terminal fencing.
 
-    Durable evidence already admitted may replay without consulting the sink. A new
-    receipt, including one with nonexistent caller-provided lineage, must first pass the
-    trusted first-party receipt validator; final evidence admission is then serialized
-    against terminal reconciliation by the attempt write fence.
+    Durable evidence already admitted may replay without consulting the sink, but the
+    replay request must still bind the exact durable attempt generation and transport
+    fence. A genuinely new receipt, including one with nonexistent caller-provided
+    lineage, must first pass the trusted first-party receipt validator; final evidence
+    admission is then serialized against terminal reconciliation by the attempt fence.
     """
 
     def record_presentation_receipt(
@@ -76,6 +77,16 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV5):
                     receipt_ref=receipt_ref,
                     presented_at=presented_at,
                 )
+                attempt = self._attempt(conn, existing["presentation_attempt_id"])
+                if (
+                    command.attempt_generation != int(attempt["attempt_generation"])
+                    or command.presentation_transport_fence_scope_id
+                    != attempt["presentation_transport_fence_scope_id"]
+                ):
+                    fail(
+                        "PROGRESSIVE_PRESENTATION_RECEIPT_LINEAGE_INVALID",
+                        "durable presentation receipt replay does not bind the exact attempt generation/fence",
+                    )
                 self._save_receipt_operation(conn, command, req, existing)
                 return self._receipt_result(existing)
 
@@ -192,6 +203,16 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV5):
                     receipt_ref=receipt_ref,
                     presented_at=presented_at,
                 )
+                attempt = self._attempt(conn, existing["presentation_attempt_id"])
+                if (
+                    command.attempt_generation != int(attempt["attempt_generation"])
+                    or command.presentation_transport_fence_scope_id
+                    != attempt["presentation_transport_fence_scope_id"]
+                ):
+                    fail(
+                        "PROGRESSIVE_PRESENTATION_RECEIPT_LINEAGE_INVALID",
+                        "durable presentation receipt replay does not bind the exact attempt generation/fence",
+                    )
                 self._save_receipt_operation(conn, command, req, existing)
                 return self._receipt_result(existing)
 
