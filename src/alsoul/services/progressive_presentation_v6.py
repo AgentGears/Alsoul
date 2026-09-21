@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from uuid import UUID
 
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 
 from alsoul.domain.errors import DomainError, fail
@@ -24,12 +24,12 @@ _RECEIPT_SCOPE = "RecordProgressivePresentationReceipt"
 
 
 class ProgressivePresentationServices(ProgressivePresentationServicesV5):
-    """Current F6.A core with trusted validation before internal receipt lineage lookup.
+    """Current F6.A receipt boundary with durable replay and terminal fencing.
 
-    A new sink receipt is authenticated at the first-party boundary before Alsoul uses
-    caller-provided lineage identifiers to resolve internal presentation state. Durable
-    operation replay still bypasses the sink, while the final evidence admission remains
-    serialized against terminal reconciliation by the v5 attempt fence.
+    Durable evidence already admitted may replay without consulting the sink. A new
+    receipt, including one with nonexistent caller-provided lineage, must first pass the
+    trusted first-party receipt validator; final evidence admission is then serialized
+    against terminal reconciliation by the attempt write fence.
     """
 
     def record_presentation_receipt(
@@ -51,7 +51,7 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV5):
         )
         presented_at = _aware_utc(command.presented_at)
 
-        with self.engine.connect() as conn:
+        with self.engine.begin() as conn:
             replay = load_operation_receipt(
                 conn,
                 scope=_RECEIPT_SCOPE,
@@ -63,6 +63,33 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV5):
                     conn, UUID(replay["presentation_evidence_id"])
                 )
                 return self._receipt_result(row)
+
+            existing = self._evidence_for_frame(
+                conn,
+                command.presentation_session_id,
+                command.frame_ordinal,
+            )
+            if existing is not None:
+                self._require_exact_receipt(
+                    existing,
+                    command=command,
+                    receipt_ref=receipt_ref,
+                    presented_at=presented_at,
+                )
+                self._save_receipt_operation(conn, command, req, existing)
+                return self._receipt_result(existing)
+
+            attempt = conn.execute(
+                select(schema.progressive_presentation_attempt).where(
+                    schema.progressive_presentation_attempt.c.presentation_attempt_id
+                    == command.presentation_attempt_id
+                )
+            ).mappings().one_or_none()
+            if attempt is not None and attempt["attempt_state"] == "SETTLED":
+                fail(
+                    "PROGRESSIVE_PRESENTATION_ATTEMPT_SETTLED",
+                    "terminally settled presentation generation cannot admit new presentation evidence",
+                )
 
         adapter = self._require_receipt_adapter()
         try:
