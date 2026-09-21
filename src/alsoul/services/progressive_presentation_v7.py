@@ -59,7 +59,7 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV6):
         )
         received_at = _aware_utc(command.received_at)
 
-        with self.engine.connect() as conn:
+        with self.engine.begin() as conn:
             replay = load_operation_receipt(
                 conn,
                 scope=_RECEPTION_SCOPE,
@@ -71,6 +71,20 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV6):
                     conn, UUID(replay["reception_evidence_id"])
                 )
                 return self._reception_result(row)
+
+            self._validate_reception_lineage(conn, command, received_through)
+            existing = self._reception_by_ref(
+                conn, command.presentation_key, receipt_ref
+            )
+            if existing is not None:
+                self._require_exact_reception(
+                    existing,
+                    command=command,
+                    receipt_ref=receipt_ref,
+                    received_at=received_at,
+                )
+                self._save_reception_operation(conn, command, req, existing)
+                return self._reception_result(existing)
 
         adapter = self._require_reception_adapter()
         try:
