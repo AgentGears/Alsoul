@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from alsoul.domain.errors import DomainError
 from alsoul.domain.progressive_presentation import (
     DispatchProgressivePresentationFrameCommand,
+    OpenProgressivePresentationCommand,
     PROGRESSIVE_PRESENTATION_CONTRACT_VERSION,
     PROGRESSIVE_PRESENTATION_FRAME_CONTRACT_VERSION,
     PROGRESSIVE_PRESENTATION_RECEIPT_CONTRACT_VERSION,
@@ -57,6 +58,20 @@ class _TrustedAdapter:
         return True
 
 
+class _RejectingAdapter(_TrustedAdapter):
+    def dispatch_frame(self, **kwargs):
+        return ProgressivePresentationFrameTransportResult(
+            presentation_key=kwargs["presentation_key"],
+            attempt_generation=kwargs["attempt_generation"],
+            presentation_transport_fence_scope_id=kwargs[
+                "presentation_transport_fence_scope_id"
+            ],
+            frame_ordinal=kwargs["frame_ordinal"],
+            frame_digest=kwargs["frame_digest"],
+            acceptance_state="NOT_ACCEPTED",
+        )
+
+
 def test_progressive_session_rejects_noncanonical_same_companion_route(
     services, bootstrapper, engine, now
 ):
@@ -88,14 +103,13 @@ def test_progressive_session_rejects_noncanonical_same_companion_route(
         clock=services.clock,
         ids=services.ids,
     )
-    command = ctx["adopted"].companion_output_id
-    from alsoul.domain.progressive_presentation import OpenProgressivePresentationCommand
+    output_id = ctx["adopted"].companion_output_id
 
     with pytest.raises(DomainError) as exc:
         service.open_session(
             OpenProgressivePresentationCommand(
                 operation_id=uuid4(),
-                companion_output_id=command,
+                companion_output_id=output_id,
                 surface_binding_id=alternate_surface_id,
                 channel_binding_id=alternate_channel_id,
             )
@@ -105,10 +119,60 @@ def test_progressive_session_rejects_noncanonical_same_companion_route(
     with engine.connect() as conn:
         row = conn.execute(
             select(schema.progressive_presentation_session).where(
-                schema.progressive_presentation_session.c.companion_output_id == command
+                schema.progressive_presentation_session.c.companion_output_id == output_id
             )
         ).mappings().one_or_none()
     assert row is None
+
+
+def test_terminal_nonacceptance_settles_prior_attempt_and_allows_new_generation(
+    services, bootstrapper, engine, now
+):
+    ctx = _adopt_output(services, bootstrapper, now, "safe retry after rejection")
+    service = ProgressivePresentationServices(
+        engine,
+        adapter=_RejectingAdapter(now),
+        clock=services.clock,
+        ids=services.ids,
+    )
+    session = _open_session(service, ctx)
+    first_attempt = _fence_attempt(service, session)
+
+    rejected = service.dispatch_frame(
+        DispatchProgressivePresentationFrameCommand(
+            operation_id=uuid4(),
+            presentation_attempt_id=first_attempt.presentation_attempt_id,
+            frame_ordinal=1,
+        )
+    )
+    assert rejected.acceptance_state == "NOT_ACCEPTED"
+
+    second_attempt = _fence_attempt(service, session)
+    assert second_attempt.attempt_generation == 2
+    assert second_attempt.presentation_attempt_id != first_attempt.presentation_attempt_id
+    assert (
+        second_attempt.presentation_transport_fence_scope_id
+        != first_attempt.presentation_transport_fence_scope_id
+    )
+
+    with engine.connect() as conn:
+        first_state = conn.execute(
+            select(schema.progressive_presentation_attempt.c.attempt_state).where(
+                schema.progressive_presentation_attempt.c.presentation_attempt_id
+                == first_attempt.presentation_attempt_id
+            )
+        ).scalar_one()
+    assert first_state == "SETTLED"
+
+    service.adapter = _TrustedAdapter(now)
+    retried = service.dispatch_frame(
+        DispatchProgressivePresentationFrameCommand(
+            operation_id=uuid4(),
+            presentation_attempt_id=second_attempt.presentation_attempt_id,
+            frame_ordinal=1,
+        )
+    )
+    assert retried.acceptance_state == "ACCEPTED"
 
 
 def test_concurrent_exact_receipt_conflict_recovers_idempotently(
