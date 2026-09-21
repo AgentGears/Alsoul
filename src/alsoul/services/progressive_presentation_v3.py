@@ -20,6 +20,10 @@ class ProgressivePresentationServices(ProgressivePresentationServicesV2):
     must validate the exact receipt against the pinned session/generation/frame lineage.
     """
 
+    def _require_adapter(self) -> None:
+        super()._require_adapter()
+        self._require_receipt_adapter()
+
     def record_presentation_receipt(
         self, command: RecordProgressivePresentationReceiptCommand
     ) -> ProgressivePresentationReceiptResult:
