@@ -104,6 +104,23 @@ class FoundationServices(FoundationServicesV5):
                     )
                 ).mappings().one_or_none()
                 if lineage is None:
+                    zero_extent_commit = conn.execute(
+                        select(schema.operation_receipt.c.operation_id)
+                        .where(
+                            schema.operation_receipt.c.operation_scope
+                            == "CommitProgressivePresentationHistory",
+                            schema.operation_receipt.c.result_kind
+                            == "ProgressivePresentationHistoryNoEvent",
+                            schema.operation_receipt.c.result_ref
+                            == session["presentation_session_id"],
+                        )
+                        .limit(1)
+                    ).scalar_one_or_none()
+                    if zero_extent_commit is not None:
+                        fail(
+                            "PROGRESSIVE_PRESENTATION_ZERO_EXTENT_FINALIZED",
+                            "progressive presentation was terminally committed with zero presented frames; no companion-presented Timeline event exists",
+                        )
                     fail(
                         "PROGRESSIVE_PRESENTATION_HISTORY_COMMIT_REQUIRED",
                         "progressive CompanionOutput requires exact terminal presentation history before generic Timeline presentation can be observed",
