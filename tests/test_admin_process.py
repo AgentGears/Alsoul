@@ -57,10 +57,7 @@ def test_admin_process_creates_store_then_explicitly_bootstraps_identity(tmp_pat
     assert initialized.returncode == 0, initialized.stderr
     init_payload = json.loads(initialized.stdout)
     assert init_payload["ok"] is True
-    assert (
-        init_payload["result"]["schema_revision"]
-        == "0017_personal_calendar_mutation_presentation"
-    )
+    assert init_payload["result"]["schema_revision"] == "0018_progressive_presentation"
 
     empty_status = _run_module(
         "alsoul.admin",
