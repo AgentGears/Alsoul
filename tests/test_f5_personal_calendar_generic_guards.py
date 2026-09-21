@@ -110,7 +110,7 @@ class _PlanAdapter:
             "source_world_result_id": context["source_world_result_id"],
             "requested_date": context["requested_date"],
             "ordered_occurrence_refs": [
-                item["occurrence_ref"] for item in context["occurrences"]
+                item["schedule_item_ref"] for item in context["occurrences"]
             ],
             "rendering_contract_version": CALENDAR_DAY_RENDERING_CONTRACT_VERSION,
             "framing_mode": "NEUTRAL",
