@@ -106,9 +106,12 @@ class ProgressivePresentationReceiptResult:
 
 @runtime_checkable
 class ProgressivePresentationAdapter(Protocol):
+    """Trusted first-party frame transport and presentation-receipt boundary."""
+
     presentation_contract_version: str
     frame_contract_version: str
     transport_contract_version: str
+    receipt_contract_version: str
 
     def dispatch_frame(
         self,
@@ -122,6 +125,22 @@ class ProgressivePresentationAdapter(Protocol):
         frame_digest: str,
         content_text: str,
     ) -> ProgressivePresentationFrameTransportResult:
+        ...
+
+    def validate_presentation_receipt(
+        self,
+        *,
+        presentation_key: str,
+        attempt_generation: int,
+        presentation_transport_fence_scope_id: UUID,
+        presentation_session_id: UUID,
+        presentation_attempt_id: UUID,
+        frame_ordinal: int,
+        frame_digest: str,
+        presentation_receipt_ref: str,
+        presented_at: datetime,
+    ) -> bool:
+        """Validate one sink-issued receipt against the trusted first-party boundary."""
         ...
 
 
