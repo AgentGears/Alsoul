@@ -92,7 +92,7 @@ progressive_presentation_interruption = Table(
         name="ck_progressive_interruption_timeline_f6a",
     ),
     CheckConstraint(
-        "cancellation_request_state IN ('PENDING', 'REQUESTED', 'UNKNOWN')",
+        "cancellation_request_state IN ('PENDING', 'REQUESTED', 'UNKNOWN', 'NOT_REQUIRED_TERMINAL')",
         name="ck_progressive_interruption_cancellation_state_f6a",
     ),
 )
