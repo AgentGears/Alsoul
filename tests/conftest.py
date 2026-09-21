@@ -10,6 +10,9 @@ from sqlalchemy import Engine
 from alsoul.domain.personal_calendar_presentation import (
     PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS,
 )
+from alsoul.domain.progressive_presentation import (
+    PROGRESSIVE_PRESENTATION_RECEIPT_CONTRACT_VERSION,
+)
 from alsoul.domain.types import FixedClock, UUIDGenerator
 from alsoul.services import FoundationBootstrapper, FoundationServices
 from alsoul.storage import create_schema, create_sqlite_engine
@@ -73,6 +76,38 @@ def _qualified_f5_calendar_test_adapters(monkeypatch):
             presentation_class,
             "terminal_negative_semantics",
             PERSONAL_CALENDAR_TERMINAL_NEGATIVE_SEMANTICS,
+            raising=False,
+        )
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _qualified_f6_progressive_presentation_test_adapters(request, monkeypatch):
+    """Give established F6 core fakes the explicit trusted receipt contract."""
+
+    if request.module.__name__ not in {
+        "test_f6a_progressive_presentation_core",
+        "test_f6a_progressive_presentation_authority_guard",
+    }:
+        yield
+        return
+
+    adapter_class = getattr(request.module, "_AcceptingAdapter", None)
+    if adapter_class is not None:
+        monkeypatch.setattr(
+            adapter_class,
+            "receipt_contract_version",
+            PROGRESSIVE_PRESENTATION_RECEIPT_CONTRACT_VERSION,
+            raising=False,
+        )
+
+        def validate_presentation_receipt(self, **_kwargs):
+            return True
+
+        monkeypatch.setattr(
+            adapter_class,
+            "validate_presentation_receipt",
+            validate_presentation_receipt,
             raising=False,
         )
     yield
