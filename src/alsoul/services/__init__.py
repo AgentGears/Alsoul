@@ -56,6 +56,7 @@ from . import personal_calendar_mutation_completion as _personal_calendar_mutati
 from . import personal_calendar_presentation as _personal_calendar_presentation
 from . import personal_calendar_reconciliation as _personal_calendar_reconciliation
 from . import personal_calendar_transport as _personal_calendar_transport
+from . import progressive_presentation as _progressive_presentation
 from .personal_calendar_acquisition_v2 import PersonalCalendarAcquisitionServices
 from .personal_calendar_action_v2 import PersonalCalendarActionServices
 from .personal_calendar_approval_v2 import PersonalCalendarApprovalServices
@@ -106,6 +107,7 @@ _personal_calendar_reconciliation.PersonalCalendarReconciliationServices = (
 _personal_calendar_transport.PersonalCalendarMutationTransportServices = (
     PersonalCalendarMutationTransportServices
 )
+_progressive_presentation.ProgressivePresentationServices = ProgressivePresentationServices
 
 __all__ = [
     "AdmitTrustedCounterpartInputResult",
