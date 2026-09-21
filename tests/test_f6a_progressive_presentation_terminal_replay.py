@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from uuid import uuid4
 
+import pytest
+
+from alsoul.domain.errors import DomainError
 from alsoul.domain.progressive_presentation import (
     DispatchProgressivePresentationFrameCommand,
     ReconcileProgressivePresentationAttemptCommand,
@@ -18,9 +21,7 @@ from test_f6a_progressive_presentation_core import (
 from test_f6a_progressive_presentation_reconciliation import _ReconciliationAdapter
 
 
-def test_exact_durable_receipt_remains_replayable_after_terminal_settlement(
-    services, bootstrapper, engine, now
-):
+def _durable_receipt_scenario(services, bootstrapper, engine, now):
     ctx = _adopt_output(services, bootstrapper, now, "terminal replay")
     adapter = _ReconciliationAdapter(now)
     service = ProgressivePresentationServices(
@@ -47,6 +48,15 @@ def test_exact_durable_receipt_remains_replayable_after_terminal_settlement(
         presentation_receipt_ref="durable-before-terminal",
     )
     first = service.record_presentation_receipt(receipt)
+    return service, adapter, session, attempt, receipt, first
+
+
+def test_exact_durable_receipt_remains_replayable_after_terminal_settlement(
+    services, bootstrapper, engine, now
+):
+    service, adapter, _session, attempt, receipt, first = _durable_receipt_scenario(
+        services, bootstrapper, engine, now
+    )
 
     adapter.settlement_state = "TERMINAL"
     adapter.status_ref = "terminal-after-durable-receipt"
@@ -66,4 +76,24 @@ def test_exact_durable_receipt_remains_replayable_after_terminal_settlement(
 
     assert replay.presentation_evidence_id == first.presentation_evidence_id
     assert replay.presented_through_frame == 1
+    assert len(adapter.receipt_calls) == 1
+
+
+def test_durable_receipt_replay_rejects_wrong_attempt_generation(
+    services, bootstrapper, engine, now
+):
+    service, adapter, _session, _attempt, receipt, _first = _durable_receipt_scenario(
+        services, bootstrapper, engine, now
+    )
+
+    with pytest.raises(DomainError) as exc:
+        service.record_presentation_receipt(
+            replace(
+                receipt,
+                operation_id=uuid4(),
+                attempt_generation=receipt.attempt_generation + 1,
+            )
+        )
+
+    assert exc.value.code == "PROGRESSIVE_PRESENTATION_RECEIPT_LINEAGE_INVALID"
     assert len(adapter.receipt_calls) == 1
