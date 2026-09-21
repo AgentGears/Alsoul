@@ -77,6 +77,7 @@ from .personal_calendar_runtime import (
     PersonalCalendarResponseRunResult,
 )
 from .personal_calendar_transport_v3 import PersonalCalendarMutationTransportServices
+from .progressive_presentation import ProgressivePresentationServices
 from .provider_integration import ModelGenerationRunner, WorldAcquisitionRunner
 from .provider_recovery import ProviderRecoveryCoordinator
 from .runtime import FoundationResponseCoordinator
@@ -152,6 +153,7 @@ __all__ = [
     "PersonalCalendarResponseCoordinator",
     "PersonalCalendarResponseRunResult",
     "PresentationRuntimeConfig",
+    "ProgressivePresentationServices",
     "ProviderRecoveryCoordinator",
     "RuntimeSecrets",
     "TrustedCounterpartInputEnvelope",
