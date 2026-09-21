@@ -29,19 +29,6 @@ class FoundationServices(FoundationServicesV5):
         scope = "PresentCompanionOutput"
         req = request_digest(asdict(command))
         with self.engine.begin() as conn:
-            replay = load_operation_receipt(
-                conn,
-                scope=scope,
-                operation_id=command.operation_id,
-                expected_request_digest=req,
-            )
-            if replay:
-                return PresentCompanionOutputResult(
-                    UUID(replay["interaction_event_id"]),
-                    int(replay["timeline_seq"]),
-                    True,
-                )
-
             output_fence = conn.execute(
                 update(schema.companion_output)
                 .where(
@@ -61,12 +48,28 @@ class FoundationServices(FoundationServicesV5):
                 )
             ).mappings().one()
 
+            # Preserve the inherited F5 generic-path boundary even on an idempotent
+            # presentation replay. Progressive presentation must not become a route
+            # around personal-calendar disclosure authority.
             if self._companion_output_contains_personal_calendar(
                 conn, command.companion_output_id
             ):
                 fail(
                     "PERSONAL_CALENDAR_PRESENTATION_AUTHORITY_REQUIRED",
                     "personal-calendar CompanionOutput cannot use generic presentation before F5 disclosure authority succeeds",
+                )
+
+            replay = load_operation_receipt(
+                conn,
+                scope=scope,
+                operation_id=command.operation_id,
+                expected_request_digest=req,
+            )
+            if replay:
+                return PresentCompanionOutputResult(
+                    UUID(replay["interaction_event_id"]),
+                    int(replay["timeline_seq"]),
+                    True,
                 )
 
             self._validate_presence(
