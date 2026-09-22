@@ -61,19 +61,24 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
 
-    # Interruption and committed presentation-lineage rows encode social/history truth
-    # that v19 has no durable representation for. Silently dropping either would permit
-    # an interrupted remainder to resume or leave a canonical presented event without
-    # its exact terminal provenance. Refuse that destructive downgrade instead.
+    # Terminal-order frontiers, interruption rows, and committed presentation lineage
+    # encode ordering/social-history truth that v19 has no durable representation for.
+    # Silently dropping any of them can erase a still-pending interruption boundary,
+    # permit interrupted remainder to resume, or orphan a canonical presented event.
+    terminal_frontier = bind.execute(
+        select(
+            schema_v20.progressive_presentation_terminal_timeline_frontier.c.presentation_status_evidence_id
+        ).limit(1)
+    ).first()
     interruption = bind.execute(
         select(schema_v20.progressive_presentation_interruption.c.interruption_id).limit(1)
     ).first()
     lineage = bind.execute(
         select(schema_v20.progressive_presentation_timeline_lineage.c.interaction_event_id).limit(1)
     ).first()
-    if interruption is not None or lineage is not None:
+    if terminal_frontier is not None or interruption is not None or lineage is not None:
         raise RuntimeError(
-            "cannot downgrade F6.A interruption/history schema while canonical interruption or presentation-lineage evidence exists"
+            "cannot downgrade F6.A interruption/history schema while canonical terminal-order, interruption, or presentation-lineage evidence exists"
         )
 
     bind.execute(
