@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import timedelta
 from threading import Event, Thread
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 
 from alsoul.domain.errors import DomainError
 from alsoul.domain.progressive_presentation import (
@@ -78,11 +77,18 @@ def test_input_admitted_before_terminal_observation_survives_settlement_race(
                 == history.interaction_event_id
             )
         ).mappings().one()
+        frontier = conn.execute(
+            select(schema.progressive_presentation_terminal_timeline_frontier).where(
+                schema.progressive_presentation_terminal_timeline_frontier.c.presentation_status_evidence_id
+                == terminal.presentation_status_evidence_id
+            )
+        ).mappings().one()
     assert lineage["terminal_status_evidence_id"] == terminal.presentation_status_evidence_id
     assert lineage["interrupting_event_id"] == canonical.event_id
+    assert canonical.timeline_seq <= int(frontier["observed_timeline_frontier"])
 
 
-def test_input_admitted_after_terminal_observation_cannot_be_retroactive_interruption(
+def test_input_admitted_after_terminal_observation_is_rejected_even_when_timestamps_tie(
     services, bootstrapper, engine, now
 ):
     content = "A" * 256 + "B" * 44
@@ -96,16 +102,33 @@ def test_input_admitted_after_terminal_observation_cannot_be_retroactive_interru
         attempt,
         presented=1,
         received=0,
-        suffix="already-terminal",
+        suffix="already-terminal-same-clock-tick",
     )
     canonical = _append_interrupt(services, ctx, now)
 
-    with engine.begin() as conn:
-        conn.execute(
-            update(schema.interaction_event)
-            .where(schema.interaction_event.c.event_id == canonical.event_id)
-            .values(recorded_at=now + timedelta(seconds=1))
-        )
+    with engine.connect() as conn:
+        status = conn.execute(
+            select(schema.progressive_presentation_status_evidence).where(
+                schema.progressive_presentation_status_evidence.c.presentation_status_evidence_id
+                == terminal.presentation_status_evidence_id
+            )
+        ).mappings().one()
+        event = conn.execute(
+            select(schema.interaction_event).where(
+                schema.interaction_event.c.event_id == canonical.event_id
+            )
+        ).mappings().one()
+        frontier = conn.execute(
+            select(schema.progressive_presentation_terminal_timeline_frontier).where(
+                schema.progressive_presentation_terminal_timeline_frontier.c.presentation_status_evidence_id
+                == terminal.presentation_status_evidence_id
+            )
+        ).mappings().one()
+
+    # FixedClock intentionally gives both durable writes the same wall-clock value.
+    # Ordering must therefore come from the serialized Timeline frontier, not timestamps.
+    assert event["recorded_at"] == status["observed_at"]
+    assert canonical.timeline_seq > int(frontier["observed_timeline_frontier"])
 
     with pytest.raises(DomainError) as exc:
         _interrupt(service, attempt, canonical.event_id)
@@ -120,12 +143,6 @@ def test_input_admitted_after_terminal_observation_cannot_be_retroactive_interru
                 == attempt.presentation_attempt_id
             )
         ).scalar_one()
-        status = conn.execute(
-            select(schema.progressive_presentation_status_evidence).where(
-                schema.progressive_presentation_status_evidence.c.presentation_status_evidence_id
-                == terminal.presentation_status_evidence_id
-            )
-        ).mappings().one()
     assert int(interruption_count) == 0
     assert status["settlement_state"] == "TERMINAL"
 

@@ -51,6 +51,42 @@ progressive_presentation_session_frontier = Table(
 )
 
 
+progressive_presentation_terminal_timeline_frontier = Table(
+    "progressive_presentation_terminal_timeline_frontier",
+    metadata,
+    Column(
+        "presentation_status_evidence_id",
+        Uuid(as_uuid=True),
+        ForeignKey(
+            "progressive_presentation_status_evidence.presentation_status_evidence_id"
+        ),
+        primary_key=True,
+    ),
+    Column("presentation_attempt_id", Uuid(as_uuid=True), nullable=False),
+    Column("presentation_session_id", Uuid(as_uuid=True), nullable=False),
+    Column(
+        "relationship_id",
+        Uuid(as_uuid=True),
+        ForeignKey("relationship_identity.relationship_id"),
+        nullable=False,
+    ),
+    Column("observed_timeline_frontier", BigInteger, nullable=False),
+    Column("recorded_at", DateTime(timezone=True), nullable=False),
+    ForeignKeyConstraint(
+        ["presentation_attempt_id", "presentation_session_id"],
+        [
+            "progressive_presentation_attempt.presentation_attempt_id",
+            "progressive_presentation_attempt.presentation_session_id",
+        ],
+        name="fk_progressive_terminal_frontier_attempt_session_f6a",
+    ),
+    CheckConstraint(
+        "observed_timeline_frontier >= 0",
+        name="ck_progressive_terminal_frontier_f6a",
+    ),
+)
+
+
 progressive_presentation_interruption = Table(
     "progressive_presentation_interruption",
     metadata,

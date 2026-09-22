@@ -53,6 +53,7 @@ def test_f6a_interruption_history_upgrade_preserves_existing_foundation(tmp_path
 
     assert relationship_after["relationship_id"] == relationship_before["relationship_id"]
     assert "progressive_presentation_session_frontier" in table_names
+    assert "progressive_presentation_terminal_timeline_frontier" in table_names
     assert "progressive_presentation_interruption" in table_names
     assert "progressive_presentation_timeline_lineage" in table_names
 
@@ -96,6 +97,7 @@ def test_f6a_interruption_history_downgrade_clears_receipts_and_tables(tmp_path,
 
     assert remaining == 0
     assert "progressive_presentation_session_frontier" not in table_names
+    assert "progressive_presentation_terminal_timeline_frontier" not in table_names
     assert "progressive_presentation_interruption" not in table_names
     assert "progressive_presentation_timeline_lineage" not in table_names
 
@@ -103,6 +105,10 @@ def test_f6a_interruption_history_downgrade_clears_receipts_and_tables(tmp_path,
 def test_f6a_timeline_frontier_columns_preserve_canonical_bigint_width():
     assert isinstance(
         schema.progressive_presentation_session_frontier.c.open_timeline_frontier.type,
+        BigInteger,
+    )
+    assert isinstance(
+        schema.progressive_presentation_terminal_timeline_frontier.c.observed_timeline_frontier.type,
         BigInteger,
     )
     assert isinstance(
