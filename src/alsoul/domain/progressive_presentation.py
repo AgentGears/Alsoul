@@ -20,6 +20,9 @@ PROGRESSIVE_PRESENTATION_RECEPTION_CONTRACT_VERSION = (
 PROGRESSIVE_PRESENTATION_STATUS_CONTRACT_VERSION = (
     "PROGRESSIVE_PRESENTATION_STATUS_V1"
 )
+PROGRESSIVE_PRESENTATION_CANCELLATION_CONTRACT_VERSION = (
+    "PROGRESSIVE_PRESENTATION_CANCELLATION_V1"
+)
 PROGRESSIVE_PRESENTATION_RECEPTION_KIND = "PLAYBACK_CONFIRMED_THROUGH_FRAME"
 PROGRESSIVE_PRESENTATION_FRAME_CODEPOINT_LIMIT = 256
 
@@ -79,6 +82,19 @@ class RecordProgressivePresentationReceptionCommand:
 
 @dataclass(frozen=True, slots=True)
 class ReconcileProgressivePresentationAttemptCommand:
+    operation_id: UUID
+    presentation_attempt_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class InterruptProgressivePresentationCommand:
+    operation_id: UUID
+    presentation_attempt_id: UUID
+    interrupting_event_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class CommitProgressivePresentationHistoryCommand:
     operation_id: UUID
     presentation_attempt_id: UUID
 
@@ -165,9 +181,29 @@ class ProgressivePresentationReconciliationResult:
     last_authoritatively_received_frame: int
 
 
+@dataclass(frozen=True, slots=True)
+class ProgressivePresentationInterruptionResult:
+    interruption_id: UUID
+    presentation_attempt_id: UUID
+    presentation_session_id: UUID
+    interrupting_event_id: UUID
+    cancellation_request_state: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressivePresentationHistoryResult:
+    presentation_session_id: UUID
+    presentation_attempt_id: UUID
+    interaction_event_id: UUID | None
+    timeline_seq: int | None
+    last_presented_frame: int
+    presented_content_digest: str | None
+    idempotent_replay: bool = False
+
+
 @runtime_checkable
 class ProgressivePresentationAdapter(Protocol):
-    """Trusted first-party frame transport, receipt, reception, and status boundary."""
+    """Trusted first-party frame transport, receipt, reception, cancellation, and status boundary."""
 
     presentation_contract_version: str
     frame_contract_version: str
@@ -175,6 +211,7 @@ class ProgressivePresentationAdapter(Protocol):
     receipt_contract_version: str
     reception_contract_version: str
     status_contract_version: str
+    cancellation_contract_version: str
 
     def dispatch_frame(
         self,
@@ -222,6 +259,24 @@ class ProgressivePresentationAdapter(Protocol):
         """Validate one bounded sink-issued playback/read receipt."""
         ...
 
+    def request_presentation_cancellation(
+        self,
+        *,
+        presentation_key: str,
+        attempt_generation: int,
+        presentation_transport_fence_scope_id: UUID,
+        presentation_session_id: UUID,
+        presentation_attempt_id: UUID,
+        interruption_key: str,
+        interrupting_event_id: UUID,
+    ) -> bool:
+        """Request cancellation/settling for one exact fenced generation.
+
+        ``True`` only acknowledges the cancellation request. It is never terminal
+        presentation proof; terminal truth still comes from status reconciliation.
+        """
+        ...
+
     def reconcile_presentation_status(
         self,
         *,
@@ -236,9 +291,12 @@ class ProgressivePresentationAdapter(Protocol):
 
 
 __all__ = [
+    "CommitProgressivePresentationHistoryCommand",
     "DispatchProgressivePresentationFrameCommand",
     "FenceProgressivePresentationAttemptCommand",
+    "InterruptProgressivePresentationCommand",
     "OpenProgressivePresentationCommand",
+    "PROGRESSIVE_PRESENTATION_CANCELLATION_CONTRACT_VERSION",
     "PROGRESSIVE_PRESENTATION_CONTRACT_VERSION",
     "PROGRESSIVE_PRESENTATION_FRAME_CODEPOINT_LIMIT",
     "PROGRESSIVE_PRESENTATION_FRAME_CONTRACT_VERSION",
@@ -251,6 +309,8 @@ __all__ = [
     "ProgressivePresentationAttemptResult",
     "ProgressivePresentationFrameDispatchResult",
     "ProgressivePresentationFrameTransportResult",
+    "ProgressivePresentationHistoryResult",
+    "ProgressivePresentationInterruptionResult",
     "ProgressivePresentationReceiptResult",
     "ProgressivePresentationReceptionResult",
     "ProgressivePresentationReconciliationResult",
